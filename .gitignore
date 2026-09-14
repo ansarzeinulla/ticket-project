@@ -1,0 +1,23 @@
+# Environment
+.env
+
+# Go
+bin/
+dist/
+*.exe
+*.test
+*.out
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+tmp/
