@@ -25,10 +25,18 @@ func Load() (Config, error) {
 	if cfg.Port, err = envInt("APP_PORT", 8080); err != nil {
 		return Config{}, err
 	}
+	if cfg.DatabaseURL == "" {
+		return Config{}, fmt.Errorf("DATABASE_URL is required")
+	}
 	if cfg.Port < 1 || cfg.Port > 65535 {
 		return Config{}, fmt.Errorf("APP_PORT out of range: %d", cfg.Port)
 	}
 	return cfg, nil
+}
+
+// IsProduction reports whether the API runs in production.
+func (c Config) IsProduction() bool {
+	return c.Env == "production"
 }
 
 // Addr is the host:port the server listens on.
