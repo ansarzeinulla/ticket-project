@@ -7,7 +7,7 @@ DB_USER ?= biletflow
 DB_NAME ?= biletflow
 
 .DEFAULT_GOAL := help
-.PHONY: help up down wait psql
+.PHONY: help up down wait psql test api-check web-check
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -31,3 +31,16 @@ wait: ## Block until the database reports healthy
 
 psql: ## Open an interactive psql shell
 	$(COMPOSE) exec db psql -U $(DB_USER) -d $(DB_NAME)
+
+test: ## Run the database test suite (needs `make up`)
+	@./db/tests/run_tests.sh
+
+api-check: ## Go: format check, vet and tests
+	@cd api && test -z "$$(gofmt -l .)" || (echo "run gofmt on:"; gofmt -l .; exit 1)
+	cd api && go vet ./...
+	cd api && go test ./...
+
+web-check: ## Web: lint, typecheck and production build
+	cd web && npm run lint
+	cd web && npm run typecheck
+	cd web && npm run build

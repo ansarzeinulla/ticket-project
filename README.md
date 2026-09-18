@@ -72,3 +72,27 @@ Client Applications
         |
         v
    PostgreSQL
+
+## Run it locally
+
+Requires Docker, Go 1.25 and Node 24.
+
+```bash
+make up                    # PostgreSQL on localhost:5433, schema applied
+make test                  # database test suite
+cd api && go run ./cmd/api # API on http://localhost:8080
+cd web && npm install && npm run dev   # web on http://localhost:3000
+```
+
+`make help` lists every target.
+
+## Checks
+
+The same commands run in CI on every pull request:
+
+| Command | What it checks |
+| --- | --- |
+| `make test` | database schema tests |
+| `make api-check` | Go formatting, `go vet`, unit tests |
+| `make web-check` | ESLint, TypeScript, production build |
+
