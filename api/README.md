@@ -1,83 +1,76 @@
-# BiletFlow API — Phases 2 & 4-13
+# BiletFlow API
 
-Go REST API for account registration, JWT login, event CRUD, ticket types, a
-simulated KZT checkout, and printable QR tickets — backed by the Phase 1
-PostgreSQL schema.
-
-Requires Go 1.21+ (the module targets 1.25; Go's default `GOTOOLCHAIN=auto`
-fetches the toolchain automatically) and the Phase 1 database running.
+Go REST API for BiletFlow. This file has two parts: **what exists today**, and
+the **endpoint contract** the team agreed in week 0, which is being implemented
+week by week.
 
 ---
 
-## Run it
+## What exists today (week 1)
 
-```bash
-make up        # PostgreSQL (from the repository root)
-make api-run   # API on http://localhost:8080
+A running skeleton: configuration, a JSON error envelope, a PostgreSQL pool and
+one health route.
+
+### Layout
+
+```
+api/
+  cmd/api/main.go            entry point: load config, open the pool, serve
+  internal/config/           settings from environment variables
+  internal/httpx/            JSON responses and the error envelope
+  internal/database/         pgx connection pool
+  internal/store/            data access (one Store over the pool for now)
+  internal/api/              routes and handlers
 ```
 
-Verify:
+Handlers stay thin: they decode the request, call a store, and write JSON through
+`httpx`. SQL lives only in `internal/store`.
+
+### Run it
+
+Requires Go 1.25 (with `GOTOOLCHAIN=auto` an older Go fetches it) and a
+PostgreSQL database with the schema from `db/init` applied.
 
 ```bash
-curl -s http://localhost:8080/health
+cd api
+DATABASE_URL=postgres://biletflow:biletflow_dev_password@localhost:5433/biletflow \
+  go run ./cmd/api
 ```
 
-| Command | What it does |
-| --- | --- |
-| `make api-run` | Run the API with `.env` loaded |
-| `make api-build` | Compile to `api/bin/api` |
-| `make api-test` | Full Go suite: unit + integration against PostgreSQL |
-| `make api-smoke` | cURL acceptance checks against a running API |
-| `make api-check` | gofmt + vet + test |
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `APP_ENV` | `development` | `production` disables the dev-only routes |
+| `API_HOST` | `0.0.0.0` | listen address |
+| `APP_PORT` | `8080` | listen port |
+| `DATABASE_URL` | local compose database | PostgreSQL connection string |
+
+### Routes
+
+| Method | Path | Response |
+| --- | --- | --- |
+| `GET` | `/health` | `200 {"status":"ok","database":"ok"}`, or `503` when the database is unreachable |
+| `GET` | `/dev/config` | non-secret settings; not registered when `APP_ENV=production` |
+
+Any other path answers `404` with the standard envelope:
+
+```json
+{ "error": { "code": "not_found", "message": "Route not found." } }
+```
+
+### Checks
+
+```bash
+cd api && gofmt -l . && go vet ./... && go test ./...
+```
 
 ---
 
-## Verifying the phase-2 success criteria
+## Endpoint contract (planned)
 
-Everything below is automated twice — as Go integration tests
-(`TestPhase2SuccessCriteria`) and as cURL checks (`make api-smoke`) — but here
-are the requests to run by hand in Postman or a terminal.
+Everything below is the contract agreed in week 0. Routes appear here before
+they exist in code so the web and mobile apps can be built against a fixed
+shape; each one is implemented in the week noted in the delivery plan.
 
-**1. Register with an email and password → 201**
-
-```bash
-curl -i -X POST http://localhost:8080/api/v1/auth/register -H 'Content-Type: application/json' -d '{"email":"dana@biletflow.test","password":"correct horse battery"}'
-```
-
-**2. Log in and receive a token → 200**
-
-```bash
-curl -s -X POST http://localhost:8080/api/v1/auth/login -H 'Content-Type: application/json' -d '{"email":"dana@biletflow.test","password":"correct horse battery"}'
-```
-
-Save the `access_token` from the response:
-
-```bash
-TOKEN=$(curl -s -X POST http://localhost:8080/api/v1/auth/login -H 'Content-Type: application/json' -d '{"email":"dana@biletflow.test","password":"correct horse battery"}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')
-```
-
-**3. Create an event with that token → 201 Created**
-
-```bash
-curl -i -X POST http://localhost:8080/api/v1/events -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"title":"Almaty Winter Jazz Night","category":"music","venue_name":"Almaty Demo Hall","venue_address":"Abay Avenue 44, Almaty","starts_at":"2026-12-20T19:00:00+05:00","ends_at":"2026-12-20T22:00:00+05:00","timezone":"Asia/Almaty","capacity":250}'
-```
-
-And confirm the row is really in PostgreSQL:
-
-```bash
-docker compose exec -T db psql -U biletflow -d biletflow -c "SELECT id, title, status, organizer_id FROM events ORDER BY created_at DESC LIMIT 1;"
-```
-
-### Postman
-
-Import [docs/biletflow-api.postman_collection.json](../docs/biletflow-api.postman_collection.json).
-The Register and Login requests save the token into a `{{token}}` collection
-variable automatically, so every later request is already authenticated;
-Create Event saves `{{eventId}}`.
-
----
-
-## Endpoints
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
