@@ -37,6 +37,12 @@ jobs:
         with:
           go-version-file: api/go.mod
           cache-dependency-path: api/go.sum
+      # The API tests are integration tests: they run against a real database.
+      - name: Start PostgreSQL
+        run: |
+          cp .env.example .env
+          docker compose up -d
+          make wait
       - name: Format, vet and test
         run: make api-check
 

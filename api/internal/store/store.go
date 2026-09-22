@@ -4,13 +4,11 @@
 package store
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Sentinel errors returned by the stores.
@@ -111,20 +109,4 @@ func isUniqueViolation(err error, constraint string) bool {
 	return errors.As(err, &pgErr) &&
 		pgErr.Code == codeUniqueViolation &&
 		pgErr.ConstraintName == constraint
-}
-
-// Store wraps the connection pool. The per-table stores (UserStore, ...) take
-// over from it as the handlers move onto them.
-type Store struct {
-	pool *pgxpool.Pool
-}
-
-// New returns a store backed by pool.
-func New(pool *pgxpool.Pool) *Store {
-	return &Store{pool: pool}
-}
-
-// Ping reports whether the database is reachable.
-func (s *Store) Ping(ctx context.Context) error {
-	return s.pool.Ping(ctx)
 }
