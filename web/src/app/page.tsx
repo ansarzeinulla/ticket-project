@@ -1,18 +1,5 @@
+import { formatDate, formatPrice } from "@/lib/format";
 import { mockEvents } from "@/lib/mock-data";
-
-function formatPrice(kzt: number): string {
-  return kzt === 0 ? "Free" : `from ${kzt.toLocaleString("en-US")} ₸`;
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "long",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "Asia/Almaty",
-  });
-}
 
 /**
  * The home page lists upcoming events. Until the API is ready it renders
