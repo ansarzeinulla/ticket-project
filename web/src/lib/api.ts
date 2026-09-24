@@ -6,7 +6,8 @@
  */
 
 import { env } from "@/lib/env";
-import type { ApiErrorBody, AuthResponse, User } from "@/lib/types";
+import { getToken } from "@/lib/session";
+import type { AcceptedResponse, ApiErrorBody, AuthResponse, User } from "@/lib/types";
 
 export const API_BASE_URL = env.apiBaseUrl;
 
@@ -36,13 +37,16 @@ export class ApiError extends Error {
 interface RequestOptions {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
   body?: unknown;
-  /** Sent as `Authorization: Bearer <token>` when present. */
+  /**
+   * Overrides the stored token. Omitted, the cookie's token is used; null sends
+   * no Authorization header at all (register and login).
+   */
   token?: string | null;
   signal?: AbortSignal;
 }
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = "GET", body, token, signal } = options;
+  const { method = "GET", body, token = getToken(), signal } = options;
 
   const headers: Record<string, string> = { Accept: "application/json" };
   if (body !== undefined) headers["Content-Type"] = "application/json";
@@ -80,17 +84,45 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 export const api = {
   /** Create an account. The response already carries a token. */
   register(input: { email: string; password: string; full_name?: string }): Promise<AuthResponse> {
-    return request<AuthResponse>("/auth/register", { method: "POST", body: input });
+    return request<AuthResponse>("/auth/register", { method: "POST", body: input, token: null });
   },
 
   /** Exchange credentials for a token. */
   login(input: { email: string; password: string }): Promise<AuthResponse> {
-    return request<AuthResponse>("/auth/login", { method: "POST", body: input });
+    return request<AuthResponse>("/auth/login", { method: "POST", body: input, token: null });
   },
 
   /** Who the token belongs to. */
   async me(token: string, signal?: AbortSignal): Promise<User> {
     const data = await request<{ user: User }>("/auth/me", { token, signal });
     return data.user;
+  },
+
+  /** POST /auth/password-reset/request - answers the same either way. */
+  requestPasswordReset(email: string): Promise<AcceptedResponse> {
+    return request<AcceptedResponse>("/auth/password-reset/request", {
+      method: "POST",
+      body: { email },
+      token: null,
+    });
+  },
+
+  /** POST /auth/password-reset - consumes the emailed token. */
+  resetPassword(token: string, password: string): Promise<AcceptedResponse> {
+    return request<AcceptedResponse>("/auth/password-reset", {
+      method: "POST",
+      body: { token, password },
+      token: null,
+    });
+  },
+
+  /** POST /auth/verify-email - needs no session; the token is the proof. */
+  verifyEmail(token: string): Promise<{ status: string; email: string; account_status: string }> {
+    return request("/auth/verify-email", { method: "POST", body: { token }, token: null });
+  },
+
+  /** POST /auth/verify-email/request - re-send for the signed-in account. */
+  requestEmailVerification(): Promise<AcceptedResponse> {
+    return request<AcceptedResponse>("/auth/verify-email/request", { method: "POST" });
   },
 };

@@ -48,3 +48,8 @@ export interface ApiErrorBody {
   };
 }
 
+/** 202 answers that start something asynchronous, such as an email. */
+export interface AcceptedResponse {
+  status: string;
+  message: string;
+}

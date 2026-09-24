@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import type { ReactNode } from "react";
 
+import { AuthProvider } from "@/lib/auth-context";
 import "./globals.css";
 
 // Cyrillic alongside Latin: BiletFlow ships in Kazakh and Russian, and without
@@ -29,7 +30,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full font-sans">{children}</body>
+      <body className="min-h-full font-sans">
+        {/* The provider owns the session, so every route can read the user. */}
+        <AuthProvider>{children}</AuthProvider>
+      </body>
     </html>
   );
 }
