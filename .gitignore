@@ -21,3 +21,8 @@ Thumbs.db
 
 # Temporary files
 tmp/
+
+# Assistant tooling scaffolding. `next dev` writes web/AGENTS.md on every run,
+# so it is ignored rather than deleted repeatedly. Not part of the project.
+AGENTS.md
+CLAUDE.md
