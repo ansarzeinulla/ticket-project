@@ -6,10 +6,11 @@ week by week.
 
 ---
 
-## What exists today (week 1)
+## What exists today (week 2)
 
-A running skeleton: configuration, a JSON error envelope, a PostgreSQL pool and
-one health route.
+Accounts: register, sign in, read the current account, reset a forgotten
+password and confirm an email address. Emails are not sent yet - they are
+printed to the API's console.
 
 ### Layout
 
@@ -17,10 +18,12 @@ one health route.
 api/
   cmd/api/main.go            entry point: load config, open the pool, serve
   internal/config/           settings from environment variables
-  internal/httpx/            JSON responses and the error envelope
+  internal/httpx/            JSON responses, the error envelope, request context
   internal/database/         pgx connection pool
-  internal/store/            data access (one Store over the pool for now)
-  internal/api/              routes and handlers
+  internal/auth/             bcrypt password hashing, JWT issue and parse
+  internal/email/            message templates, printed to the console
+  internal/store/            users and single-use account tokens
+  internal/api/              routes, middleware, handlers and their tests
 ```
 
 Handlers stay thin: they decode the request, call a store, and write JSON through
@@ -32,36 +35,61 @@ Requires Go 1.25 (with `GOTOOLCHAIN=auto` an older Go fetches it) and a
 PostgreSQL database with the schema from `db/init` applied.
 
 ```bash
-cd api
-DATABASE_URL=postgres://biletflow:biletflow_dev_password@localhost:5433/biletflow \
-  go run ./cmd/api
+make up        # PostgreSQL on :5433
+make api-run   # the API on :8080
 ```
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `APP_ENV` | `development` | `production` disables the dev-only routes |
+| `APP_ENV` | `development` | `production` disables the dev-only routes and requires `JWT_SECRET` |
 | `API_HOST` | `0.0.0.0` | listen address |
 | `APP_PORT` | `8080` | listen port |
 | `DATABASE_URL` | local compose database | PostgreSQL connection string |
+| `JWT_SECRET` | a dev-only value | HMAC key for access tokens |
+| `JWT_ISSUER` | `biletflow` | `iss` claim |
+| `ACCESS_TOKEN_TTL` | `24h` | lifetime of an access token |
+| `BCRYPT_COST` | `12` | 4-31; the tests use the minimum |
+| `WEB_BASE_URL` | `http://localhost:3000` | where the links in emails point |
 
 ### Routes
 
-| Method | Path | Response |
-| --- | --- | --- |
-| `GET` | `/health` | `200 {"status":"ok","database":"ok"}`, or `503` when the database is unreachable |
-| `GET` | `/dev/config` | non-secret settings; not registered when `APP_ENV=production` |
+| Method | Path | Auth | Response |
+| --- | --- | --- | --- |
+| `GET` | `/health` | – | `200 {"status":"ok","database":"ok"}`, or `503` when the database is unreachable |
+| `POST` | `/api/v1/auth/register` | – | `201` user + access token; `409 conflict` if the email is taken |
+| `POST` | `/api/v1/auth/login` | – | `200` user + access token; `401 invalid_credentials` |
+| `GET` | `/api/v1/auth/me` | Bearer | `200` the current account |
+| `POST` | `/api/v1/auth/password-reset/request` | – | `202` whether or not the email has an account |
+| `POST` | `/api/v1/auth/password-reset` | – | `200`; the token works once, for an hour |
+| `POST` | `/api/v1/auth/verify-email` | – | `200`; the account becomes `active` |
+| `POST` | `/api/v1/auth/verify-email/request` | Bearer | `202`; sends a fresh confirmation |
+| `GET` | `/dev/config` | – | non-secret settings; not registered when `APP_ENV=production` |
 
-Any other path answers `404` with the standard envelope:
+Every request body must be JSON with `Content-Type: application/json`.
 
-```json
-{ "error": { "code": "not_found", "message": "Route not found." } }
+```bash
+curl -s -X POST localhost:8080/api/v1/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"dana@biletflow.kz","password":"correct horse"}'
 ```
+
+The same email in a different case is the same account: `Dana@BiletFlow.kz`
+answers `409`.
+
+### Where the emails go
+
+`email.ConsoleSender` prints each message to standard output inside a framed
+block, so the reset and confirmation codes can be copied from the terminal that
+runs the API. Sending is asynchronous; shutdown waits for queued messages.
 
 ### Checks
 
 ```bash
-cd api && gofmt -l . && go vet ./... && go test ./...
+make api-check   # gofmt, go vet, go test - the tests need `make up`
 ```
+
+The API tests are integration tests: they create a `biletflow_test` database
+next to the dev one, apply `db/init`, and truncate it around every test.
 
 ---
 
