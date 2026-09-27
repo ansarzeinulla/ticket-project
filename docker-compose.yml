@@ -24,6 +24,8 @@ services:
       - biletflow_pgdata:/var/lib/postgresql/data
       # Run alphabetically the FIRST time the volume is empty.
       - ./db/init:/docker-entrypoint-initdb.d:ro
+      # Demo data is loaded on demand with `make seed`, never automatically.
+      - ./db/seed:/opt/biletflow/seed:ro
       # Mounted, not auto-run, so the test suite can execute them on demand.
       - ./db/tests:/opt/biletflow/tests:ro
     healthcheck:

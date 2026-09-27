@@ -5,9 +5,10 @@
 COMPOSE ?= docker compose
 DB_USER ?= biletflow
 DB_NAME ?= biletflow
+PSQL     = $(COMPOSE) exec -T db psql -U $(DB_USER) -d $(DB_NAME) -v ON_ERROR_STOP=1
 
 .DEFAULT_GOAL := help
-.PHONY: help up down reset wait psql test api-run api-test api-check \
+.PHONY: help up down reset wait psql seed test api-run api-test api-check \
 	web-install web-dev web-check scan-install scan-dev scan-check
 
 help: ## Show this help
@@ -36,6 +37,10 @@ wait: ## Block until the database reports healthy
 
 psql: ## Open an interactive psql shell
 	$(COMPOSE) exec db psql -U $(DB_USER) -d $(DB_NAME)
+
+seed: ## Load the demo dataset (safe to run repeatedly)
+	$(PSQL) -q -f /opt/biletflow/seed/01_demo_data.sql
+	@echo "demo data loaded - every demo account's password is biletflow-demo"
 
 test: ## Run the database test suite (needs `make up`)
 	@./db/tests/run_tests.sh
