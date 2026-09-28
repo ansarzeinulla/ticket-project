@@ -24,6 +24,8 @@ type Server struct {
 
 	events      *store.EventStore
 	ticketTypes *store.TicketTypeStore
+	checkout    *store.CheckoutStore
+	inventory   *store.InventoryStore
 
 	hasher *auth.Hasher
 	tokens *auth.TokenService
@@ -46,6 +48,8 @@ func NewWithSender(cfg config.Config, pool *pgxpool.Pool, sender email.Sender) *
 		mailer:        email.NewMailer(sender, nil),
 		events:        store.NewEventStore(pool),
 		ticketTypes:   store.NewTicketTypeStore(pool),
+		checkout:      store.NewCheckoutStore(pool),
+		inventory:     store.NewInventoryStore(pool),
 		hasher:        auth.NewHasher(cfg.BcryptCost),
 		tokens:        auth.NewTokenService(cfg.JWTSecret, cfg.JWTIssuer, cfg.AccessTokenTTL),
 		now:           time.Now,
@@ -110,6 +114,13 @@ func (s *Server) Handler() http.Handler {
 	// on a public event page to people who are not signed in.
 	mux.HandleFunc("POST /api/v1/uploads/images", s.requireAuth(s.handleUploadImage))
 	mux.Handle("GET "+uploadURLPrefix+"{file}", s.uploadsHandler())
+
+	// --- checkout -----------------------------------------------------------
+	// Checkout takes optionalAuth: guests may buy, and a signed-in buyer gets
+	// the order linked to their account.
+	mux.HandleFunc("POST /api/v1/events/{id}/checkout", s.optionalAuth(s.handleCheckout))
+	mux.HandleFunc("GET /api/v1/events/{id}/inventory", s.optionalAuth(s.handleEventInventory))
+	mux.HandleFunc("GET /api/v1/orders/{id}", s.optionalAuth(s.handleGetOrder))
 
 	// No catch-all route: it would shadow ServeMux's own 405 handling.
 	// jsonRouterErrors turns the stdlib's plain-text 404/405 into the envelope.
