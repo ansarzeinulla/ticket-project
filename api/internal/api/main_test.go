@@ -29,6 +29,9 @@ func testConfig(t *testing.T) config.Config {
 		JWTIssuer:      "biletflow-test",
 		AccessTokenTTL: time.Hour,
 		BcryptCost:     bcrypt.MinCost,
+		// Uploads land in a directory the test framework removes afterwards,
+		// so a test run leaves nothing behind on disk.
+		UploadDir: t.TempDir(),
 	}
 }
 
