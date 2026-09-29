@@ -24,3 +24,7 @@ tmp/
 
 # Uploaded files: event banners the API writes to local disk (UPLOAD_DIR)
 api/data/uploads/
+# Assistant tooling scaffolding. `next dev` writes web/AGENTS.md on every run,
+# so it is ignored rather than deleted repeatedly. Not part of the project.
+AGENTS.md
+CLAUDE.md
