@@ -21,6 +21,3 @@ Thumbs.db
 
 # Temporary files
 tmp/
-
-# Uploaded files: event banners the API writes to local disk (UPLOAD_DIR)
-api/data/uploads/
