@@ -183,3 +183,73 @@ export interface PublicEventResponse {
   on_sale: boolean;
   sold_out: boolean;
 }
+
+export interface Order {
+  id: string;
+  order_number: string;
+  event_id: string;
+  buyer_user_id?: string;
+  buyer_email: string;
+  buyer_name: string;
+  status: string;
+  currency: string;
+  subtotal_kzt: Money;
+  discount_kzt: Money;
+  processing_fee_kzt: Money;
+  total_kzt: Money;
+  placed_at?: string;
+  completed_at?: string;
+  created_at: string;
+}
+
+export interface OrderItem {
+  id: string;
+  order_id: string;
+  ticket_type_id: string;
+  ticket_type_name: string;
+  quantity: number;
+  unit_price_kzt: Money;
+  line_total_kzt: Money;
+}
+
+export interface IssuedTicket {
+  id: string;
+  ticket_code: string;
+  qr_token: string;
+  ticket_type_id: string;
+  ticket_type_name: string;
+  status: string;
+  issued_at: string;
+}
+
+export interface OrderAttendee {
+  id: string;
+  order_id: string;
+  full_name: string;
+  email: string;
+}
+
+export interface OrderPayment {
+  id: string;
+  amount_kzt: Money;
+  status: string;
+  provider: string;
+  is_simulated: boolean;
+  paid_at: string;
+}
+
+/** The checkout response, and what GET /orders/{id} returns. */
+export interface CheckoutResult {
+  order: Order;
+  items: OrderItem[];
+  attendee?: OrderAttendee;
+  tickets: IssuedTicket[];
+  payment?: OrderPayment;
+}
+
+export interface CheckoutInput {
+  buyer_name: string;
+  buyer_email: string;
+  buyer_phone?: string;
+  items: { ticket_type_id: string; quantity: number }[];
+}

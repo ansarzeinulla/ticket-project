@@ -11,6 +11,8 @@ import type {
   ApiErrorBody,
   AuthResponse,
   BiletEvent,
+  CheckoutInput,
+  CheckoutResult,
   CreateEventInput,
   CreateTicketTypeInput,
   EventListResponse,
@@ -39,13 +41,27 @@ export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
   readonly fields: Record<string, string>;
+  /** Set on an insufficient_inventory error: how many are actually left. */
+  readonly remaining?: number;
 
-  constructor(status: number, code: string, message: string, fields: Record<string, string> = {}) {
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+    fields: Record<string, string> = {},
+    remaining?: number,
+  ) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
     this.fields = fields;
+    this.remaining = remaining;
+  }
+
+  /** True when stock ran out between loading the page and checking out. */
+  get isSoldOut(): boolean {
+    return this.code === "insufficient_inventory";
   }
 
   /** True when the API could not be reached at all. */
@@ -91,11 +107,13 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   const payload: unknown = await response.json().catch(() => null);
   if (!response.ok) {
     const error = (payload as ApiErrorBody | null)?.error;
+    const remaining = (error as { remaining?: number } | undefined)?.remaining;
     throw new ApiError(
       response.status,
       error?.code ?? "unknown_error",
       error?.message ?? `Request failed with HTTP ${response.status}.`,
       error?.fields ?? {},
+      typeof remaining === "number" ? remaining : undefined,
     );
   }
   return payload as T;
@@ -167,6 +185,19 @@ export const api = {
       token: null,
       signal,
     });
+  },
+
+  /** POST /events/{id}/checkout - the simulated purchase. */
+  checkout(eventID: string, input: CheckoutInput): Promise<CheckoutResult> {
+    return request<CheckoutResult>(`/events/${eventID}/checkout`, {
+      method: "POST",
+      body: input,
+    });
+  },
+
+  /** GET /orders/{id} - the id is the capability, so no token is needed. */
+  getOrder(id: string, signal?: AbortSignal): Promise<CheckoutResult> {
+    return request<CheckoutResult>(`/orders/${id}`, { token: null, signal });
   },
 
   // --- events (organizer) -------------------------------------------------------
