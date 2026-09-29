@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
+import { AttendeeList } from "@/components/attendee-list";
+import { OrderManager } from "@/components/order-manager";
 import { TicketTypeManager } from "@/components/ticket-type-manager";
 import { Alert } from "@/components/ui/alert";
 import { Spinner } from "@/components/ui/button";
@@ -99,7 +101,11 @@ export function EventDetail({ eventID }: { eventID: string }) {
         )}
       </div>
 
+      <OrderManager eventID={event.id} />
+
       <TicketTypeManager eventID={event.id} />
+
+      <AttendeeList eventID={event.id} />
     </div>
   );
 }

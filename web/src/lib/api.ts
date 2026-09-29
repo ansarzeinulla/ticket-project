@@ -16,7 +16,9 @@ import type {
   CreateEventInput,
   CreateTicketTypeInput,
   EventListResponse,
+  EventOrder,
   EventResponse,
+  Guest,
   PublicEventResponse,
   TicketType,
   TicketTypeListResponse,
@@ -289,6 +291,23 @@ export const api = {
   /** DELETE /ticket-types/{id} */
   deleteTicketType(id: string): Promise<void> {
     return request<void>(`/ticket-types/${id}`, { method: "DELETE" });
+  },
+
+  // --- who is coming (organizer) -----------------------------------------------
+
+  /** GET /events/{id}/orders - newest first. */
+  async eventOrders(eventID: string, signal?: AbortSignal): Promise<EventOrder[]> {
+    const data = await request<{ orders: EventOrder[] }>(`/events/${eventID}/orders`, { signal });
+    return data.orders;
+  },
+
+  /** GET /events/{id}/attendees - every issued ticket, optionally searched. */
+  async eventGuests(eventID: string, query: string, signal?: AbortSignal): Promise<Guest[]> {
+    const suffix = query ? `?q=${encodeURIComponent(query)}` : "";
+    const data = await request<{ attendees: Guest[] }>(`/events/${eventID}/attendees${suffix}`, {
+      signal,
+    });
+    return data.attendees;
   },
 
   /** POST /uploads/images - an event banner (SRS 4.2). */

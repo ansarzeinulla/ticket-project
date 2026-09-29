@@ -561,3 +561,45 @@ func TestInventoryReportsWhatIsLeft(t *testing.T) {
 		t.Errorf("sold_out = %v, want false", res.Body["sold_out"])
 	}
 }
+
+func TestOrganizerSeesOrdersAndAttendees(t *testing.T) {
+	c := newClient(t)
+	owner := c.register("guestlist")
+	other := c.register("guestlistother")
+	eventID, _, ticketTypeID := c.sellableEvent(owner.Token, "Guest List Event", "1000", 10)
+
+	requireStatus(t, c.buy(eventID, ticketTypeID, 2, "Aliya Nurlan", "aliya@biletflow.test"),
+		http.StatusCreated)
+	requireStatus(t, c.buy(eventID, ticketTypeID, 1, "Berik Sadyk", "berik@biletflow.test"),
+		http.StatusCreated)
+
+	path := "/api/v1/events/" + eventID.String()
+
+	orders := c.get(path+"/orders", owner.Token)
+	requireStatus(t, orders, http.StatusOK)
+	list, _ := orders.Body["orders"].([]any)
+	if len(list) != 2 {
+		t.Fatalf("%d orders, want 2", len(list))
+	}
+	// Newest first: Berik ordered last.
+	if first := list[0].(map[string]any); first["buyer_name"] != "Berik Sadyk" {
+		t.Errorf("first order is %v, want the newest (Berik Sadyk)", first["buyer_name"])
+	}
+
+	attendees := c.get(path+"/attendees", owner.Token)
+	requireStatus(t, attendees, http.StatusOK)
+	if total, _ := attendees.Body["total"].(float64); int(total) != 3 {
+		t.Errorf("total = %v, want 3 tickets", attendees.Body["total"])
+	}
+
+	search := c.get(path+"/attendees?q=aliya", owner.Token)
+	requireStatus(t, search, http.StatusOK)
+	if total, _ := search.Body["total"].(float64); int(total) != 2 {
+		t.Errorf("search total = %v, want Aliya's 2 tickets", search.Body["total"])
+	}
+
+	// Nobody else may read who is coming.
+	requireErrorCode(t, c.get(path+"/orders", ""), http.StatusUnauthorized, "unauthorized")
+	requireErrorCode(t, c.get(path+"/orders", other.Token), http.StatusForbidden, "forbidden")
+	requireErrorCode(t, c.get(path+"/attendees", other.Token), http.StatusForbidden, "forbidden")
+}

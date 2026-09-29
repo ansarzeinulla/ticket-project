@@ -253,3 +253,27 @@ export interface CheckoutInput {
   buyer_phone?: string;
   items: { ticket_type_id: string; quantity: number }[];
 }
+
+/** One row of the organizer's order list. */
+export interface EventOrder {
+  id: string;
+  order_number: string;
+  buyer_name: string;
+  buyer_email: string;
+  status: string;
+  total_kzt: Money;
+  ticket_count: number;
+  placed_at?: string;
+  created_at: string;
+}
+
+/** One issued ticket with the person it was issued to. */
+export interface Guest {
+  ticket_id: string;
+  ticket_code: string;
+  full_name: string;
+  email: string;
+  ticket_type_name: string;
+  status: string;
+  order_number: string;
+}
