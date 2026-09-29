@@ -29,6 +29,9 @@ func testConfig(t *testing.T) config.Config {
 		JWTIssuer:      "biletflow-test",
 		AccessTokenTTL: time.Hour,
 		BcryptCost:     bcrypt.MinCost,
+		// Uploads land in a directory the test framework removes afterwards,
+		// so a test run leaves nothing behind on disk.
+		UploadDir: t.TempDir(),
 	}
 }
 
@@ -93,6 +96,17 @@ func (r response) errorFields() map[string]any {
 	}
 	fields, _ := errObj["fields"].(map[string]any)
 	return fields
+}
+
+// event returns the "event" object from a response body.
+func (r response) event() map[string]any {
+	e, _ := r.Body["event"].(map[string]any)
+	return e
+}
+
+func (r response) eventString(key string) string {
+	v, _ := r.event()[key].(string)
+	return v
 }
 
 // do performs a request. An empty token means no Authorization header.
@@ -209,6 +223,38 @@ func (c *client) register(prefix string) account {
 	}
 
 	return account{ID: id, Email: email, Password: password, Token: token}
+}
+
+// validEventBody is a complete, valid create-event payload.
+func validEventBody(title string) map[string]any {
+	start := time.Now().Add(30 * 24 * time.Hour).UTC().Truncate(time.Second)
+	return map[string]any{
+		"title":         title,
+		"description":   "An event created by the integration test suite.",
+		"category":      "music",
+		"venue_name":    "Almaty Demo Hall",
+		"venue_address": "Abay Avenue 44, Almaty",
+		"starts_at":     start.Format(time.RFC3339),
+		"ends_at":       start.Add(3 * time.Hour).Format(time.RFC3339),
+		"timezone":      "Asia/Almaty",
+		"capacity":      200,
+	}
+}
+
+// createEvent posts a valid event and returns its id.
+func (c *client) createEvent(token, title string) (uuid.UUID, response) {
+	c.t.Helper()
+
+	res := c.post("/api/v1/events", token, validEventBody(title))
+	if res.Status != http.StatusCreated {
+		c.t.Fatalf("create event %q: status = %d, body = %s", title, res.Status, res.Raw)
+	}
+
+	id, err := uuid.Parse(res.eventString("id"))
+	if err != nil {
+		c.t.Fatalf("create event %q: id %q is not a uuid", title, res.eventString("id"))
+	}
+	return id, res
 }
 
 // --- assertion helpers -------------------------------------------------------

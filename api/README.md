@@ -6,11 +6,12 @@ week by week.
 
 ---
 
-## What exists today (week 2)
+## What exists today (week 3)
 
-Accounts: register, sign in, read the current account, reset a forgotten
-password and confirm an email address. Emails are not sent yet - they are
-printed to the API's console.
+Accounts (register, sign in, password reset, email confirmation), events with
+their ticket types, a public event page, banner uploads, and a checkout that
+sells tickets in one transaction with a simulated payment. Emails are not sent
+yet - they are printed to the API's console.
 
 ### Layout
 
@@ -22,7 +23,7 @@ api/
   internal/database/         pgx connection pool
   internal/auth/             bcrypt password hashing, JWT issue and parse
   internal/email/            message templates, printed to the console
-  internal/store/            users and single-use account tokens
+  internal/store/            users, tokens, events, ticket types, orders
   internal/api/              routes, middleware, handlers and their tests
 ```
 
@@ -50,6 +51,8 @@ make api-run   # the API on :8080
 | `ACCESS_TOKEN_TTL` | `24h` | lifetime of an access token |
 | `BCRYPT_COST` | `12` | 4-31; the tests use the minimum |
 | `WEB_BASE_URL` | `http://localhost:3000` | where the links in emails point |
+| `API_BASE_URL` | `http://localhost:8080` | this API's public address, used in upload URLs |
+| `UPLOAD_DIR` | `./data/uploads` | where banners are written |
 
 ### Routes
 
@@ -63,6 +66,24 @@ make api-run   # the API on :8080
 | `POST` | `/api/v1/auth/password-reset` | – | `200`; the token works once, for an hour |
 | `POST` | `/api/v1/auth/verify-email` | – | `200`; the account becomes `active` |
 | `POST` | `/api/v1/auth/verify-email/request` | Bearer | `202`; sends a fresh confirmation |
+| `POST` | `/api/v1/events` | Bearer | `201` a draft; creating an event grants the `organizer` role |
+| `GET` | `/api/v1/events` | – | published public events: `limit`, `offset`, `category`, `q`, `starts_after`, `starts_before` |
+| `GET` | `/api/v1/events/mine` | Bearer | the organizer's own events, drafts included; `status` filter |
+| `GET` | `/api/v1/events/{id}` | optional | a draft or private event is visible to its organizer only |
+| `PATCH` | `/api/v1/events/{id}` | Bearer | partial update; an explicit `null` clears a field |
+| `DELETE` | `/api/v1/events/{id}` | Bearer | drafts without orders only |
+| `POST` | `/api/v1/events/{id}/publish` | Bearer | draft or unpublished → published; not once it has ended |
+| `POST` | `/api/v1/events/{id}/unpublish` | Bearer | published → unpublished |
+| `POST` | `/api/v1/events/{id}/cancel` | Bearer | cancels; it stops selling |
+| `GET` | `/api/v1/events/{id}/ticket-types` | Bearer | every type, hidden ones included |
+| `POST` | `/api/v1/events/{id}/ticket-types` | Bearer | `price_kzt` as a string, `"0"` for free |
+| `PATCH` | `/api/v1/ticket-types/{id}` | Bearer | price, stock, sales window, `is_hidden` |
+| `DELETE` | `/api/v1/ticket-types/{id}` | Bearer | only a type with no sales; hide it otherwise |
+| `GET` | `/api/v1/public/events/{slug}` | – | the attendee view: event, on-sale types, `on_sale`, `sold_out` |
+| `POST` | `/api/v1/uploads/images` | Bearer | multipart field `file`; JPEG, PNG, GIF or WebP, 5 MB, at least 200×200 |
+| `POST` | `/api/v1/events/{id}/checkout` | optional | `201` order, tickets and simulated payment |
+| `GET` | `/api/v1/events/{id}/inventory` | optional | what is left of each type |
+| `GET` | `/api/v1/orders/{id}` | optional | the order, its lines and tickets; the UUID is the capability |
 | `GET` | `/dev/config` | – | non-secret settings; not registered when `APP_ENV=production` |
 
 Every request body must be JSON with `Content-Type: application/json`.
@@ -75,6 +96,26 @@ curl -s -X POST localhost:8080/api/v1/auth/register \
 
 The same email in a different case is the same account: `Dana@BiletFlow.kz`
 answers `409`.
+
+### Buying a ticket
+
+```bash
+curl -s -X POST localhost:8080/api/v1/events/$EVENT_ID/checkout \
+  -H 'Content-Type: application/json' \
+  -d '{"buyer_name":"Nurlan","buyer_email":"nurlan@example.kz",
+       "items":[{"ticket_type_id":"'$TYPE_ID'","quantity":2}]}'
+```
+
+- **Money is a decimal string** (`"5000.00"`) end to end and all arithmetic is
+  done by PostgreSQL, so a price never passes through a float.
+- **No overselling.** Each ticket type is locked with `SELECT … FOR UPDATE`
+  before its remaining count is read, in id order so two baskets cannot
+  deadlock. `ticket_types_inventory_chk` is the backstop underneath.
+- A request above what is left answers `409 insufficient_inventory` with the
+  `remaining` count in the body; nothing is written.
+- Free tickets go through the same checkout at a price of zero.
+- There is no real payment: a `payments` row with `is_simulated = true` is
+  written, and the order is `paid` immediately.
 
 ### Where the emails go
 
