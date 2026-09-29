@@ -175,3 +175,11 @@ export interface UploadedImage {
   bytes: number;
   mime_type: string;
 }
+
+/** What the attendee-facing event page returns. */
+export interface PublicEventResponse {
+  event: BiletEvent;
+  ticket_types: TicketType[];
+  on_sale: boolean;
+  sold_out: boolean;
+}

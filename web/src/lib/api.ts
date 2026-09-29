@@ -15,6 +15,7 @@ import type {
   CreateTicketTypeInput,
   EventListResponse,
   EventResponse,
+  PublicEventResponse,
   TicketType,
   TicketTypeListResponse,
   TicketTypeResponse,
@@ -143,6 +144,29 @@ export const api = {
   /** POST /auth/verify-email/request - re-send for the signed-in account. */
   requestEmailVerification(): Promise<AcceptedResponse> {
     return request<AcceptedResponse>("/auth/verify-email/request", { method: "POST" });
+  },
+
+  // --- the public catalogue -----------------------------------------------------
+
+  /** GET /events - published, public events, soonest first. */
+  listPublicEvents(params: { limit?: number; offset?: number } = {}, signal?: AbortSignal) {
+    const query = new URLSearchParams();
+    if (params.limit !== undefined) query.set("limit", String(params.limit));
+    if (params.offset !== undefined) query.set("offset", String(params.offset));
+
+    const suffix = query.size > 0 ? `?${query}` : "";
+    return request<EventListResponse>(`/events${suffix}`, { token: null, signal });
+  },
+
+  /**
+   * GET /public/events/{slug} - needs no token, so it works from a Server
+   * Component as well as from the browser.
+   */
+  getPublicEvent(slug: string, signal?: AbortSignal): Promise<PublicEventResponse> {
+    return request<PublicEventResponse>(`/public/events/${encodeURIComponent(slug)}`, {
+      token: null,
+      signal,
+    });
   },
 
   // --- events (organizer) -------------------------------------------------------
