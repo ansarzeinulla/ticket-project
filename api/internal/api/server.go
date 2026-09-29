@@ -22,7 +22,8 @@ type Server struct {
 	accountTokens *store.TokenStore
 	mailer        *email.Mailer
 
-	events *store.EventStore
+	events      *store.EventStore
+	ticketTypes *store.TicketTypeStore
 
 	hasher *auth.Hasher
 	tokens *auth.TokenService
@@ -44,6 +45,7 @@ func NewWithSender(cfg config.Config, pool *pgxpool.Pool, sender email.Sender) *
 		accountTokens: store.NewTokenStore(pool),
 		mailer:        email.NewMailer(sender, nil),
 		events:        store.NewEventStore(pool),
+		ticketTypes:   store.NewTicketTypeStore(pool),
 		hasher:        auth.NewHasher(cfg.BcryptCost),
 		tokens:        auth.NewTokenService(cfg.JWTSecret, cfg.JWTIssuer, cfg.AccessTokenTTL),
 		now:           time.Now,
@@ -92,6 +94,22 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/events/{id}/publish", s.requireAuth(s.handlePublishEvent))
 	mux.HandleFunc("POST /api/v1/events/{id}/unpublish", s.requireAuth(s.handleUnpublishEvent))
 	mux.HandleFunc("POST /api/v1/events/{id}/cancel", s.requireAuth(s.handleCancelEvent))
+
+	// --- ticket types (organizer) -------------------------------------------
+	mux.HandleFunc("GET /api/v1/events/{id}/ticket-types", s.requireAuth(s.handleListTicketTypes))
+	mux.HandleFunc("POST /api/v1/events/{id}/ticket-types", s.requireAuth(s.handleCreateTicketType))
+	mux.HandleFunc("PATCH /api/v1/ticket-types/{id}", s.requireAuth(s.handleUpdateTicketType))
+	mux.HandleFunc("DELETE /api/v1/ticket-types/{id}", s.requireAuth(s.handleDeleteTicketType))
+
+	// --- attendee-facing ----------------------------------------------------
+	// Addressed by slug, because that is what appears in a shareable link.
+	mux.HandleFunc("GET /api/v1/public/events/{slug}", s.handleGetPublicEvent)
+
+	// --- uploads (SRS 4.2) --------------------------------------------------
+	// Uploading needs an account; reading does not, because a banner is shown
+	// on a public event page to people who are not signed in.
+	mux.HandleFunc("POST /api/v1/uploads/images", s.requireAuth(s.handleUploadImage))
+	mux.Handle("GET "+uploadURLPrefix+"{file}", s.uploadsHandler())
 
 	// No catch-all route: it would shadow ServeMux's own 405 handling.
 	// jsonRouterErrors turns the stdlib's plain-text 404/405 into the envelope.
