@@ -22,11 +22,6 @@ type Server struct {
 	accountTokens *store.TokenStore
 	mailer        *email.Mailer
 
-	events      *store.EventStore
-	ticketTypes *store.TicketTypeStore
-	checkout    *store.CheckoutStore
-	inventory   *store.InventoryStore
-
 	hasher *auth.Hasher
 	tokens *auth.TokenService
 	now    func() time.Time
@@ -46,10 +41,6 @@ func NewWithSender(cfg config.Config, pool *pgxpool.Pool, sender email.Sender) *
 		users:         store.NewUserStore(pool),
 		accountTokens: store.NewTokenStore(pool),
 		mailer:        email.NewMailer(sender, nil),
-		events:        store.NewEventStore(pool),
-		ticketTypes:   store.NewTicketTypeStore(pool),
-		checkout:      store.NewCheckoutStore(pool),
-		inventory:     store.NewInventoryStore(pool),
 		hasher:        auth.NewHasher(cfg.BcryptCost),
 		tokens:        auth.NewTokenService(cfg.JWTSecret, cfg.JWTIssuer, cfg.AccessTokenTTL),
 		now:           time.Now,
@@ -85,42 +76,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/auth/verify-email", s.handleVerifyEmail)
 	mux.HandleFunc("POST /api/v1/auth/verify-email/request",
 		s.requireAuth(s.handleRequestEmailVerification))
-
-	// --- events -------------------------------------------------------------
-	// The literal "/events/mine" pattern is more specific than "/events/{id}",
-	// so Go's ServeMux routes it first.
-	mux.HandleFunc("GET /api/v1/events", s.optionalAuth(s.handleListEvents))
-	mux.HandleFunc("POST /api/v1/events", s.requireAuth(s.handleCreateEvent))
-	mux.HandleFunc("GET /api/v1/events/mine", s.requireAuth(s.handleListMyEvents))
-	mux.HandleFunc("GET /api/v1/events/{id}", s.optionalAuth(s.handleGetEvent))
-	mux.HandleFunc("PATCH /api/v1/events/{id}", s.requireAuth(s.handleUpdateEvent))
-	mux.HandleFunc("DELETE /api/v1/events/{id}", s.requireAuth(s.handleDeleteEvent))
-	mux.HandleFunc("POST /api/v1/events/{id}/publish", s.requireAuth(s.handlePublishEvent))
-	mux.HandleFunc("POST /api/v1/events/{id}/unpublish", s.requireAuth(s.handleUnpublishEvent))
-	mux.HandleFunc("POST /api/v1/events/{id}/cancel", s.requireAuth(s.handleCancelEvent))
-
-	// --- ticket types (organizer) -------------------------------------------
-	mux.HandleFunc("GET /api/v1/events/{id}/ticket-types", s.requireAuth(s.handleListTicketTypes))
-	mux.HandleFunc("POST /api/v1/events/{id}/ticket-types", s.requireAuth(s.handleCreateTicketType))
-	mux.HandleFunc("PATCH /api/v1/ticket-types/{id}", s.requireAuth(s.handleUpdateTicketType))
-	mux.HandleFunc("DELETE /api/v1/ticket-types/{id}", s.requireAuth(s.handleDeleteTicketType))
-
-	// --- attendee-facing ----------------------------------------------------
-	// Addressed by slug, because that is what appears in a shareable link.
-	mux.HandleFunc("GET /api/v1/public/events/{slug}", s.handleGetPublicEvent)
-
-	// --- uploads (SRS 4.2) --------------------------------------------------
-	// Uploading needs an account; reading does not, because a banner is shown
-	// on a public event page to people who are not signed in.
-	mux.HandleFunc("POST /api/v1/uploads/images", s.requireAuth(s.handleUploadImage))
-	mux.Handle("GET "+uploadURLPrefix+"{file}", s.uploadsHandler())
-
-	// --- checkout -----------------------------------------------------------
-	// Checkout takes optionalAuth: guests may buy, and a signed-in buyer gets
-	// the order linked to their account.
-	mux.HandleFunc("POST /api/v1/events/{id}/checkout", s.optionalAuth(s.handleCheckout))
-	mux.HandleFunc("GET /api/v1/events/{id}/inventory", s.optionalAuth(s.handleEventInventory))
-	mux.HandleFunc("GET /api/v1/orders/{id}", s.optionalAuth(s.handleGetOrder))
 
 	// No catch-all route: it would shadow ServeMux's own 405 handling.
 	// jsonRouterErrors turns the stdlib's plain-text 404/405 into the envelope.
