@@ -1,5 +1,6 @@
-import { formatDate, formatPrice } from "@/lib/format";
+import { formatInTimezone } from "@/lib/datetime";
 import { mockEvents } from "@/lib/mock-data";
+import { formatTiyn } from "@/lib/money";
 
 /**
  * The home page lists upcoming events. Until the API is ready it renders
@@ -14,9 +15,11 @@ export default function HomePage() {
           <li key={event.id} className="rounded-lg border border-gray-200 p-4">
             <p className="font-medium">{event.title}</p>
             <p className="text-sm text-gray-500">
-              {event.city} · {formatDate(event.startsAt)}
+              {event.city} · {formatInTimezone(event.startsAt, "Asia/Almaty")}
             </p>
-            <p className="mt-1 text-sm">{formatPrice(event.priceFromKzt)}</p>
+            <p className="mt-1 text-sm">
+              {event.priceFromKzt === 0 ? "Free" : `from ${formatTiyn(event.priceFromKzt * 100)}`}
+            </p>
           </li>
         ))}
       </ul>
