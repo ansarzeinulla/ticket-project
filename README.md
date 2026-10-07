@@ -72,19 +72,37 @@ Client Applications
         |
         v
    PostgreSQL
+```
+
+The web app (Next.js) and the scanner app (Expo) are both clients of the same
+REST API; neither talks to the database.
 
 ## Run it locally
 
-Requires Docker, Go 1.25 and Node 24.
+Requires Docker, Go 1.25 and Node 24. Three terminals:
 
 ```bash
-make up                    # PostgreSQL on localhost:5433, schema applied
-make test                  # database test suite
-cd api && go run ./cmd/api # API on http://localhost:8080
-cd web && npm install && npm run dev   # web on http://localhost:3000
+make up && make seed   # PostgreSQL on localhost:5433, schema applied, demo data loaded
+make api-run           # API on http://localhost:8080
+make web-install && make web-dev   # web on http://localhost:3000
 ```
 
 `make help` lists every target.
+
+## Walk through it
+
+With the three terminals running, the project can be used end to end:
+
+1. **Organizer.** Sign in at <http://localhost:3000/login> as `dana@biletflow.kz`
+   (password `biletflow-demo`), or register a new account. Create an event,
+   add a free and a paid ticket type, and publish it from the dashboard.
+2. **Attendee.** In a private window open <http://localhost:3000/events>, pick the
+   event, choose tickets and pay. The payment is simulated: nothing is charged.
+3. **Back to the organizer.** The event's page on the dashboard now lists the
+   order and every ticket holder.
+
+What each step must do, and what it must refuse, is written down in `1.md`
+(accounts), `2.md` (events and ticket types) and `3.md` (checkout).
 
 ## Checks
 
@@ -93,6 +111,6 @@ The same commands run in CI on every pull request:
 | Command | What it checks |
 | --- | --- |
 | `make test` | database schema tests |
-| `make api-check` | Go formatting, `go vet`, unit tests |
+| `make api-check` | Go formatting, `go vet`, unit and integration tests (needs `make up`) |
 | `make web-check` | ESLint, TypeScript, production build |
 

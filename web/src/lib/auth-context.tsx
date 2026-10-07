@@ -30,6 +30,7 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<User>;
   register: (input: { email: string; password: string; full_name?: string }) => Promise<User>;
   logout: () => void;
+  refresh: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -90,12 +91,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession(signedOut);
   }, []);
 
+  /** Re-read the account, e.g. after creating an event grants a new role. */
+  const refresh = useCallback(async () => {
+    const token = getToken();
+    if (!token) return;
+    try {
+      const me = await api.me(token);
+      setSession({ status: "authenticated", user: me });
+    } catch {
+      // Leave the current session alone; the next API call will surface it.
+    }
+  }, []);
+
   const status: AuthStatus = session ? session.status : "loading";
   const user = session?.user ?? null;
 
   const value = useMemo<AuthContextValue>(
-    () => ({ user, status, login, register, logout }),
-    [user, status, login, register, logout],
+    () => ({ user, status, login, register, logout, refresh }),
+    [user, status, login, register, logout, refresh],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -24,14 +24,15 @@ export function middleware(request: NextRequest) {
   }
 
   if (hasToken && isAuthPage) {
-    return NextResponse.redirect(new URL("/", request.url));
+    return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
   return NextResponse.next();
 }
 
 export const config = {
-  // The organizer area is gated before it exists, so its pages are born
-  // protected. The home page and everything public stay out of the matcher.
-  matcher: ["/dashboard/:path*", "/login", "/register"],
+  // Deliberately NOT "/events/:path*": /events/[slug] is the attendee-facing
+  // page and has to stay reachable without an account. Only the organizer's
+  // create form under /events/new is gated, alongside everything in /dashboard.
+  matcher: ["/dashboard/:path*", "/events/new", "/login", "/register"],
 };

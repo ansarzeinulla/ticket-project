@@ -19,7 +19,13 @@ type Config struct {
 	JWTSecret   string
 	JWTIssuer   string
 	// WebBaseURL is where the web app lives. Account emails link into it.
-	WebBaseURL     string
+	WebBaseURL string
+	// APIBaseURL is this API's own public address, for links that point back
+	// at it - an uploaded banner, for one.
+	APIBaseURL string
+	// UploadDir is where event banners are written. Local disk stands in for
+	// object storage in this MVP.
+	UploadDir      string
 	AccessTokenTTL time.Duration
 	BcryptCost     int
 }
@@ -39,6 +45,8 @@ func Load() (Config, error) {
 		DatabaseURL: envString("DATABASE_URL",
 			"postgres://biletflow:biletflow_dev_password@localhost:5433/biletflow?sslmode=disable"),
 		WebBaseURL: strings.TrimRight(envString("WEB_BASE_URL", "http://localhost:3000"), "/"),
+		APIBaseURL: strings.TrimRight(envString("API_BASE_URL", "http://localhost:8080"), "/"),
+		UploadDir:  envString("UPLOAD_DIR", "./data/uploads"),
 	}
 
 	var err error
