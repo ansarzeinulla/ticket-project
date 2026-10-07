@@ -3,14 +3,16 @@ import { notFound } from "next/navigation";
 
 import { ApiError, api } from "@/lib/api";
 import { formatInTimezone } from "@/lib/datetime";
-import { formatKZT } from "@/lib/money";
+
+import { TicketSelector } from "./ticket-selector";
 
 /**
  * The attendee-facing event page.
  *
  * A Server Component: the public endpoint needs no token, so the event and its
  * remaining stock are fetched on the server. That gives a real HTML page for
- * sharing and search, with no loading flash.
+ * sharing and search, with no loading flash. Only the ticket selector and its
+ * checkout are interactive, and they are a Client Component below.
  */
 export default async function PublicEventPage({
   params,
@@ -79,44 +81,13 @@ export default async function PublicEventPage({
           </p>
         )}
 
-        <section className="space-y-3">
-          <h2 className="text-lg font-semibold">Tickets</h2>
-
-          {ticketTypes.length === 0 ? (
-            <p className="text-sm text-foreground-muted">
-              The organizer has not published any ticket types for this event yet.
-            </p>
-          ) : (
-            <ul className="divide-y divide-border-subtle rounded-xl border border-border-subtle bg-surface">
-              {ticketTypes.map((type) => (
-                <li key={type.id} className="flex items-center justify-between gap-4 p-4">
-                  <div>
-                    <p className="font-medium">{type.name}</p>
-                    {type.description && (
-                      <p className="text-sm text-foreground-muted">{type.description}</p>
-                    )}
-                  </div>
-                  <div className="text-right">
-                    <p className="font-medium">{type.is_free ? "Free" : formatKZT(type.price_kzt)}</p>
-                    <p className="text-xs text-foreground-muted">
-                      {type.quantity_remaining > 0
-                        ? `${type.quantity_remaining} of ${type.quantity_total} left`
-                        : "Sold out"}
-                    </p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          {soldOut ? (
-            <p className="text-sm font-medium text-danger">Every ticket for this event has been taken.</p>
-          ) : !onSale && ticketTypes.length > 0 ? (
-            <p className="text-sm text-foreground-muted">
-              Tickets for this event are not currently available.
-            </p>
-          ) : null}
-        </section>
+        <TicketSelector
+          eventID={event.id}
+          eventTitle={event.title}
+          ticketTypes={ticketTypes}
+          onSale={onSale}
+          soldOut={soldOut}
+        />
 
         {event.refund_policy && (
           <section className="rounded-xl border border-border-subtle bg-surface p-5">
