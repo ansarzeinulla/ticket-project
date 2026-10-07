@@ -28,7 +28,7 @@ export function LoginForm() {
   const nextParam = searchParams.get("next");
   const destination = nextParam && nextParam.startsWith("/") && !nextParam.startsWith("//")
     ? nextParam
-    : "/";
+    : "/dashboard";
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

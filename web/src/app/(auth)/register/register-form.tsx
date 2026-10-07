@@ -50,7 +50,7 @@ export function RegisterForm() {
         // The API derives a name from the email when this is omitted.
         full_name: fullName.trim() || undefined,
       });
-      router.replace("/");
+      router.replace("/dashboard");
       router.refresh();
     } catch (error) {
       if (error instanceof ApiError) {
