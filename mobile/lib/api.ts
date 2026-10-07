@@ -1,6 +1,6 @@
 import { API_BASE_URL } from "./config";
 import { loadToken } from "./session";
-import type { AuthResponse, MobileEvent, User } from "./types";
+import type { AuthResponse, User } from "./types";
 
 /** A failed API call, carrying the code from the Go error envelope. */
 export class ApiError extends Error {
@@ -16,11 +16,6 @@ export class ApiError extends Error {
 
   get isNetworkError(): boolean {
     return this.status === 0;
-  }
-
-  /** A session that the API no longer accepts; the app returns to sign-in. */
-  get isSessionExpired(): boolean {
-    return this.status === 401;
   }
 }
 
@@ -92,11 +87,5 @@ export const api = {
   async me(token?: string): Promise<User> {
     const data = await request<{ user: User }>("/auth/me", { token });
     return data.user;
-  },
-
-  /** The signed-in organizer's published events. */
-  async myPublishedEvents(): Promise<MobileEvent[]> {
-    const data = await request<{ events: MobileEvent[] }>("/events/mine?status=published&limit=100");
-    return data.events;
   },
 };

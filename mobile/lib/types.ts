@@ -13,15 +13,3 @@ export interface AuthResponse {
   access_token: string;
   expires_at: string;
 }
-
-/** An event as the device lists it. */
-export interface MobileEvent {
-  id: string;
-  title: string;
-  slug: string;
-  starts_at: string;
-  ends_at: string;
-  timezone: string;
-  venue_name?: string;
-  status: string;
-}

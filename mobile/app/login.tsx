@@ -34,7 +34,7 @@ export default function LoginScreen() {
   }, [lastEmail]);
 
   useEffect(() => {
-    if (status === "signedIn") router.replace("/events");
+    if (status === "signedIn") router.replace("/");
   }, [status]);
 
   async function handleSignIn() {
@@ -48,7 +48,7 @@ export default function LoginScreen() {
     setSubmitting(true);
     try {
       await signIn(email.trim().toLowerCase(), password);
-      router.replace("/events");
+      router.replace("/");
     } catch (cause) {
       if (cause instanceof ApiError) {
         setError(
