@@ -84,6 +84,8 @@ make api-run   # the API on :8080
 | `POST` | `/api/v1/events/{id}/checkout` | optional | `201` order, tickets and simulated payment |
 | `GET` | `/api/v1/events/{id}/inventory` | optional | what is left of each type |
 | `GET` | `/api/v1/orders/{id}` | optional | the order, its lines and tickets; the UUID is the capability |
+| `GET` | `/api/v1/events/{id}/orders` | Bearer | the organizer's order list, newest first |
+| `GET` | `/api/v1/events/{id}/attendees` | Bearer | ticket holders, `q` searches name, email, code, order |
 | `GET` | `/dev/config` | – | non-secret settings; not registered when `APP_ENV=production` |
 
 Every request body must be JSON with `Content-Type: application/json`.

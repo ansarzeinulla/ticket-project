@@ -26,6 +26,7 @@ type Server struct {
 	ticketTypes *store.TicketTypeStore
 	checkout    *store.CheckoutStore
 	inventory   *store.InventoryStore
+	guests      *store.GuestStore
 
 	hasher *auth.Hasher
 	tokens *auth.TokenService
@@ -50,6 +51,7 @@ func NewWithSender(cfg config.Config, pool *pgxpool.Pool, sender email.Sender) *
 		ticketTypes:   store.NewTicketTypeStore(pool),
 		checkout:      store.NewCheckoutStore(pool),
 		inventory:     store.NewInventoryStore(pool),
+		guests:        store.NewGuestStore(pool),
 		hasher:        auth.NewHasher(cfg.BcryptCost),
 		tokens:        auth.NewTokenService(cfg.JWTSecret, cfg.JWTIssuer, cfg.AccessTokenTTL),
 		now:           time.Now,
@@ -121,6 +123,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/events/{id}/checkout", s.optionalAuth(s.handleCheckout))
 	mux.HandleFunc("GET /api/v1/events/{id}/inventory", s.optionalAuth(s.handleEventInventory))
 	mux.HandleFunc("GET /api/v1/orders/{id}", s.optionalAuth(s.handleGetOrder))
+
+	// --- who is coming (organizer) ------------------------------------------
+	mux.HandleFunc("GET /api/v1/events/{id}/orders", s.requireAuth(s.handleListEventOrders))
+	mux.HandleFunc("GET /api/v1/events/{id}/attendees", s.requireAuth(s.handleListAttendees))
 
 	// No catch-all route: it would shadow ServeMux's own 405 handling.
 	// jsonRouterErrors turns the stdlib's plain-text 404/405 into the envelope.
