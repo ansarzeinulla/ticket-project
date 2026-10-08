@@ -6,6 +6,8 @@ import (
 	"encoding/base32"
 	"errors"
 	"fmt"
+	"math/big"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -73,13 +75,22 @@ type Payment struct {
 	PaidAt      time.Time `json:"paid_at"`
 }
 
+// AppliedPromo describes the discount an order actually received.
+type AppliedPromo struct {
+	CampaignID   uuid.UUID `json:"campaign_id"`
+	CampaignName string    `json:"campaign_name"`
+	Code         string    `json:"code"`
+	DiscountKZT  string    `json:"discount_kzt"`
+}
+
 // CheckoutResult is everything the confirmation screen needs.
 type CheckoutResult struct {
-	Order    Order       `json:"order"`
-	Items    []OrderItem `json:"items"`
-	Attendee Attendee    `json:"attendee"`
-	Tickets  []Ticket    `json:"tickets"`
-	Payment  Payment     `json:"payment"`
+	Order    Order         `json:"order"`
+	Items    []OrderItem   `json:"items"`
+	Attendee Attendee      `json:"attendee"`
+	Tickets  []Ticket      `json:"tickets"`
+	Payment  Payment       `json:"payment"`
+	Promo    *AppliedPromo `json:"promo,omitempty"`
 }
 
 // CheckoutItem is one requested line.
@@ -96,6 +107,15 @@ type CheckoutParams struct {
 	BuyerEmail  string
 	BuyerPhone  *string
 	Items       []CheckoutItem
+	// SeatIDs are the specific seats an assigned-seating purchase is for
+	// (SRS 4.3.1). Empty for general admission.
+	SeatIDs []uuid.UUID
+
+	// Promo is the campaign to apply, already resolved and validated by the
+	// caller. It is re-checked here under a row lock, because validation and
+	// purchase are separate moments and the last redemption may have gone in
+	// between them.
+	Promo *Campaign
 }
 
 // InsufficientInventoryError reports that a ticket type cannot cover the
@@ -139,15 +159,61 @@ func (e *ExceedsMaxPerOrderError) Error() string {
 		e.MaxPerOrder, e.TicketTypeName, e.Requested)
 }
 
-// CheckoutStore performs the purchase transaction.
-type CheckoutStore struct {
-	pool *pgxpool.Pool
+// PaidSalesNotActiveError reports a paid ticket bought before the organizer
+// finished the activation checklist (SRS 4.5).
+type PaidSalesNotActiveError struct {
+	// Status is the activation's current state, which decides whether the
+	// attendee is told "not yet on sale" or "suspended".
+	Status string
 }
 
-// NewCheckoutStore builds a CheckoutStore.
-func NewCheckoutStore(pool *pgxpool.Pool) *CheckoutStore {
-	return &CheckoutStore{pool: pool}
+func (e *PaidSalesNotActiveError) Error() string {
+	if e.Status == ActivationSuspended {
+		return "paid ticket sales for this event have been suspended"
+	}
+	return "paid ticket sales for this event have not been activated yet"
 }
+
+// isPositiveAmount reports whether a decimal money string is above zero.
+//
+// The string comes from numeric(14,2), so it is always a plain decimal - but
+// it is parsed rather than compared against "0.00" because "0" and "0.000"
+// are the same amount written differently.
+func isPositiveAmount(s string) bool {
+	amount, ok := new(big.Rat).SetString(s)
+	if !ok {
+		// An unparseable price is not a licence to sell it for free.
+		return true
+	}
+	return amount.Sign() > 0
+}
+
+// CheckoutStore performs the reservation and purchase transactions.
+type CheckoutStore struct {
+	pool *pgxpool.Pool
+	// fees is the processing charge this deployment applies (SRS 3.3).
+	fees Fees
+}
+
+// NewCheckoutStore builds a CheckoutStore charging the default fee.
+func NewCheckoutStore(pool *pgxpool.Pool) *CheckoutStore {
+	return &CheckoutStore{pool: pool, fees: DefaultFees}
+}
+
+// NewCheckoutStoreWithFees builds one with an explicit fee schedule, which is
+// what lets a deployment configure the charge and a test pin it.
+func NewCheckoutStoreWithFees(pool *pgxpool.Pool, fees Fees) *CheckoutStore {
+	if fees.Percent == "" {
+		fees.Percent = DefaultFees.Percent
+	}
+	if fees.FixedKZT == "" {
+		fees.FixedKZT = DefaultFees.FixedKZT
+	}
+	return &CheckoutStore{pool: pool, fees: fees}
+}
+
+// Fees reports the schedule in force, so the API can quote it.
+func (s *CheckoutStore) Fees() Fees { return s.fees }
 
 // lockedTicketType is the inventory snapshot read under a row lock.
 type lockedTicketType struct {
@@ -161,8 +227,7 @@ type lockedTicketType struct {
 	salesEndAt   *time.Time
 }
 
-// Checkout sells tickets in a single transaction: stock, order, lines,
-// attendee, tickets and the simulated payment either all happen or none do.
+// Checkout sells tickets in a single transaction.
 //
 // Overselling is prevented by taking a row lock on each ticket type with
 // SELECT ... FOR UPDATE before reading the remaining count. Concurrent
@@ -174,21 +239,62 @@ type lockedTicketType struct {
 // The ticket_types_inventory_chk constraint is the backstop: even if this
 // logic were wrong, the database would refuse to record the oversold row.
 func (s *CheckoutStore) Checkout(ctx context.Context, p CheckoutParams) (CheckoutResult, error) {
-	if len(p.Items) == 0 {
-		return CheckoutResult{}, ErrNotFound
-	}
-
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return CheckoutResult{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	now := time.Now().UTC()
+	// Reserve, then sell, in one transaction.
+	//
+	// The two halves are the same code the cart flow uses: a one-shot purchase
+	// is a hold that is paid for immediately, not a second implementation of
+	// buying a ticket. That is what keeps the inventory arithmetic in one
+	// place rather than in two that can drift.
+	held, err := s.hold(ctx, tx, HoldParams{
+		EventID:     p.EventID,
+		BuyerUserID: p.BuyerUserID,
+		BuyerName:   p.BuyerName,
+		BuyerEmail:  p.BuyerEmail,
+		Items:       p.Items,
+		SeatIDs:     p.SeatIDs,
+	})
+	if err != nil {
+		return CheckoutResult{}, err
+	}
 
-	// --- 1. Lock and check every requested ticket type ----------------------
-	ids := make([]uuid.UUID, 0, len(p.Items))
-	for _, item := range p.Items {
+	result, err := s.confirm(ctx, tx, ConfirmParams{
+		OrderID:     held.OrderID,
+		BuyerUserID: p.BuyerUserID,
+		BuyerName:   p.BuyerName,
+		BuyerEmail:  p.BuyerEmail,
+		BuyerPhone:  p.BuyerPhone,
+		Promo:       p.Promo,
+	})
+	if err != nil {
+		return CheckoutResult{}, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return CheckoutResult{}, mapError(err)
+	}
+	return result, nil
+}
+
+// --- the pieces both flows share ---------------------------------------------
+
+// lockTicketTypes takes a row lock on every tier in the basket.
+//
+// Overselling is prevented by locking before reading the remaining count.
+// Concurrent baskets for the same tier therefore queue behind each other
+// instead of both reading the same "remaining" and both succeeding. Rows are
+// locked in a deterministic id order so two baskets touching the same pair of
+// tiers cannot deadlock.
+func lockTicketTypes(
+	ctx context.Context, tx pgx.Tx, eventID uuid.UUID, items []CheckoutItem,
+) (map[uuid.UUID]lockedTicketType, error) {
+	ids := make([]uuid.UUID, 0, len(items))
+	for _, item := range items {
 		ids = append(ids, item.TicketTypeID)
 	}
 
@@ -199,132 +305,167 @@ func (s *CheckoutStore) Checkout(ctx context.Context, p CheckoutParams) (Checkou
 		  FROM ticket_types
 		 WHERE id = ANY($1) AND event_id = $2
 		 ORDER BY id
-		   FOR UPDATE`, ids, p.EventID)
+		   FOR UPDATE`, ids, eventID)
 	if err != nil {
-		return CheckoutResult{}, mapError(err)
+		return nil, mapError(err)
 	}
+	defer rows.Close()
+
 	locked := map[uuid.UUID]lockedTicketType{}
 	for rows.Next() {
 		var t lockedTicketType
 		if err := rows.Scan(&t.id, &t.name, &t.priceKZT, &t.remaining,
 			&t.maxPerOrder, &t.isHidden, &t.salesStartAt, &t.salesEndAt); err != nil {
-			rows.Close()
-			return CheckoutResult{}, err
+			return nil, err
 		}
 		locked[t.id] = t
 	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return CheckoutResult{}, mapError(err)
-	}
+	return locked, mapError(rows.Err())
+}
 
-	for _, item := range p.Items {
+// validateBasket checks every line against the locked snapshot.
+func validateBasket(
+	ctx context.Context, tx pgx.Tx, eventID uuid.UUID, items []CheckoutItem,
+	locked map[uuid.UUID]lockedTicketType, now time.Time,
+) error {
+	for _, item := range items {
 		t, ok := locked[item.TicketTypeID]
 		if !ok {
-			return CheckoutResult{}, ErrNotFound
+			return ErrNotFound
 		}
 		if t.isHidden {
-			return CheckoutResult{}, &NotOnSaleError{t.id, t.name, "it is not currently offered"}
+			return &NotOnSaleError{t.id, t.name, "it is not currently offered"}
 		}
 		if t.salesStartAt != nil && now.Before(*t.salesStartAt) {
-			return CheckoutResult{}, &NotOnSaleError{t.id, t.name, "sales have not opened yet"}
+			return &NotOnSaleError{t.id, t.name, "sales have not opened yet"}
 		}
 		if t.salesEndAt != nil && !now.Before(*t.salesEndAt) {
-			return CheckoutResult{}, &NotOnSaleError{t.id, t.name, "sales have closed"}
+			return &NotOnSaleError{t.id, t.name, "sales have closed"}
 		}
 		if item.Quantity > t.maxPerOrder {
-			return CheckoutResult{}, &ExceedsMaxPerOrderError{t.id, t.name, item.Quantity, t.maxPerOrder}
+			return &ExceedsMaxPerOrderError{t.id, t.name, item.Quantity, t.maxPerOrder}
 		}
 		if item.Quantity > t.remaining {
-			return CheckoutResult{}, &InsufficientInventoryError{t.id, t.name, item.Quantity, t.remaining}
+			return &InsufficientInventoryError{t.id, t.name, item.Quantity, t.remaining}
 		}
 	}
 
-	// --- 2. Take the stock --------------------------------------------------
-	for _, item := range p.Items {
-		if _, err := tx.Exec(ctx, `
-			UPDATE ticket_types SET quantity_sold = quantity_sold + $2::int WHERE id = $1`,
-			item.TicketTypeID, item.Quantity); err != nil {
-			return CheckoutResult{}, mapError(err)
+	// Paid tickets need an activated event (SRS 4.5). The check lives inside
+	// the transaction, next to the prices it depends on: reading the
+	// activation in the handler would leave a window where an admin suspends
+	// paid sales between the check and the sale.
+	//
+	// Free tickets are unaffected - activation exists to gate money, and a
+	// free registration takes none.
+	paid := false
+	for _, item := range items {
+		if isPositiveAmount(locked[item.TicketTypeID].priceKZT) {
+			paid = true
+			break
 		}
 	}
-
-	// --- 3. The order and its lines -----------------------------------------
-	orderNumber, err := newCode("BF", "-", 10)
-	if err != nil {
-		return CheckoutResult{}, err
+	if !paid {
+		return nil
 	}
 
-	// Inserted at zero and summed below: orders_total_math_chk requires
-	// total = subtotal - discount + fee after every statement.
-	var order Order
-	err = tx.QueryRow(ctx, `
-		INSERT INTO orders (order_number, event_id, buyer_user_id, buyer_email, buyer_name,
-		                    buyer_phone, status, subtotal_kzt, discount_kzt,
-		                    processing_fee_kzt, total_kzt, placed_at)
-		VALUES ($1, $2, $3, $4, $5, $6, 'pending', 0, 0, 0, 0, now())
-		RETURNING id, order_number, event_id, buyer_user_id, buyer_email::text, buyer_name,
-		          currency, created_at`,
-		orderNumber, p.EventID, p.BuyerUserID, p.BuyerEmail, p.BuyerName, p.BuyerPhone,
-	).Scan(&order.ID, &order.OrderNumber, &order.EventID, &order.BuyerUserID,
-		&order.BuyerEmail, &order.BuyerName, &order.Currency, &order.CreatedAt)
-	if err != nil {
-		return CheckoutResult{}, mapError(err)
+	var activationStatus string
+	err := tx.QueryRow(ctx,
+		`SELECT status::text FROM paid_sales_activations WHERE event_id = $1`,
+		eventID).Scan(&activationStatus)
+	if errors.Is(err, pgx.ErrNoRows) {
+		activationStatus = ActivationNotStarted
+	} else if err != nil {
+		return mapError(err)
 	}
+	if activationStatus != ActivationActive {
+		return &PaidSalesNotActiveError{Status: activationStatus}
+	}
+	return nil
+}
 
-	items := make([]OrderItem, 0, len(p.Items))
-	for _, item := range p.Items {
+// insertOrderItems writes the basket's lines, with the money arithmetic done
+// by PostgreSQL.
+func insertOrderItems(
+	ctx context.Context, tx pgx.Tx, orderID uuid.UUID, items []CheckoutItem,
+	locked map[uuid.UUID]lockedTicketType, seatIDs []uuid.UUID,
+) ([]OrderItem, error) {
+	out := make([]OrderItem, 0, len(items))
+	seatCursor := 0
+
+	for _, item := range items {
 		t := locked[item.TicketTypeID]
+
+		// An assigned-seating line carries the seat it is for (SRS 4.3.1,
+		// "the assigned section, row and seat number shall be stored on the
+		// ticket and order item"). Seats are consumed in the order given.
+		var seatID *uuid.UUID
+		if seatCursor < len(seatIDs) {
+			seat := seatIDs[seatCursor]
+			seatID = &seat
+			seatCursor++
+		}
 
 		var oi OrderItem
 		err := tx.QueryRow(ctx, `
-			INSERT INTO order_items (order_id, ticket_type_id, quantity,
+			INSERT INTO order_items (order_id, ticket_type_id, seat_id, quantity,
 			                         unit_price_kzt, discount_kzt, line_total_kzt)
-			-- Both uses of $3 are cast, otherwise PostgreSQL cannot deduce one
+			-- Both uses of $4 are cast, otherwise PostgreSQL cannot deduce one
 			-- type for a parameter that is an integer column and a numeric
 			-- operand in the same statement (SQLSTATE 42P08).
-			VALUES ($1, $2, $3::int, $4::numeric, 0, $4::numeric * $3::int)
+			VALUES ($1, $2, $3, $4::int, $5::numeric, 0, $5::numeric * $4::int)
 			RETURNING id, order_id, ticket_type_id, quantity,
 			          unit_price_kzt::text, line_total_kzt::text`,
-			order.ID, item.TicketTypeID, item.Quantity, t.priceKZT,
+			orderID, item.TicketTypeID, seatID, item.Quantity, t.priceKZT,
 		).Scan(&oi.ID, &oi.OrderID, &oi.TicketTypeID, &oi.Quantity,
 			&oi.UnitPriceKZT, &oi.LineTotalKZT)
 		if err != nil {
-			return CheckoutResult{}, mapError(err)
+			return nil, mapError(err)
 		}
 		oi.TicketTypeName = t.name
-		items = append(items, oi)
+		out = append(out, oi)
 	}
+	return out, nil
+}
 
-	// The simulated payment succeeds immediately, so the order is paid. The
-	// money is summed by PostgreSQL, never by a float.
-	err = tx.QueryRow(ctx, `
-		UPDATE orders
-		   SET subtotal_kzt = sums.subtotal,
-		       total_kzt    = sums.subtotal,
-		       status       = 'paid',
-		       completed_at = now()
-		  FROM (SELECT COALESCE(sum(line_total_kzt), 0) AS subtotal
-		          FROM order_items WHERE order_id = $1) AS sums
-		 WHERE orders.id = $1
-		RETURNING subtotal_kzt::text, discount_kzt::text, processing_fee_kzt::text,
-		          total_kzt::text, status::text, placed_at, completed_at`, order.ID,
-	).Scan(&order.SubtotalKZT, &order.DiscountKZT, &order.ProcessingFeeKZT,
-		&order.TotalKZT, &order.Status, &order.PlacedAt, &order.CompletedAt)
+// orderItemsFor reads back the lines of an existing order.
+func orderItemsFor(ctx context.Context, tx pgx.Tx, orderID uuid.UUID) ([]OrderItem, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT oi.id, oi.order_id, oi.ticket_type_id, tt.name, oi.quantity,
+		       oi.unit_price_kzt::text, oi.line_total_kzt::text
+		  FROM order_items oi
+		  JOIN ticket_types tt ON tt.id = oi.ticket_type_id
+		 WHERE oi.order_id = $1
+		 ORDER BY oi.id`, orderID)
 	if err != nil {
-		return CheckoutResult{}, mapError(err)
+		return nil, mapError(err)
 	}
+	defer rows.Close()
 
-	// --- 4. The attendee and one ticket per admission -----------------------
+	out := []OrderItem{}
+	for rows.Next() {
+		var oi OrderItem
+		if err := rows.Scan(&oi.ID, &oi.OrderID, &oi.TicketTypeID, &oi.TicketTypeName,
+			&oi.Quantity, &oi.UnitPriceKZT, &oi.LineTotalKZT); err != nil {
+			return nil, err
+		}
+		out = append(out, oi)
+	}
+	return out, mapError(rows.Err())
+}
+
+// issueTickets creates the attendee and one ticket per seat sold.
+func issueTickets(
+	ctx context.Context, tx pgx.Tx, order Order, items []OrderItem,
+) (Attendee, []Ticket, error) {
 	var attendee Attendee
-	err = tx.QueryRow(ctx, `
+	err := tx.QueryRow(ctx, `
 		INSERT INTO attendees (order_id, user_id, full_name, email)
 		VALUES ($1, $2, $3, $4)
 		RETURNING id, order_id, full_name, email`,
 		order.ID, order.BuyerUserID, order.BuyerName, order.BuyerEmail,
 	).Scan(&attendee.ID, &attendee.OrderID, &attendee.FullName, &attendee.Email)
 	if err != nil {
-		return CheckoutResult{}, mapError(err)
+		return Attendee{}, nil, mapError(err)
 	}
 
 	tickets := []Ticket{}
@@ -332,38 +473,52 @@ func (s *CheckoutStore) Checkout(ctx context.Context, p CheckoutParams) (Checkou
 		for n := 0; n < item.Quantity; n++ {
 			ticketCode, err := newCode("BF-TKT", "-", 10)
 			if err != nil {
-				return CheckoutResult{}, err
+				return Attendee{}, nil, err
 			}
 			// The TKT_ prefix is enforced by tickets_qr_token_prefix_chk and is
 			// what keeps an admission QR distinct from a campaign QR (SRS 4.14).
+			//
 			// The body is a fresh random UUID, not the ticket's own id: a ticket
-			// id travels in URLs and must not double as an admission credential.
+			// id travels in URLs and logs, and it must not double as a working
+			// admission credential.
 			qrToken := "TKT_" + uuid.NewString()
 
 			var ticket Ticket
 			err = tx.QueryRow(ctx, `
 				INSERT INTO tickets (ticket_code, order_id, order_item_id, event_id,
-				                     ticket_type_id, attendee_id, qr_token, status)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, 'valid')
+				                     ticket_type_id, attendee_id, qr_token, status,
+				                     seat_id, seat_section, seat_row, seat_number)
+				SELECT $1, $2, oi.id, $3, oi.ticket_type_id, $4, $5, 'valid',
+				       oi.seat_id, vs.name, sr.label, st.seat_number
+				  FROM order_items oi
+				  LEFT JOIN seats st         ON st.id = oi.seat_id
+				  LEFT JOIN seat_rows sr     ON sr.id = st.row_id
+				  LEFT JOIN venue_sections vs ON vs.id = sr.section_id
+				 WHERE oi.id = $6
 				RETURNING id, ticket_code, qr_token, ticket_type_id, status::text, issued_at`,
-				ticketCode, order.ID, item.ID, order.EventID, item.TicketTypeID,
-				attendee.ID, qrToken,
+				ticketCode, order.ID, order.EventID, attendee.ID, qrToken, item.ID,
 			).Scan(&ticket.ID, &ticket.TicketCode, &ticket.QRToken,
 				&ticket.TicketTypeID, &ticket.Status, &ticket.IssuedAt)
 			if err != nil {
-				return CheckoutResult{}, mapError(err)
+				return Attendee{}, nil, mapError(err)
 			}
 			ticket.TicketTypeName = item.TicketTypeName
 			tickets = append(tickets, ticket)
 		}
 	}
+	return attendee, tickets, nil
+}
 
-	// --- 5. The simulated payment -------------------------------------------
-	// is_simulated is set explicitly as well as defaulting true in the schema:
-	// SRS 4.6 requires that demonstration payments are never presented as real
-	// financial transactions.
+// recordPayment writes the simulated payment.
+//
+// is_simulated is set explicitly as well as defaulting true in the schema: SRS
+// 4.6 requires that demonstration payments are never presented as real
+// financial transactions, and that is worth stating twice.
+func recordPayment(
+	ctx context.Context, tx pgx.Tx, order Order, now time.Time,
+) (Payment, error) {
 	var payment Payment
-	err = tx.QueryRow(ctx, `
+	err := tx.QueryRow(ctx, `
 		INSERT INTO payments (purpose, order_id, payer_user_id, amount_kzt, status,
 		                      provider, provider_payment_ref, is_simulated, paid_at)
 		VALUES ('ticket_order', $1, $2, $3::numeric, 'succeeded', 'simulated', $4, true, $5)
@@ -371,15 +526,125 @@ func (s *CheckoutStore) Checkout(ctx context.Context, p CheckoutParams) (Checkou
 		order.ID, order.BuyerUserID, order.TotalKZT, "sim_"+order.OrderNumber, now,
 	).Scan(&payment.ID, &payment.AmountKZT, &payment.Status,
 		&payment.Provider, &payment.IsSimulated, &payment.PaidAt)
-	if err != nil {
-		return CheckoutResult{}, mapError(err)
+	return payment, mapError(err)
+}
+
+// applyPromo redeems a campaign against an order, inside the checkout
+// transaction.
+//
+// The campaign row is locked with FOR UPDATE and its limit re-checked here,
+// not just when the attendee typed the code: validation and payment are
+// separate moments, and the last redemption may have been taken in between.
+// campaigns_redemption_limit_chk is the backstop if this logic were ever wrong.
+func applyPromo(
+	ctx context.Context, tx pgx.Tx, promo *Campaign, orderID uuid.UUID, userID *uuid.UUID,
+) (*AppliedPromo, error) {
+	if promo == nil {
+		return nil, nil
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return CheckoutResult{}, mapError(err)
+	var (
+		discountType   string
+		discountValue  string
+		maxRedemptions *int
+		redeemed       int
+		status         string
+	)
+	err := tx.QueryRow(ctx, `
+		SELECT discount_type::text, discount_value::text, max_redemptions,
+		       redemption_count, status::text
+		  FROM campaigns WHERE id = $1 FOR UPDATE`, promo.ID,
+	).Scan(&discountType, &discountValue, &maxRedemptions, &redeemed, &status)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrPromoNotFound
 	}
-	return CheckoutResult{
-		Order: order, Items: items, Attendee: attendee, Tickets: tickets, Payment: payment,
+	if err != nil {
+		return nil, mapError(err)
+	}
+
+	// Exhaustion is checked before the general status, and both before the
+	// discount is computed. The winner of a race marks the campaign exhausted,
+	// so everyone behind it must be told "fully redeemed" rather than the
+	// vaguer "not active" - the attendee needs to know the code was real but
+	// is gone, not that they mistyped it.
+	if status == CampaignExhausted ||
+		(maxRedemptions != nil && redeemed >= *maxRedemptions) {
+		return nil, ErrPromoExhausted
+	}
+	if status != CampaignActive {
+		return nil, ErrPromoNotActive
+	}
+
+	// The discount is computed by PostgreSQL over the order's own lines, so no
+	// amount is ever taken from the client and no float touches the money.
+	// Only lines the campaign covers count towards it.
+	var discount string
+	err = tx.QueryRow(ctx, `
+		WITH eligible AS (
+			SELECT COALESCE(sum(oi.line_total_kzt), 0) AS base
+			  FROM order_items oi
+			 WHERE oi.order_id = $1
+			   AND (NOT EXISTS (SELECT 1 FROM campaign_ticket_types WHERE campaign_id = $2)
+			        OR oi.ticket_type_id IN (
+			             SELECT ticket_type_id FROM campaign_ticket_types WHERE campaign_id = $2))
+		)
+		SELECT CASE
+		         WHEN $3 = 'percentage' THEN round(base * $4::numeric / 100, 2)
+		         ELSE least($4::numeric, base)
+		       END::text
+		  FROM eligible`,
+		orderID, promo.ID, discountType, discountValue).Scan(&discount)
+	if err != nil {
+		return nil, mapError(err)
+	}
+
+	// discount and total move together: orders_total_math_chk requires
+	// total = subtotal - discount + fee to hold after every statement.
+	if _, err := tx.Exec(ctx, `
+		UPDATE orders
+		   SET discount_kzt = $2::numeric,
+		       total_kzt    = subtotal_kzt - $2::numeric + processing_fee_kzt,
+		       campaign_id  = $3,
+		       promo_code_id = $4
+		 WHERE id = $1`, orderID, discount, promo.ID, promo.CodeID); err != nil {
+		return nil, mapError(err)
+	}
+
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO promo_redemptions (campaign_id, promo_code_id, order_id, user_id, discount_kzt)
+		VALUES ($1, $2, $3, $4, $5::numeric)`,
+		promo.ID, promo.CodeID, orderID, userID, discount); err != nil {
+		return nil, mapError(err)
+	}
+
+	// Increment last, so the constraint fires here if anything slipped through.
+	var newCount int
+	if err := tx.QueryRow(ctx, `
+		UPDATE campaigns SET redemption_count = redemption_count + 1
+		 WHERE id = $1
+		RETURNING redemption_count`, promo.ID).Scan(&newCount); err != nil {
+		var constraintErr *ConstraintError
+		mapped := mapError(err)
+		if errors.As(mapped, &constraintErr) &&
+			constraintErr.Constraint == "campaigns_redemption_limit_chk" {
+			return nil, ErrPromoExhausted
+		}
+		return nil, mapped
+	}
+
+	// A campaign that has just run out is marked so, which is what makes the
+	// organizer dashboard and the checkout agree without a background job.
+	if maxRedemptions != nil && newCount >= *maxRedemptions {
+		if _, err := tx.Exec(ctx,
+			`UPDATE campaigns SET status = 'exhausted' WHERE id = $1`, promo.ID); err != nil {
+			return nil, mapError(err)
+		}
+	}
+
+	return &AppliedPromo{
+		CampaignID:   promo.ID,
+		CampaignName: promo.Name,
+		Code:         promo.Code,
 	}, nil
 }
 
@@ -458,10 +723,32 @@ func (s *CheckoutStore) GetOrder(ctx context.Context, id uuid.UUID) (CheckoutRes
 // newCode returns prefix + separator + `length` random base32 characters,
 // using crypto-quality randomness so codes cannot be guessed or enumerated.
 func newCode(prefix, separator string, length int) (string, error) {
+	// base32 packs 5 bits per character, so this is comfortably enough entropy.
 	buf := make([]byte, length)
 	if _, err := rand.Read(buf); err != nil {
 		return "", fmt.Errorf("generate code: %w", err)
 	}
 	encoded := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(buf)
 	return prefix + separator + encoded[:length], nil
+}
+
+// DeclineSimulationDomain is the reserved address suffix that makes the
+// simulated payment provider decline (SRS 4.6: payments are "a clearly
+// labelled internal simulation").
+//
+// It is a domain nobody can own, so a real attendee cannot trip it by typing
+// their own address.
+const DeclineSimulationDomain = "@decline.simulator.biletflow.kz"
+
+// PaymentDeclinedError reports a simulated payment the provider refused.
+type PaymentDeclinedError struct {
+	Reason string
+}
+
+func (e *PaymentDeclinedError) Error() string {
+	return "payment declined: " + e.Reason
+}
+
+func isDeclineSimulation(email string) bool {
+	return strings.HasSuffix(strings.ToLower(strings.TrimSpace(email)), DeclineSimulationDomain)
 }

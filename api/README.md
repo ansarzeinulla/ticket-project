@@ -1,147 +1,83 @@
-# BiletFlow API
+# BiletFlow API — Phases 2 & 4-13
 
-Go REST API for BiletFlow. This file has two parts: **what exists today**, and
-the **endpoint contract** the team agreed in week 0, which is being implemented
-week by week.
+Go REST API for account registration, JWT login, event CRUD, ticket types, a
+simulated KZT checkout, and printable QR tickets — backed by the Phase 1
+PostgreSQL schema.
 
----
-
-## What exists today (week 3)
-
-Accounts (register, sign in, password reset, email confirmation), events with
-their ticket types, a public event page, banner uploads, and a checkout that
-sells tickets in one transaction with a simulated payment. Emails are not sent
-yet - they are printed to the API's console.
-
-### Layout
-
-```
-api/
-  cmd/api/main.go            entry point: load config, open the pool, serve
-  internal/config/           settings from environment variables
-  internal/httpx/            JSON responses, the error envelope, request context
-  internal/database/         pgx connection pool
-  internal/auth/             bcrypt password hashing, JWT issue and parse
-  internal/email/            message templates, printed to the console
-  internal/store/            users, tokens, events, ticket types, orders
-  internal/api/              routes, middleware, handlers and their tests
-```
-
-Handlers stay thin: they decode the request, call a store, and write JSON through
-`httpx`. SQL lives only in `internal/store`.
-
-### Run it
-
-Requires Go 1.25 (with `GOTOOLCHAIN=auto` an older Go fetches it) and a
-PostgreSQL database with the schema from `db/init` applied.
-
-```bash
-make up        # PostgreSQL on :5433
-make api-run   # the API on :8080
-```
-
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `APP_ENV` | `development` | `production` disables the dev-only routes and requires `JWT_SECRET` |
-| `API_HOST` | `0.0.0.0` | listen address |
-| `APP_PORT` | `8080` | listen port |
-| `DATABASE_URL` | local compose database | PostgreSQL connection string |
-| `JWT_SECRET` | a dev-only value | HMAC key for access tokens |
-| `JWT_ISSUER` | `biletflow` | `iss` claim |
-| `ACCESS_TOKEN_TTL` | `24h` | lifetime of an access token |
-| `BCRYPT_COST` | `12` | 4-31; the tests use the minimum |
-| `WEB_BASE_URL` | `http://localhost:3000` | where the links in emails point |
-| `API_BASE_URL` | `http://localhost:8080` | this API's public address, used in upload URLs |
-| `UPLOAD_DIR` | `./data/uploads` | where banners are written |
-
-### Routes
-
-| Method | Path | Auth | Response |
-| --- | --- | --- | --- |
-| `GET` | `/health` | – | `200 {"status":"ok","database":"ok"}`, or `503` when the database is unreachable |
-| `POST` | `/api/v1/auth/register` | – | `201` user + access token; `409 conflict` if the email is taken |
-| `POST` | `/api/v1/auth/login` | – | `200` user + access token; `401 invalid_credentials` |
-| `GET` | `/api/v1/auth/me` | Bearer | `200` the current account |
-| `POST` | `/api/v1/auth/password-reset/request` | – | `202` whether or not the email has an account |
-| `POST` | `/api/v1/auth/password-reset` | – | `200`; the token works once, for an hour |
-| `POST` | `/api/v1/auth/verify-email` | – | `200`; the account becomes `active` |
-| `POST` | `/api/v1/auth/verify-email/request` | Bearer | `202`; sends a fresh confirmation |
-| `POST` | `/api/v1/events` | Bearer | `201` a draft; creating an event grants the `organizer` role |
-| `GET` | `/api/v1/events` | – | published public events: `limit`, `offset`, `category`, `q`, `starts_after`, `starts_before` |
-| `GET` | `/api/v1/events/mine` | Bearer | the organizer's own events, drafts included; `status` filter |
-| `GET` | `/api/v1/events/{id}` | optional | a draft or private event is visible to its organizer only |
-| `PATCH` | `/api/v1/events/{id}` | Bearer | partial update; an explicit `null` clears a field |
-| `DELETE` | `/api/v1/events/{id}` | Bearer | drafts without orders only |
-| `POST` | `/api/v1/events/{id}/publish` | Bearer | draft or unpublished → published; not once it has ended |
-| `POST` | `/api/v1/events/{id}/unpublish` | Bearer | published → unpublished |
-| `POST` | `/api/v1/events/{id}/cancel` | Bearer | cancels; it stops selling |
-| `GET` | `/api/v1/events/{id}/ticket-types` | Bearer | every type, hidden ones included |
-| `POST` | `/api/v1/events/{id}/ticket-types` | Bearer | `price_kzt` as a string, `"0"` for free |
-| `PATCH` | `/api/v1/ticket-types/{id}` | Bearer | price, stock, sales window, `is_hidden` |
-| `DELETE` | `/api/v1/ticket-types/{id}` | Bearer | only a type with no sales; hide it otherwise |
-| `GET` | `/api/v1/public/events/{slug}` | – | the attendee view: event, on-sale types, `on_sale`, `sold_out` |
-| `POST` | `/api/v1/uploads/images` | Bearer | multipart field `file`; JPEG, PNG, GIF or WebP, 5 MB, at least 200×200 |
-| `POST` | `/api/v1/events/{id}/checkout` | optional | `201` order, tickets and simulated payment |
-| `GET` | `/api/v1/events/{id}/inventory` | optional | what is left of each type |
-| `GET` | `/api/v1/orders/{id}` | optional | the order, its lines and tickets; the UUID is the capability |
-| `GET` | `/api/v1/events/{id}/orders` | Bearer | the organizer's order list, newest first |
-| `GET` | `/api/v1/events/{id}/attendees` | Bearer | ticket holders, `q` searches name, email, code, order |
-| `GET` | `/dev/config` | – | non-secret settings; not registered when `APP_ENV=production` |
-
-Every request body must be JSON with `Content-Type: application/json`.
-
-```bash
-curl -s -X POST localhost:8080/api/v1/auth/register \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"dana@biletflow.kz","password":"correct horse"}'
-```
-
-The same email in a different case is the same account: `Dana@BiletFlow.kz`
-answers `409`.
-
-### Buying a ticket
-
-```bash
-curl -s -X POST localhost:8080/api/v1/events/$EVENT_ID/checkout \
-  -H 'Content-Type: application/json' \
-  -d '{"buyer_name":"Nurlan","buyer_email":"nurlan@example.kz",
-       "items":[{"ticket_type_id":"'$TYPE_ID'","quantity":2}]}'
-```
-
-- **Money is a decimal string** (`"5000.00"`) end to end and all arithmetic is
-  done by PostgreSQL, so a price never passes through a float.
-- **No overselling.** Each ticket type is locked with `SELECT … FOR UPDATE`
-  before its remaining count is read, in id order so two baskets cannot
-  deadlock. `ticket_types_inventory_chk` is the backstop underneath.
-- A request above what is left answers `409 insufficient_inventory` with the
-  `remaining` count in the body; nothing is written.
-- Free tickets go through the same checkout at a price of zero.
-- There is no real payment: a `payments` row with `is_simulated = true` is
-  written, and the order is `paid` immediately.
-
-### Where the emails go
-
-`email.ConsoleSender` prints each message to standard output inside a framed
-block, so the reset and confirmation codes can be copied from the terminal that
-runs the API. Sending is asynchronous; shutdown waits for queued messages.
-
-### Checks
-
-```bash
-make api-check   # gofmt, go vet, go test - the tests need `make up`
-```
-
-The API tests are integration tests: they create a `biletflow_test` database
-next to the dev one, apply `db/init`, and truncate it around every test.
+Requires Go 1.21+ (the module targets 1.25; Go's default `GOTOOLCHAIN=auto`
+fetches the toolchain automatically) and the Phase 1 database running.
 
 ---
 
-## Endpoint contract (planned)
+## Run it
 
-Everything below is the contract agreed in week 0. Routes appear here before
-they exist in code so the web and mobile apps can be built against a fixed
-shape; each one is implemented in the week noted in the delivery plan.
+```bash
+make up        # PostgreSQL (from the repository root)
+make api-run   # API on http://localhost:8080
+```
 
+Verify:
+
+```bash
+curl -s http://localhost:8080/health
+```
+
+| Command | What it does |
+| --- | --- |
+| `make api-run` | Run the API with `.env` loaded |
+| `make api-build` | Compile to `api/bin/api` |
+| `make api-test` | Full Go suite: unit + integration against PostgreSQL |
+| `make api-smoke` | cURL acceptance checks against a running API |
+| `make api-check` | gofmt + vet + test |
+
+---
+
+## Verifying the phase-2 success criteria
+
+Everything below is automated twice — as Go integration tests
+(`TestPhase2SuccessCriteria`) and as cURL checks (`make api-smoke`) — but here
+are the requests to run by hand in Postman or a terminal.
+
+**1. Register with an email and password → 201**
+
+```bash
+curl -i -X POST http://localhost:8080/api/v1/auth/register -H 'Content-Type: application/json' -d '{"email":"dana@biletflow.test","password":"correct horse battery"}'
+```
+
+**2. Log in and receive a token → 200**
+
+```bash
+curl -s -X POST http://localhost:8080/api/v1/auth/login -H 'Content-Type: application/json' -d '{"email":"dana@biletflow.test","password":"correct horse battery"}'
+```
+
+Save the `access_token` from the response:
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:8080/api/v1/auth/login -H 'Content-Type: application/json' -d '{"email":"dana@biletflow.test","password":"correct horse battery"}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')
+```
+
+**3. Create an event with that token → 201 Created**
+
+```bash
+curl -i -X POST http://localhost:8080/api/v1/events -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"title":"Almaty Winter Jazz Night","category":"music","venue_name":"Almaty Demo Hall","venue_address":"Abay Avenue 44, Almaty","starts_at":"2026-12-20T19:00:00+05:00","ends_at":"2026-12-20T22:00:00+05:00","timezone":"Asia/Almaty","capacity":250}'
+```
+
+And confirm the row is really in PostgreSQL:
+
+```bash
+docker compose exec -T db psql -U biletflow -d biletflow -c "SELECT id, title, status, organizer_id FROM events ORDER BY created_at DESC LIMIT 1;"
+```
+
+### Postman
+
+Import [docs/biletflow-api.postman_collection.json](../docs/biletflow-api.postman_collection.json).
+The Register and Login requests save the token into a `{{token}}` collection
+variable automatically, so every later request is already authenticated;
+Create Event saves `{{eventId}}`.
+
+---
+
+## Endpoints
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
