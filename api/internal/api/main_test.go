@@ -16,22 +16,25 @@ import (
 
 	"github.com/biletflow/api/internal/config"
 	"github.com/biletflow/api/internal/email"
+	"github.com/biletflow/api/internal/testutil"
 )
 
 // testConfig mirrors production settings except for the bcrypt cost, which is
 // dropped to the minimum so the suite is not dominated by hashing time.
+// testFeePercent is the processing charge the test server applies.
+const testFeePercent = "3.5"
 
 func testConfig(t *testing.T) config.Config {
 	t.Helper()
 	return config.Config{
+		// Uploads land in a directory the test framework removes afterwards,
+		// so a test run leaves nothing behind on disk.
+		UploadDir:      t.TempDir(),
 		Env:            "test",
 		JWTSecret:      "integration-test-secret",
 		JWTIssuer:      "biletflow-test",
 		AccessTokenTTL: time.Hour,
 		BcryptCost:     bcrypt.MinCost,
-		// Uploads land in a directory the test framework removes afterwards,
-		// so a test run leaves nothing behind on disk.
-		UploadDir: t.TempDir(),
 	}
 }
 
@@ -50,8 +53,8 @@ type client struct {
 func newClient(t *testing.T) *client {
 	t.Helper()
 
-	pool := testPool(t)
-	resetDB(t, pool)
+	pool := testutil.Pool(t)
+	testutil.Reset(t, pool)
 
 	recorder := email.NewRecorder()
 	srv := NewWithSender(testConfig(t), pool, recorder)
@@ -68,6 +71,25 @@ func newClient(t *testing.T) *client {
 func (c *client) waitForMail() {
 	c.t.Helper()
 	c.api.Mailer().Wait()
+}
+
+// activatePaidSales completes the whole activation checklist in one call
+// (SRS 4.5). Anything selling a paid ticket needs this first.
+func (c *client) activatePaidSales(token string, eventID uuid.UUID) {
+	c.t.Helper()
+
+	res := c.post("/api/v1/events/"+eventID.String()+"/activation", token, map[string]any{
+		"confirm_identity":   true,
+		"confirm_payout":     true,
+		"accept_terms":       true,
+		"pay_activation_fee": true,
+	})
+	if res.Status != http.StatusOK {
+		c.t.Fatalf("activate paid sales: status = %d, body = %s", res.Status, res.Raw)
+	}
+	if active, _ := res.Body["activation"].(map[string]any)["is_active"].(bool); !active {
+		c.t.Fatalf("activate paid sales: activation is not active; body = %s", res.Raw)
+	}
 }
 
 // response is a decoded HTTP response.
@@ -165,6 +187,39 @@ func (c *client) send(req *http.Request) response {
 		}
 	}
 	return out
+}
+
+// binaryResponse is a response whose body is not JSON - a PDF or a PNG.
+type binaryResponse struct {
+	Status int
+	Header http.Header
+	Body   []byte
+}
+
+// getBinary fetches a non-JSON resource without trying to parse it.
+func (c *client) getBinary(path, token string) binaryResponse {
+	c.t.Helper()
+
+	req, err := http.NewRequest(http.MethodGet, c.server.URL+path, nil)
+	if err != nil {
+		c.t.Fatalf("build request: %v", err)
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	res, err := c.server.Client().Do(req)
+	if err != nil {
+		c.t.Fatalf("GET %s: %v", path, err)
+	}
+	defer res.Body.Close()
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		c.t.Fatalf("read body: %v", err)
+	}
+
+	return binaryResponse{Status: res.StatusCode, Header: res.Header, Body: body}
 }
 
 func (c *client) post(path, token string, body any) response {
