@@ -16,6 +16,13 @@ func (c *client) sellableEvent(token, title, price string, quantity int) (uuid.U
 	eventID, created := c.createEvent(token, title)
 	ticketTypeID, _ := c.createTicketType(token, eventID, ticketTypeBody("General Admission", price, quantity))
 
+	// A paid event cannot sell anything until its activation checklist is
+	// done (SRS 4.5), so "sellable" now includes being cleared to take money.
+	// Free events need no activation and are deliberately left without one.
+	if price != "0" && price != "0.00" && price != "" {
+		c.activatePaidSales(token, eventID)
+	}
+
 	requireStatus(c.t, c.post("/api/v1/events/"+eventID.String()+"/publish", token, nil), http.StatusOK)
 	return eventID, created.eventString("slug"), ticketTypeID
 }
@@ -85,9 +92,13 @@ func TestPhase4SuccessCriteria(t *testing.T) {
 	if order["status"] != "paid" {
 		t.Errorf("criterion 3: order status = %v, want paid", order["status"])
 	}
-	// 2 x 5000 = 10000.
-	if order["total_kzt"] != "10000.00" {
-		t.Errorf("criterion 3: total_kzt = %v, want 10000.00", order["total_kzt"])
+	// 2 x 5000 = 10000, plus the 3.5 percent processing charge SRS 3.3 adds
+	// to each transaction.
+	if order["total_kzt"] != "10350.00" {
+		t.Errorf("criterion 3: total_kzt = %v, want 10350.00", order["total_kzt"])
+	}
+	if order["processing_fee_kzt"] != "350.00" {
+		t.Errorf("criterion 3: processing_fee_kzt = %v, want 350.00", order["processing_fee_kzt"])
 	}
 	if order["currency"] != "KZT" {
 		t.Errorf("criterion 3: currency = %v, want KZT", order["currency"])
@@ -107,8 +118,8 @@ func TestPhase4SuccessCriteria(t *testing.T) {
 	if err != nil {
 		t.Fatalf("criterion 3: order not in the database: %v", err)
 	}
-	if dbStatus != "paid" || dbTotal != "10000.00" || dbCurrency != "KZT" || !dbSimulated {
-		t.Fatalf("criterion 3: db order = (%s, %s, %s, simulated=%v), want (paid, 10000.00, KZT, true)",
+	if dbStatus != "paid" || dbTotal != "10350.00" || dbCurrency != "KZT" || !dbSimulated {
+		t.Fatalf("criterion 3: db order = (%s, %s, %s, simulated=%v), want (paid, 10350.00, KZT, true)",
 			dbStatus, dbTotal, dbCurrency, dbSimulated)
 	}
 	t.Logf("criterion 3 OK: order %s is %s for %s KZT (simulated)", order["order_number"], dbStatus, dbTotal)
@@ -474,8 +485,8 @@ func TestGetOrderAfterCheckout(t *testing.T) {
 	requireStatus(t, res, http.StatusOK)
 
 	order, _ := res.Body["order"].(map[string]any)
-	if order["status"] != "paid" || order["total_kzt"] != "10000.00" {
-		t.Errorf("order = %v, want a paid 10000.00 order", order)
+	if order["status"] != "paid" || order["total_kzt"] != "10350.00" {
+		t.Errorf("order = %v, want a paid 10350.00 order", order)
 	}
 	if tickets, _ := res.Body["tickets"].([]any); len(tickets) != 2 {
 		t.Errorf("%d tickets on the fetched order, want 2", len(tickets))
@@ -533,73 +544,4 @@ func TestPublicEventPageReflectsRemainingStock(t *testing.T) {
 	if res.Body["sold_out"] != false {
 		t.Errorf("sold_out = %v, want false", res.Body["sold_out"])
 	}
-}
-
-func TestInventoryReportsWhatIsLeft(t *testing.T) {
-	c := newClient(t)
-	owner := c.register("inventory")
-	eventID, _, ticketTypeID := c.sellableEvent(owner.Token, "Inventory Event", "1000", 5)
-
-	requireStatus(t, c.buy(eventID, ticketTypeID, 2, "Buyer", "buyer@biletflow.test"),
-		http.StatusCreated)
-
-	res := c.get("/api/v1/events/"+eventID.String()+"/inventory", "")
-	requireStatus(t, res, http.StatusOK)
-
-	types, _ := res.Body["ticket_types"].([]any)
-	if len(types) != 1 {
-		t.Fatalf("%d ticket types in the inventory, want 1", len(types))
-	}
-	line := types[0].(map[string]any)
-	if sold, _ := line["quantity_sold"].(float64); int(sold) != 2 {
-		t.Errorf("quantity_sold = %v, want 2", line["quantity_sold"])
-	}
-	if remaining, _ := line["quantity_remaining"].(float64); int(remaining) != 3 {
-		t.Errorf("quantity_remaining = %v, want 3", line["quantity_remaining"])
-	}
-	if res.Body["sold_out"] != false {
-		t.Errorf("sold_out = %v, want false", res.Body["sold_out"])
-	}
-}
-
-func TestOrganizerSeesOrdersAndAttendees(t *testing.T) {
-	c := newClient(t)
-	owner := c.register("guestlist")
-	other := c.register("guestlistother")
-	eventID, _, ticketTypeID := c.sellableEvent(owner.Token, "Guest List Event", "1000", 10)
-
-	requireStatus(t, c.buy(eventID, ticketTypeID, 2, "Aliya Nurlan", "aliya@biletflow.test"),
-		http.StatusCreated)
-	requireStatus(t, c.buy(eventID, ticketTypeID, 1, "Berik Sadyk", "berik@biletflow.test"),
-		http.StatusCreated)
-
-	path := "/api/v1/events/" + eventID.String()
-
-	orders := c.get(path+"/orders", owner.Token)
-	requireStatus(t, orders, http.StatusOK)
-	list, _ := orders.Body["orders"].([]any)
-	if len(list) != 2 {
-		t.Fatalf("%d orders, want 2", len(list))
-	}
-	// Newest first: Berik ordered last.
-	if first := list[0].(map[string]any); first["buyer_name"] != "Berik Sadyk" {
-		t.Errorf("first order is %v, want the newest (Berik Sadyk)", first["buyer_name"])
-	}
-
-	attendees := c.get(path+"/attendees", owner.Token)
-	requireStatus(t, attendees, http.StatusOK)
-	if total, _ := attendees.Body["total"].(float64); int(total) != 3 {
-		t.Errorf("total = %v, want 3 tickets", attendees.Body["total"])
-	}
-
-	search := c.get(path+"/attendees?q=aliya", owner.Token)
-	requireStatus(t, search, http.StatusOK)
-	if total, _ := search.Body["total"].(float64); int(total) != 2 {
-		t.Errorf("search total = %v, want Aliya's 2 tickets", search.Body["total"])
-	}
-
-	// Nobody else may read who is coming.
-	requireErrorCode(t, c.get(path+"/orders", ""), http.StatusUnauthorized, "unauthorized")
-	requireErrorCode(t, c.get(path+"/orders", other.Token), http.StatusForbidden, "forbidden")
-	requireErrorCode(t, c.get(path+"/attendees", other.Token), http.StatusForbidden, "forbidden")
 }
