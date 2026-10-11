@@ -32,6 +32,11 @@ type checkoutRequest struct {
 	BuyerEmail string                `json:"buyer_email"`
 	BuyerPhone *string               `json:"buyer_phone"`
 	Items      []checkoutItemRequest `json:"items"`
+
+	// SeatIDs buys specific seats, for an assigned-seating event (SRS 4.3.1).
+	// When present the tiers are derived from the seats, so `items` is not
+	// needed.
+	SeatIDs []string `json:"seat_ids"`
 }
 
 // handleCheckout runs the simulated purchase.
@@ -78,9 +83,19 @@ func (s *Server) handleCheckout(w http.ResponseWriter, r *http.Request) {
 		errs.add("buyer_name", msg)
 	}
 
-	items, itemErrs := mergeCheckoutItems(req.Items)
-	for field, message := range itemErrs {
-		errs.add(field, message)
+	seatIDs, seatErr := parseUUIDs(req.SeatIDs)
+	if seatErr != nil {
+		errs.add("seat_ids", "Each seat must be identified by a UUID.")
+	}
+
+	// Seats price themselves; only a general admission basket names tiers.
+	var items []store.CheckoutItem
+	if len(seatIDs) == 0 {
+		merged, itemErrs := mergeCheckoutItems(req.Items)
+		for field, message := range itemErrs {
+			errs.add(field, message)
+		}
+		items = merged
 	}
 
 	if errs.any() {
@@ -107,6 +122,7 @@ func (s *Server) handleCheckout(w http.ResponseWriter, r *http.Request) {
 		BuyerEmail:  buyerEmail,
 		BuyerPhone:  req.BuyerPhone,
 		Items:       items,
+		SeatIDs:     seatIDs,
 	})
 	if err != nil {
 		s.writeCheckoutError(w, r, err)
@@ -115,6 +131,11 @@ func (s *Server) handleCheckout(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Location", "/api/v1/orders/"+result.Order.ID.String())
 	httpx.WriteJSON(w, http.StatusCreated, result)
+
+	// SRS 4.10: purchase confirmation and ticket delivery. The order is
+	// already committed and the response already written, so a notification
+	// problem cannot cost the attendee their tickets.
+	s.sendOrderConfirmation(result, event)
 }
 
 // checkoutErrorBody adds the inventory numbers to the standard error envelope,
@@ -131,12 +152,28 @@ type checkoutErrorBody struct {
 
 func (s *Server) writeCheckoutError(w http.ResponseWriter, r *http.Request, err error) {
 	var (
-		inventoryErr *store.InsufficientInventoryError
-		notOnSaleErr *store.NotOnSaleError
-		maxErr       *store.ExceedsMaxPerOrderError
+		inventoryErr  *store.InsufficientInventoryError
+		notOnSaleErr  *store.NotOnSaleError
+		maxErr        *store.ExceedsMaxPerOrderError
+		seatGone      *store.SeatUnavailableError
+		activationErr *store.PaidSalesNotActiveError
 	)
 
 	switch {
+	case errors.As(err, &activationErr):
+		// 403 rather than 409: this is not a race the attendee can retry out
+		// of, it is the event not being cleared to take money yet (SRS 4.5).
+		code := CodePaidSalesNotActive
+		if activationErr.Status == store.ActivationSuspended {
+			code = CodePaidSalesSuspended
+		}
+		httpx.WriteError(w, http.StatusForbidden, code,
+			capitalise(activationErr.Error())+".")
+
+	case errors.As(err, &seatGone):
+		httpx.WriteError(w, http.StatusConflict, CodeSeatUnavailable,
+			"One of those seats is no longer available. Refresh the map and choose again.")
+
 	case errors.As(err, &inventoryErr):
 		var body checkoutErrorBody
 		body.Error.Code = CodeInsufficientInventory
@@ -268,4 +305,18 @@ func mergeCheckoutItems(requested []checkoutItemRequest) ([]store.CheckoutItem, 
 		items = append(items, store.CheckoutItem{TicketTypeID: id, Quantity: merged[id]})
 	}
 	return items, errs
+}
+
+// parseUUIDs converts a list of ids, rejecting the whole list if any is
+// malformed - a basket half-understood is worse than one refused.
+func parseUUIDs(raw []string) ([]uuid.UUID, error) {
+	out := make([]uuid.UUID, 0, len(raw))
+	for _, value := range raw {
+		id, err := uuid.Parse(value)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, nil
 }

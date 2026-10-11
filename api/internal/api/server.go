@@ -25,8 +25,14 @@ type Server struct {
 	events      *store.EventStore
 	ticketTypes *store.TicketTypeStore
 	checkout    *store.CheckoutStore
-	inventory   *store.InventoryStore
-	guests      *store.GuestStore
+	seating     *store.SeatingStore
+	activations *store.ActivationStore
+	tickets     *store.TicketStore
+
+	notifications *store.NotificationStore
+	guests        *store.GuestStore
+	profiles      *store.ProfileStore
+	audit         *store.AuditStore
 
 	hasher *auth.Hasher
 	tokens *auth.TokenService
@@ -41,21 +47,30 @@ func New(cfg config.Config, pool *pgxpool.Pool) *Server {
 // NewWithSender builds a server with an explicit email sender, so tests can
 // capture messages instead of printing them.
 func NewWithSender(cfg config.Config, pool *pgxpool.Pool, sender email.Sender) *Server {
-	return &Server{
+	s := &Server{
 		cfg:           cfg,
 		pool:          pool,
 		users:         store.NewUserStore(pool),
 		accountTokens: store.NewTokenStore(pool),
-		mailer:        email.NewMailer(sender, nil),
 		events:        store.NewEventStore(pool),
 		ticketTypes:   store.NewTicketTypeStore(pool),
 		checkout:      store.NewCheckoutStore(pool),
-		inventory:     store.NewInventoryStore(pool),
+		seating:       store.NewSeatingStore(pool),
+		activations:   store.NewActivationStore(pool),
+		tickets:       store.NewTicketStore(pool),
+		notifications: store.NewNotificationStore(pool),
 		guests:        store.NewGuestStore(pool),
+		profiles:      store.NewProfileStore(pool),
+		audit:         store.NewAuditStore(pool),
 		hasher:        auth.NewHasher(cfg.BcryptCost),
 		tokens:        auth.NewTokenService(cfg.JWTSecret, cfg.JWTIssuer, cfg.AccessTokenTTL),
 		now:           time.Now,
 	}
+
+	// The mailer is built last: its completion callback needs the Server that
+	// owns the notification store it marks.
+	s.mailer = email.NewMailer(sender, s.markNotification)
+	return s
 }
 
 // Mailer exposes the email dispatcher so main can drain it on shutdown and
@@ -72,9 +87,6 @@ func (s *Server) Handler() http.Handler {
 	// --- health -------------------------------------------------------------
 	mux.HandleFunc("GET /health", s.handleHealth)
 	mux.HandleFunc("GET /api/v1/health", s.handleHealth)
-	if !s.cfg.IsProduction() {
-		mux.HandleFunc("GET /dev/config", s.handleDevConfig)
-	}
 
 	// --- authentication -----------------------------------------------------
 	mux.HandleFunc("POST /api/v1/auth/register", s.handleRegister)
@@ -87,6 +99,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/auth/verify-email", s.handleVerifyEmail)
 	mux.HandleFunc("POST /api/v1/auth/verify-email/request",
 		s.requireAuth(s.handleRequestEmailVerification))
+
+	// SRS 4.1: "Organizers shall have a profile containing contact and payout
+	// information", and password management for a signed-in account.
+	mux.HandleFunc("GET /api/v1/auth/profile", s.requireAuth(s.handleGetProfile))
+	mux.HandleFunc("PATCH /api/v1/auth/profile", s.requireAuth(s.handleUpdateProfile))
+	mux.HandleFunc("POST /api/v1/auth/password", s.requireAuth(s.handleChangePassword))
 
 	// --- events -------------------------------------------------------------
 	// The literal "/events/mine" pattern is more specific than "/events/{id}",
@@ -117,12 +135,33 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/uploads/images", s.requireAuth(s.handleUploadImage))
 	mux.Handle("GET "+uploadURLPrefix+"{file}", s.uploadsHandler())
 
+	// --- calendar export (SRS 4.11) -----------------------------------------
+	// Addressed by id or slug, because the dashboard knows one and the public
+	// page knows the other. Public: a calendar file carries the same
+	// information the event page already shows.
+	mux.HandleFunc("GET /api/v1/events/{id}/calendar.ics", s.optionalAuth(s.handleEventCalendar))
+
 	// --- checkout -----------------------------------------------------------
 	// Checkout takes optionalAuth: guests may buy, and a signed-in buyer gets
 	// the order linked to their account.
 	mux.HandleFunc("POST /api/v1/events/{id}/checkout", s.optionalAuth(s.handleCheckout))
-	mux.HandleFunc("GET /api/v1/events/{id}/inventory", s.optionalAuth(s.handleEventInventory))
 	mux.HandleFunc("GET /api/v1/orders/{id}", s.optionalAuth(s.handleGetOrder))
+
+	// --- assigned seating (SRS 4.3.1) ---------------------------------------
+	// Public: an attendee sees what is left before deciding, and before
+	// signing in.
+	mux.HandleFunc("GET /api/v1/events/{id}/seats", s.optionalAuth(s.handleEventSeatMap))
+
+	// --- paid-sales activation (SRS 4.5) ------------------------------------
+	mux.HandleFunc("GET /api/v1/events/{id}/activation", s.requireAuth(s.handleGetActivation))
+	mux.HandleFunc("POST /api/v1/events/{id}/activation", s.requireAuth(s.handleAdvanceActivation))
+
+	// --- digital ticket delivery --------------------------------------------
+	// Addressed by the ticket's UUID, which is the capability that lets a guest
+	// buyer reach their own ticket without an account.
+	mux.HandleFunc("GET /api/v1/tickets/{id}", s.handleGetTicket)
+	mux.HandleFunc("GET /api/v1/tickets/{id}/pdf", s.handleTicketPDF)
+	mux.HandleFunc("GET /api/v1/tickets/{id}/qr.png", s.handleTicketQR)
 
 	// --- who is coming (organizer) ------------------------------------------
 	mux.HandleFunc("GET /api/v1/events/{id}/orders", s.requireAuth(s.handleListEventOrders))

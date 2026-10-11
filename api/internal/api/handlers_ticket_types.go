@@ -18,11 +18,14 @@ import (
 var moneyPattern = regexp.MustCompile(`^(0|[1-9][0-9]{0,11})(\.[0-9]{1,2})?$`)
 
 type ticketTypeRequest struct {
-	Name          string     `json:"name"`
-	Description   *string    `json:"description"`
-	PriceKZT      *string    `json:"price_kzt"`
-	QuantityTotal *int       `json:"quantity_total"`
-	MaxPerOrder   *int       `json:"max_per_order"`
+	Name          string  `json:"name"`
+	Description   *string `json:"description"`
+	PriceKZT      *string `json:"price_kzt"`
+	QuantityTotal *int    `json:"quantity_total"`
+	MaxPerOrder   *int    `json:"max_per_order"`
+	// PriceCategory links this tier to the venue sections it prices, for an
+	// assigned-seating event (SRS 4.3.1).
+	PriceCategory *string    `json:"price_category"`
 	SalesStartAt  *time.Time `json:"sales_start_at"`
 	SalesEndAt    *time.Time `json:"sales_end_at"`
 	IsHidden      *bool      `json:"is_hidden"`
@@ -55,6 +58,7 @@ func (s *Server) handleCreateTicketType(w http.ResponseWriter, r *http.Request) 
 		errs.add("name", msg)
 	}
 	checkOptionalMultiline(errs, "description", "Description", req.Description, maxDescriptionLength)
+	checkOptionalLine(errs, "price_category", "Price category", req.PriceCategory, maxCategoryLength)
 
 	// A free ticket type is simply one priced at zero (SRS 1.3).
 	price := "0"
@@ -97,6 +101,7 @@ func (s *Server) handleCreateTicketType(w http.ResponseWriter, r *http.Request) 
 		PriceKZT:      price,
 		QuantityTotal: *req.QuantityTotal,
 		MaxPerOrder:   maxPerOrder,
+		PriceCategory: req.PriceCategory,
 		SalesStartAt:  req.SalesStartAt,
 		SalesEndAt:    req.SalesEndAt,
 		IsHidden:      req.IsHidden != nil && *req.IsHidden,
@@ -106,6 +111,9 @@ func (s *Server) handleCreateTicketType(w http.ResponseWriter, r *http.Request) 
 		s.writeTicketTypeError(w, r, err)
 		return
 	}
+
+	s.appendAudit(r, event.ID, mustUserID(r.Context()), "ticket_type.created", "ticket_type",
+		created.ID.String(), "Created ticket type "+created.Name)
 
 	w.Header().Set("Location", "/api/v1/ticket-types/"+created.ID.String())
 	httpx.WriteJSON(w, http.StatusCreated, ticketTypeResponse{TicketType: created})
@@ -214,6 +222,9 @@ func (s *Server) handleUpdateTicketType(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	s.appendAudit(r, updated.EventID, mustUserID(r.Context()), "ticket_type.updated", "ticket_type",
+		updated.ID.String(), "Updated ticket type "+updated.Name)
+
 	httpx.WriteJSON(w, http.StatusOK, ticketTypeResponse{TicketType: updated})
 }
 
@@ -245,6 +256,9 @@ func (s *Server) handleDeleteTicketType(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	s.appendAudit(r, ticketType.EventID, mustUserID(r.Context()), "ticket_type.deleted",
+		"ticket_type", ticketType.ID.String(), "Deleted ticket type "+ticketType.Name)
+
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -273,7 +287,9 @@ func (s *Server) loadOwnedTicketType(w http.ResponseWriter, r *http.Request) (st
 		return store.TicketType{}, store.Event{}, false
 	}
 
-	if event.OrganizerID != mustUserID(r.Context()) {
+	claims, _ := claimsFromContext(r.Context())
+	if event.OrganizerID != mustUserID(r.Context()) &&
+		!(claims != nil && claims.HasRole(store.RolePlatformAdmin)) {
 		httpx.WriteError(w, http.StatusForbidden, httpx.CodeForbidden,
 			"Only the organizer of this event can manage its ticket types.")
 		return store.TicketType{}, store.Event{}, false

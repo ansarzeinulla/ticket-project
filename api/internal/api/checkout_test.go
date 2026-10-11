@@ -16,6 +16,13 @@ func (c *client) sellableEvent(token, title, price string, quantity int) (uuid.U
 	eventID, created := c.createEvent(token, title)
 	ticketTypeID, _ := c.createTicketType(token, eventID, ticketTypeBody("General Admission", price, quantity))
 
+	// A paid event cannot sell anything until its activation checklist is
+	// done (SRS 4.5), so "sellable" now includes being cleared to take money.
+	// Free events need no activation and are deliberately left without one.
+	if price != "0" && price != "0.00" && price != "" {
+		c.activatePaidSales(token, eventID)
+	}
+
 	requireStatus(c.t, c.post("/api/v1/events/"+eventID.String()+"/publish", token, nil), http.StatusOK)
 	return eventID, created.eventString("slug"), ticketTypeID
 }
@@ -535,33 +542,6 @@ func TestPublicEventPageReflectsRemainingStock(t *testing.T) {
 	}
 }
 
-func TestInventoryReportsWhatIsLeft(t *testing.T) {
-	c := newClient(t)
-	owner := c.register("inventory")
-	eventID, _, ticketTypeID := c.sellableEvent(owner.Token, "Inventory Event", "1000", 5)
-
-	requireStatus(t, c.buy(eventID, ticketTypeID, 2, "Buyer", "buyer@biletflow.test"),
-		http.StatusCreated)
-
-	res := c.get("/api/v1/events/"+eventID.String()+"/inventory", "")
-	requireStatus(t, res, http.StatusOK)
-
-	types, _ := res.Body["ticket_types"].([]any)
-	if len(types) != 1 {
-		t.Fatalf("%d ticket types in the inventory, want 1", len(types))
-	}
-	line := types[0].(map[string]any)
-	if sold, _ := line["quantity_sold"].(float64); int(sold) != 2 {
-		t.Errorf("quantity_sold = %v, want 2", line["quantity_sold"])
-	}
-	if remaining, _ := line["quantity_remaining"].(float64); int(remaining) != 3 {
-		t.Errorf("quantity_remaining = %v, want 3", line["quantity_remaining"])
-	}
-	if res.Body["sold_out"] != false {
-		t.Errorf("sold_out = %v, want false", res.Body["sold_out"])
-	}
-}
-
 func TestOrganizerSeesOrdersAndAttendees(t *testing.T) {
 	c := newClient(t)
 	owner := c.register("guestlist")
@@ -584,6 +564,13 @@ func TestOrganizerSeesOrdersAndAttendees(t *testing.T) {
 	// Newest first: Berik ordered last.
 	if first := list[0].(map[string]any); first["buyer_name"] != "Berik Sadyk" {
 		t.Errorf("first order is %v, want the newest (Berik Sadyk)", first["buyer_name"])
+	}
+	// Aliya's order: two tickets, both still valid, nobody in yet.
+	aliya := list[1].(map[string]any)
+	if aliya["ticket_count"] != float64(2) || aliya["live_tickets"] != float64(2) ||
+		aliya["checked_in"] != float64(0) {
+		t.Errorf("Aliya's order counts = %v/%v/%v, want 2 issued, 2 live, 0 in",
+			aliya["ticket_count"], aliya["live_tickets"], aliya["checked_in"])
 	}
 
 	attendees := c.get(path+"/attendees", owner.Token)

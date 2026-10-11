@@ -182,6 +182,10 @@ export interface PublicEventResponse {
   ticket_types: TicketType[];
   on_sale: boolean;
   sold_out: boolean;
+  /** Whether this event is cleared to take money yet (SRS 4.5). */
+  paid_sales_active: boolean;
+  /** Whether activation gates anything here - false for a free event. */
+  paid_sales_required: boolean;
 }
 
 export interface Order {
@@ -251,7 +255,10 @@ export interface CheckoutInput {
   buyer_name: string;
   buyer_email: string;
   buyer_phone?: string;
-  items: { ticket_type_id: string; quantity: number }[];
+  /** By tier, for general admission. */
+  items?: { ticket_type_id: string; quantity: number }[];
+  /** By seat, for assigned seating: the server prices each seat itself. */
+  seat_ids?: string[];
 }
 
 /** One row of the organizer's order list. */
@@ -263,6 +270,10 @@ export interface EventOrder {
   status: string;
   total_kzt: Money;
   ticket_count: number;
+  /** Tickets that still admit somebody. */
+  live_tickets: number;
+  /** Tickets already scanned in. */
+  checked_in: number;
   placed_at?: string;
   created_at: string;
 }
@@ -276,4 +287,122 @@ export interface Guest {
   ticket_type_name: string;
   status: string;
   order_number: string;
+}
+
+export type SeatStatus = "available" | "sold" | "unavailable";
+
+export interface Seat {
+  id: string;
+  number: string;
+  x: number;
+  y: number;
+  accessible: boolean;
+  status: SeatStatus;
+}
+
+export interface SeatRow {
+  id: string;
+  label: string;
+  seats: Seat[];
+}
+
+export interface SeatSection {
+  id: string;
+  name: string;
+  price_category: string;
+  ticket_type_id?: string;
+  ticket_type_name?: string;
+  price_kzt?: Money;
+  rows: SeatRow[];
+}
+
+export interface SeatMap {
+  event_id: string;
+  venue_id: string;
+  venue_name: string;
+  sections: SeatSection[];
+  min_x: number;
+  min_y: number;
+  max_x: number;
+  max_y: number;
+  total_seats: number;
+  available_seats: number;
+}
+
+export type ActivationStep = "identity" | "payout" | "terms" | "fee";
+
+export type ActivationStatus =
+  | "not_started"
+  | "in_progress"
+  | "active"
+  | "suspended";
+
+/**
+ * Paid-sales activation state for one event.
+ *
+ * `outstanding` is the server's list of steps still to do, so the UI never has
+ * to decide for itself what "complete" means.
+ */
+export interface Activation {
+  event_id: string;
+  status: ActivationStatus;
+  identity_verified_at?: string;
+  payout_verified_at?: string;
+  terms_accepted_at?: string;
+  fee_paid_at?: string;
+  activation_fee_kzt: Money;
+  activated_at?: string;
+  suspended_at?: string;
+  suspension_reason?: string;
+  is_active: boolean;
+  required_for_sales: boolean;
+  outstanding: ActivationStep[];
+}
+
+/** The checklist submission. Each flag completes one step. */
+export interface ActivationSubmission {
+  confirm_identity?: boolean;
+  confirm_payout?: boolean;
+  accept_terms?: boolean;
+  pay_activation_fee?: boolean;
+}
+
+export interface PayoutAccount {
+  id: string;
+  provider: string;
+  masked_account?: string;
+  currency: string;
+  status: string;
+  is_simulated: boolean;
+  verified_at?: string;
+  created_at: string;
+}
+
+/** An organizer's contact and payout information (SRS 4.1). */
+export interface OrganizerProfile {
+  id?: string;
+  user_id: string;
+  display_name?: string;
+  legal_name?: string;
+  contact_email?: string;
+  contact_phone?: string;
+  description?: string;
+  website_url?: string;
+  identity_verified_at?: string;
+  created_at?: string;
+  updated_at?: string;
+  payout_accounts: PayoutAccount[];
+}
+
+/**
+ * A profile PATCH. An absent key leaves the field alone; an explicit null
+ * clears it - the same tri-state the event PATCH uses.
+ */
+export interface ProfilePatch {
+  display_name?: string | null;
+  legal_name?: string | null;
+  contact_email?: string | null;
+  contact_phone?: string | null;
+  description?: string | null;
+  website_url?: string | null;
 }

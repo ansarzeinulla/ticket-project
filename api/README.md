@@ -6,12 +6,15 @@ week by week.
 
 ---
 
-## What exists today (week 3)
+## What exists today (week 4)
 
-Accounts (register, sign in, password reset, email confirmation), events with
-their ticket types, a public event page, banner uploads, and a checkout that
-sells tickets in one transaction with a simulated payment. Emails are not sent
-yet - they are printed to the API's console.
+Accounts and organizer profiles, events with ticket types, a public event page,
+banner uploads, assigned seating, and a checkout that sells tickets in one
+transaction with a simulated payment. Paid tickets only sell once the organizer
+has completed the activation checklist. Every ticket has a QR code and a
+printable A4 PDF, and every event an `.ics` calendar file. Emails - including
+the order confirmation - are recorded in the `notifications` table and printed
+to the API's console.
 
 ### Layout
 
@@ -23,8 +26,11 @@ api/
   internal/database/         pgx connection pool
   internal/auth/             bcrypt password hashing, JWT issue and parse
   internal/email/            message templates, printed to the console
-  internal/store/            users, tokens, events, ticket types, orders
+  internal/store/            one store per table group: users, events, orders, ...
+  internal/ticketpdf/        the QR code and the A4 ticket, with an embedded font
+  internal/calendar/         .ics export
   internal/api/              routes, middleware, handlers and their tests
+  internal/testutil/         the test database: created, migrated, truncated
 ```
 
 Handlers stay thin: they decode the request, call a store, and write JSON through
@@ -42,7 +48,7 @@ make api-run   # the API on :8080
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `APP_ENV` | `development` | `production` disables the dev-only routes and requires `JWT_SECRET` |
+| `APP_ENV` | `development` | `production` requires `JWT_SECRET` |
 | `API_HOST` | `0.0.0.0` | listen address |
 | `APP_PORT` | `8080` | listen port |
 | `DATABASE_URL` | local compose database | PostgreSQL connection string |
@@ -66,6 +72,9 @@ make api-run   # the API on :8080
 | `POST` | `/api/v1/auth/password-reset` | – | `200`; the token works once, for an hour |
 | `POST` | `/api/v1/auth/verify-email` | – | `200`; the account becomes `active` |
 | `POST` | `/api/v1/auth/verify-email/request` | Bearer | `202`; sends a fresh confirmation |
+| `GET` | `/api/v1/auth/profile` | Bearer | the organizer profile, with masked payout accounts |
+| `PATCH` | `/api/v1/auth/profile` | Bearer | contact details; an explicit `null` clears a field |
+| `POST` | `/api/v1/auth/password` | Bearer | `204`; needs the current password, closes open reset links |
 | `POST` | `/api/v1/events` | Bearer | `201` a draft; creating an event grants the `organizer` role |
 | `GET` | `/api/v1/events` | – | published public events: `limit`, `offset`, `category`, `q`, `starts_after`, `starts_before` |
 | `GET` | `/api/v1/events/mine` | Bearer | the organizer's own events, drafts included; `status` filter |
@@ -81,12 +90,17 @@ make api-run   # the API on :8080
 | `DELETE` | `/api/v1/ticket-types/{id}` | Bearer | only a type with no sales; hide it otherwise |
 | `GET` | `/api/v1/public/events/{slug}` | – | the attendee view: event, on-sale types, `on_sale`, `sold_out` |
 | `POST` | `/api/v1/uploads/images` | Bearer | multipart field `file`; JPEG, PNG, GIF or WebP, 5 MB, at least 200×200 |
-| `POST` | `/api/v1/events/{id}/checkout` | optional | `201` order, tickets and simulated payment |
-| `GET` | `/api/v1/events/{id}/inventory` | optional | what is left of each type |
+| `POST` | `/api/v1/events/{id}/checkout` | optional | `201` order, tickets and simulated payment; `items` by tier, or `seat_ids` for assigned seating |
+| `GET` | `/api/v1/events/{id}/seats` | optional | the seat map of an assigned-seating event, each seat `available`, `sold` or `unavailable` |
 | `GET` | `/api/v1/orders/{id}` | optional | the order, its lines and tickets; the UUID is the capability |
+| `GET` | `/api/v1/events/{id}/activation` | Bearer | the paid-sales checklist and what is outstanding |
+| `POST` | `/api/v1/events/{id}/activation` | Bearer | ticks steps: `confirm_identity`, `confirm_payout`, `accept_terms`, `pay_activation_fee` |
+| `GET` | `/api/v1/tickets/{id}` | – | one ticket with its PDF and QR links |
+| `GET` | `/api/v1/tickets/{id}/pdf` | – | the printable A4 ticket |
+| `GET` | `/api/v1/tickets/{id}/qr.png` | – | the admission QR on its own |
+| `GET` | `/api/v1/events/{id}/calendar.ics` | – | the event for a calendar app, by id or slug |
 | `GET` | `/api/v1/events/{id}/orders` | Bearer | the organizer's order list, newest first |
 | `GET` | `/api/v1/events/{id}/attendees` | Bearer | ticket holders, `q` searches name, email, code, order |
-| `GET` | `/dev/config` | – | non-secret settings; not registered when `APP_ENV=production` |
 
 Every request body must be JSON with `Content-Type: application/json`.
 
@@ -116,14 +130,33 @@ curl -s -X POST localhost:8080/api/v1/events/$EVENT_ID/checkout \
 - A request above what is left answers `409 insufficient_inventory` with the
   `remaining` count in the body; nothing is written.
 - Free tickets go through the same checkout at a price of zero.
+- **Assigned seating** is bought by seat, not by tier: the request names seats
+  and the server decides which ticket type - and so which price - each one is,
+  from the venue section it sits in (`price_category`). Seats are locked
+  `FOR UPDATE` like ticket types, and `tickets_one_live_ticket_per_seat_uidx`
+  refuses a second live ticket on one seat whatever happens.
 - There is no real payment: a `payments` row with `is_simulated = true` is
   written, and the order is `paid` immediately.
+- **Paid tickets need an activated event** (SRS 4.5). Until the organizer has
+  ticked all four steps, a paid line answers `403 paid_sales_not_active`; free
+  tiers of the same event keep selling. The check runs inside the checkout
+  transaction, next to the prices it depends on.
+
+### The ticket
+
+Each ticket's QR encodes `TKT_<uuid>` - a fresh random value, not the ticket's
+id, so a link that leaks a ticket id does not leak an admission credential. The
+PDF embeds DejaVu Sans, so Kazakh and Russian names print as written, `₸`
+included. Ticket, PDF and QR are addressed by the ticket's UUID, the same
+capability model as the order page, and are never cached.
 
 ### Where the emails go
 
-`email.ConsoleSender` prints each message to standard output inside a framed
-block, so the reset and confirmation codes can be copied from the terminal that
-runs the API. Sending is asynchronous; shutdown waits for queued messages.
+Every message is first written to `notifications` as `pending`, then handed to
+`email.ConsoleSender`, which prints it to standard output inside a framed
+block; delivery marks the row `sent` or `failed`. Sending is asynchronous and a
+failed email never fails the request that caused it. Shutdown waits for queued
+messages.
 
 ### Checks
 
@@ -131,8 +164,9 @@ runs the API. Sending is asynchronous; shutdown waits for queued messages.
 make api-check   # gofmt, go vet, go test - the tests need `make up`
 ```
 
-The API tests are integration tests: they create a `biletflow_test` database
-next to the dev one, apply `db/init`, and truncate it around every test.
+The API tests are integration tests (`internal/testutil`): they create a
+`biletflow_test` database next to the dev one, apply `db/init`, and truncate it
+around every test.
 
 ---
 

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { OrderList } from "@/components/order-list";
+import { TicketCard } from "@/components/ticket-card";
 import { ApiError, api } from "@/lib/api";
 import { formatKZT } from "@/lib/money";
 
@@ -98,10 +98,13 @@ export default async function OrderConfirmationPage({
         <section className="mt-8">
           <h2 className="text-sm font-semibold">Your tickets</h2>
           <p className="mt-1 text-xs text-foreground-muted">
-            Each ticket admits one person once. Keep the ticket code - it is what the door
-            checks.
+            Show the QR code at the entrance, or download the A4 PDF to print. Each ticket admits one person once.
           </p>
-          <OrderList tickets={tickets} />
+          <ul className="mt-3 space-y-3">
+            {tickets.map((ticket) => (
+              <TicketCard key={ticket.id} ticket={ticket} />
+            ))}
+          </ul>
         </section>
 
         <p className="mt-8 rounded-lg border border-warning/30 bg-warning-soft px-3 py-2 text-xs text-warning">

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
+import { SeatedPurchase } from "@/components/seated-purchase";
 import { ApiError, api } from "@/lib/api";
 import { formatInTimezone } from "@/lib/datetime";
 
@@ -24,7 +25,20 @@ export default async function PublicEventPage({
   const data = await loadEvent(slug);
   if (!data) notFound();
 
-  const { event, ticket_types: ticketTypes, on_sale: onSale, sold_out: soldOut } = data;
+  const {
+    event,
+    ticket_types: ticketTypes,
+    on_sale: onSale,
+    sold_out: soldOut,
+    paid_sales_active: paidSalesActive,
+    paid_sales_required: paidSalesRequired,
+  } = data;
+
+  // Paid tickets exist but the organizer has not finished activation, so the
+  // checkout would refuse them (SRS 4.5). Saying so beats letting somebody
+  // pick tickets and fill in a form that cannot succeed.
+  const paidSalesPending = paidSalesRequired && !paidSalesActive;
+  const hasFreeTier = ticketTypes.some((type) => type.is_free);
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-10 sm:px-6">
@@ -75,19 +89,58 @@ export default async function PublicEventPage({
           </dl>
         </header>
 
+        {paidSalesPending && (
+          <div
+            role="status"
+            className="rounded-xl border border-warning/40 bg-warning-soft p-5"
+            data-testid="paid-sales-pending-banner"
+          >
+            <h2 className="text-base font-semibold text-warning">
+              Paid tickets are not on sale yet
+            </h2>
+            <p className="mt-1 text-sm text-warning/90">
+              The organizer is still completing BiletFlow&apos;s activation checks for this event.
+              {hasFreeTier
+                ? " Free tickets below can be booked in the meantime."
+                : " Check back shortly."}
+            </p>
+          </div>
+        )}
+
         {event.description && (
           <p className="whitespace-pre-line text-sm leading-relaxed text-foreground-muted">
             {event.description}
           </p>
         )}
 
-        <TicketSelector
-          eventID={event.id}
-          eventTitle={event.title}
-          ticketTypes={ticketTypes}
-          onSale={onSale}
-          soldOut={soldOut}
-        />
+        {/*
+          With activation outstanding and no free tier there is nothing to
+          offer, and the selector's empty state would claim the organizer had
+          published no ticket types - which is untrue. The banner above has
+          already explained the real reason.
+        */}
+        {/*
+          An assigned-seating event is bought by picking a seat, not by
+          stepping a quantity: the attendee is choosing *where* to sit, and a
+          "+/-" cannot express that (SRS 4.3.1).
+        */}
+        {!(paidSalesPending && !hasFreeTier) && event.seating_mode === "assigned_seating" && (
+          <SeatedPurchase eventID={event.id} />
+        )}
+
+        {!(paidSalesPending && !hasFreeTier) && event.seating_mode !== "assigned_seating" && (
+          <TicketSelector
+            eventID={event.id}
+            eventTitle={event.title}
+            // While activation is outstanding the paid tiers are not offered:
+            // the checkout would refuse them anyway.
+            ticketTypes={
+              paidSalesPending ? ticketTypes.filter((type) => type.is_free) : ticketTypes
+            }
+            onSale={onSale}
+            soldOut={soldOut}
+          />
+        )}
 
         {event.refund_policy && (
           <section className="rounded-xl border border-border-subtle bg-surface p-5">

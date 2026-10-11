@@ -54,10 +54,16 @@ export function SiteHeader() {
 
         <div className="ml-auto flex items-center gap-3">
           {user && (
-            <div className="hidden text-right sm:block">
+            // The name is the link to the profile: it is where somebody looks
+            // for "my account" without being told to.
+            <Link
+              href="/dashboard/profile"
+              className="hidden rounded-lg px-2 py-1 text-right hover:bg-surface-muted sm:block"
+              data-testid="profile-link"
+            >
               <span className="block text-sm font-medium leading-tight">{user.full_name}</span>
               <span className="block text-xs text-foreground-muted">{user.email}</span>
-            </div>
+            </Link>
           )}
           <Button variant="secondary" size="sm" onClick={handleSignOut}>
             Sign out

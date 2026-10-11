@@ -98,11 +98,17 @@ With the three terminals running, the project can be used end to end:
    add a free and a paid ticket type, and publish it from the dashboard.
 2. **Attendee.** In a private window open <http://localhost:3000/events>, pick the
    event, choose tickets and pay. The payment is simulated: nothing is charged.
-3. **Back to the organizer.** The event's page on the dashboard now lists the
-   order and every ticket holder.
+3. **The tickets.** The order page shows a QR code per ticket and a printable
+   PDF; the confirmation email is printed in the API's terminal (there is no
+   mail server - every email is printed there and recorded in the
+   `notifications` table).
+4. **Back to the organizer.** The event's page on the dashboard now lists the
+   order and every ticket holder. Paid tickets only go on sale once the
+   activation checklist on that page is complete.
 
 What each step must do, and what it must refuse, is written down in `1.md`
-(accounts), `2.md` (events and ticket types) and `3.md` (checkout).
+(accounts), `2.md` (events and ticket types), `3.md` (checkout) and `4.md`
+(ticket delivery).
 
 ## Checks
 
@@ -112,5 +118,6 @@ The same commands run in CI on every pull request:
 | --- | --- |
 | `make test` | database schema tests |
 | `make api-check` | Go formatting, `go vet`, unit and integration tests (needs `make up`) |
+| `make api-smoke` | cURL acceptance checks against a running API |
 | `make web-check` | ESLint, TypeScript, production build |
 

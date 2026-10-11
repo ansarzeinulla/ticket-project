@@ -6,6 +6,7 @@ import (
 	"encoding/base32"
 	"errors"
 	"fmt"
+	"math/big"
 	"time"
 
 	"github.com/google/uuid"
@@ -96,6 +97,10 @@ type CheckoutParams struct {
 	BuyerEmail  string
 	BuyerPhone  *string
 	Items       []CheckoutItem
+	// SeatIDs are the specific seats an assigned-seating purchase is for
+	// (SRS 4.3.1). When present the tiers are derived from the seats, so Items
+	// is not needed.
+	SeatIDs []uuid.UUID
 }
 
 // InsufficientInventoryError reports that a ticket type cannot cover the
@@ -139,6 +144,35 @@ func (e *ExceedsMaxPerOrderError) Error() string {
 		e.MaxPerOrder, e.TicketTypeName, e.Requested)
 }
 
+// PaidSalesNotActiveError reports a paid ticket bought before the organizer
+// finished the activation checklist (SRS 4.5).
+type PaidSalesNotActiveError struct {
+	// Status is the activation's current state, which decides whether the
+	// attendee is told "not yet on sale" or "suspended".
+	Status string
+}
+
+func (e *PaidSalesNotActiveError) Error() string {
+	if e.Status == ActivationSuspended {
+		return "paid ticket sales for this event have been suspended"
+	}
+	return "paid ticket sales for this event have not been activated yet"
+}
+
+// isPositiveAmount reports whether a decimal money string is above zero.
+//
+// The string comes from numeric(14,2), so it is always a plain decimal - but
+// it is parsed rather than compared against "0.00" because "0" and "0.000"
+// are the same amount written differently.
+func isPositiveAmount(s string) bool {
+	amount, ok := new(big.Rat).SetString(s)
+	if !ok {
+		// An unparseable price is not a licence to sell it for free.
+		return true
+	}
+	return amount.Sign() > 0
+}
+
 // CheckoutStore performs the purchase transaction.
 type CheckoutStore struct {
 	pool *pgxpool.Pool
@@ -174,10 +208,6 @@ type lockedTicketType struct {
 // The ticket_types_inventory_chk constraint is the backstop: even if this
 // logic were wrong, the database would refuse to record the oversold row.
 func (s *CheckoutStore) Checkout(ctx context.Context, p CheckoutParams) (CheckoutResult, error) {
-	if len(p.Items) == 0 {
-		return CheckoutResult{}, ErrNotFound
-	}
-
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return CheckoutResult{}, err
@@ -185,6 +215,28 @@ func (s *CheckoutStore) Checkout(ctx context.Context, p CheckoutParams) (Checkou
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	now := time.Now().UTC()
+
+	// --- 0. Assigned seating: seats become lines -----------------------------
+	// The attendee picked seats, not tiers. Each seat is resolved to the tier
+	// it is sold as and becomes its own line of one, so every ticket carries
+	// exactly one seat. Deriving the tier here rather than trusting the
+	// request is also what stops a crafted basket claiming an Orchestra seat at
+	// Balcony prices (SRS 4.3.1).
+	var seatIDs []uuid.UUID
+	if len(p.SeatIDs) > 0 {
+		assignments, err := resolveSeats(ctx, tx, p.EventID, p.SeatIDs)
+		if err != nil {
+			return CheckoutResult{}, err
+		}
+		p.Items = p.Items[:0]
+		for _, assignment := range assignments {
+			p.Items = append(p.Items, CheckoutItem{TicketTypeID: assignment.TicketTypeID, Quantity: 1})
+			seatIDs = append(seatIDs, assignment.SeatID)
+		}
+	}
+	if len(p.Items) == 0 {
+		return CheckoutResult{}, ErrNotFound
+	}
 
 	// --- 1. Lock and check every requested ticket type ----------------------
 	ids := make([]uuid.UUID, 0, len(p.Items))
@@ -240,12 +292,50 @@ func (s *CheckoutStore) Checkout(ctx context.Context, p CheckoutParams) (Checkou
 		}
 	}
 
-	// --- 2. Take the stock --------------------------------------------------
+	// Paid tickets need an activated event (SRS 4.5). The check lives inside
+	// the transaction, next to the prices it depends on: reading the
+	// activation in the handler would leave a window where paid sales are
+	// stopped between the check and the sale. Free tickets are unaffected -
+	// activation exists to gate money, and a free registration takes none.
+	paid := false
 	for _, item := range p.Items {
-		if _, err := tx.Exec(ctx, `
-			UPDATE ticket_types SET quantity_sold = quantity_sold + $2::int WHERE id = $1`,
-			item.TicketTypeID, item.Quantity); err != nil {
+		if isPositiveAmount(locked[item.TicketTypeID].priceKZT) {
+			paid = true
+			break
+		}
+	}
+	if paid {
+		var activationStatus string
+		err := tx.QueryRow(ctx,
+			`SELECT status::text FROM paid_sales_activations WHERE event_id = $1`,
+			p.EventID).Scan(&activationStatus)
+		if errors.Is(err, pgx.ErrNoRows) {
+			activationStatus = ActivationNotStarted
+		} else if err != nil {
 			return CheckoutResult{}, mapError(err)
+		}
+		if activationStatus != ActivationActive {
+			return CheckoutResult{}, &PaidSalesNotActiveError{Status: activationStatus}
+		}
+	}
+
+	// --- 2. Take the stock --------------------------------------------------
+	// Several seats of one tier are several lines, so the stock is taken per
+	// line rather than per tier.
+	// The WHERE clause repeats the availability test, so the increment can
+	// never exceed what is free even when one tier appears on several lines.
+	for _, item := range p.Items {
+		tag, err := tx.Exec(ctx, `
+			UPDATE ticket_types SET quantity_sold = quantity_sold + $2::int
+			 WHERE id = $1
+			   AND quantity_sold + quantity_reserved + $2::int <= quantity_total`,
+			item.TicketTypeID, item.Quantity)
+		if err != nil {
+			return CheckoutResult{}, mapError(err)
+		}
+		if tag.RowsAffected() == 0 {
+			t := locked[item.TicketTypeID]
+			return CheckoutResult{}, &InsufficientInventoryError{t.id, t.name, item.Quantity, t.remaining}
 		}
 	}
 
@@ -273,20 +363,28 @@ func (s *CheckoutStore) Checkout(ctx context.Context, p CheckoutParams) (Checkou
 	}
 
 	items := make([]OrderItem, 0, len(p.Items))
-	for _, item := range p.Items {
+	for i, item := range p.Items {
 		t := locked[item.TicketTypeID]
+
+		// An assigned-seating line carries the seat it is for (SRS 4.3.1, "the
+		// assigned section, row and seat number shall be stored on the ticket
+		// and order item").
+		var seatID *uuid.UUID
+		if i < len(seatIDs) {
+			seatID = &seatIDs[i]
+		}
 
 		var oi OrderItem
 		err := tx.QueryRow(ctx, `
-			INSERT INTO order_items (order_id, ticket_type_id, quantity,
+			INSERT INTO order_items (order_id, ticket_type_id, seat_id, quantity,
 			                         unit_price_kzt, discount_kzt, line_total_kzt)
-			-- Both uses of $3 are cast, otherwise PostgreSQL cannot deduce one
+			-- Both uses of $4 are cast, otherwise PostgreSQL cannot deduce one
 			-- type for a parameter that is an integer column and a numeric
 			-- operand in the same statement (SQLSTATE 42P08).
-			VALUES ($1, $2, $3::int, $4::numeric, 0, $4::numeric * $3::int)
+			VALUES ($1, $2, $3, $4::int, $5::numeric, 0, $5::numeric * $4::int)
 			RETURNING id, order_id, ticket_type_id, quantity,
 			          unit_price_kzt::text, line_total_kzt::text`,
-			order.ID, item.TicketTypeID, item.Quantity, t.priceKZT,
+			order.ID, item.TicketTypeID, seatID, item.Quantity, t.priceKZT,
 		).Scan(&oi.ID, &oi.OrderID, &oi.TicketTypeID, &oi.Quantity,
 			&oi.UnitPriceKZT, &oi.LineTotalKZT)
 		if err != nil {
@@ -340,17 +438,31 @@ func (s *CheckoutStore) Checkout(ctx context.Context, p CheckoutParams) (Checkou
 			// id travels in URLs and must not double as an admission credential.
 			qrToken := "TKT_" + uuid.NewString()
 
+			// The seat, when there is one, is copied from the order line with its
+			// section, row and number, so a printed ticket never has to look the
+			// layout up again.
 			var ticket Ticket
 			err = tx.QueryRow(ctx, `
 				INSERT INTO tickets (ticket_code, order_id, order_item_id, event_id,
-				                     ticket_type_id, attendee_id, qr_token, status)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, 'valid')
+				                     ticket_type_id, attendee_id, qr_token, status,
+				                     seat_id, seat_section, seat_row, seat_number)
+				SELECT $1, $2, oi.id, $3, oi.ticket_type_id, $4, $5, 'valid',
+				       oi.seat_id, vs.name, sr.label, st.seat_number
+				  FROM order_items oi
+				  LEFT JOIN seats st          ON st.id = oi.seat_id
+				  LEFT JOIN seat_rows sr      ON sr.id = st.row_id
+				  LEFT JOIN venue_sections vs ON vs.id = sr.section_id
+				 WHERE oi.id = $6
 				RETURNING id, ticket_code, qr_token, ticket_type_id, status::text, issued_at`,
-				ticketCode, order.ID, item.ID, order.EventID, item.TicketTypeID,
-				attendee.ID, qrToken,
+				ticketCode, order.ID, order.EventID, attendee.ID, qrToken, item.ID,
 			).Scan(&ticket.ID, &ticket.TicketCode, &ticket.QRToken,
 				&ticket.TicketTypeID, &ticket.Status, &ticket.IssuedAt)
 			if err != nil {
+				// tickets_one_live_ticket_per_seat_uidx is the backstop under the
+				// seat lock: a seat can hold one live ticket, whatever happens.
+				if isUniqueViolation(err, "tickets_one_live_ticket_per_seat_uidx") {
+					return CheckoutResult{}, &SeatUnavailableError{Reason: "already sold"}
+				}
 				return CheckoutResult{}, mapError(err)
 			}
 			ticket.TicketTypeName = item.TicketTypeName

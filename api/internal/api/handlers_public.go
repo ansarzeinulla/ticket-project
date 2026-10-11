@@ -15,6 +15,14 @@ type publicEventResponse struct {
 	TicketTypes []store.TicketType `json:"ticket_types"`
 	OnSale      bool               `json:"on_sale"`
 	SoldOut     bool               `json:"sold_out"`
+	// PaidSalesActive reports whether this event may take money yet (SRS 4.5).
+	// When it is false and paid tickets exist, the page explains that those
+	// tickets are not on sale rather than letting an attendee fill in a form
+	// the checkout is certain to refuse.
+	PaidSalesActive bool `json:"paid_sales_active"`
+	// PaidSalesRequired is whether activation gates anything here at all. A
+	// free event never needs it.
+	PaidSalesRequired bool `json:"paid_sales_required"`
 }
 
 // handleGetPublicEvent serves the attendee-facing event page, addressed by slug
@@ -70,10 +78,32 @@ func (s *Server) handleGetPublicEvent(w http.ResponseWriter, r *http.Request) {
 		onSale = false
 	}
 
+	// Paid sales need an activated event (SRS 4.5). This mirrors the gate the
+	// checkout enforces inside its transaction; the checkout remains the
+	// authority, and this only decides what the page offers.
+	activation, err := s.activations.ForEvent(r.Context(), event.ID)
+	if err != nil {
+		httpx.WriteInternalError(w, r, err)
+		return
+	}
+	if activation.RequiredForSales && !activation.IsActive {
+		freeRemaining := 0
+		for _, t := range types {
+			if t.IsFree && t.OnSaleAt(now) {
+				freeRemaining += t.QuantityRemaining
+			}
+		}
+		// A free tier on the same event stays buyable: activation gates money,
+		// not registration.
+		onSale = onSale && freeRemaining > 0
+	}
+
 	httpx.WriteJSON(w, http.StatusOK, publicEventResponse{
-		Event:       event,
-		TicketTypes: types,
-		OnSale:      onSale && len(types) > 0,
-		SoldOut:     len(types) > 0 && remaining == 0,
+		Event:             event,
+		TicketTypes:       types,
+		OnSale:            onSale && len(types) > 0,
+		SoldOut:           len(types) > 0 && remaining == 0,
+		PaidSalesActive:   activation.IsActive,
+		PaidSalesRequired: activation.RequiredForSales,
 	})
 }

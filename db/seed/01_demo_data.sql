@@ -4,8 +4,9 @@
 -- Not loaded automatically. Run it with:  make seed
 -- Re-runnable: it deletes its own rows first, so it never duplicates.
 --
--- Contents: 2 organizers, 2 attendees, 1 published free event and 1 published
---           paid event, with one order on each.
+-- Contents: 2 organizers with profiles, 2 attendees, 1 published free event
+--           and 1 published paid event whose paid sales are activated, with
+--           one order on each.
 --
 -- All demo rows live in the d0000000-... UUID space.
 -- =============================================================================
@@ -18,6 +19,8 @@ BEGIN;
 -- -----------------------------------------------------------------------------
 DELETE FROM tickets      WHERE id::text LIKE 'd0000000%';
 DELETE FROM orders       WHERE id::text LIKE 'd0000000%';
+DELETE FROM paid_sales_activations WHERE event_id::text LIKE 'd0000000%';
+DELETE FROM payments     WHERE id::text LIKE 'd0000000%';
 DELETE FROM ticket_types WHERE id::text LIKE 'd0000000%';
 DELETE FROM events       WHERE id::text LIKE 'd0000000%';
 DELETE FROM users        WHERE id::text LIKE 'd0000000%';
@@ -40,6 +43,18 @@ INSERT INTO user_roles (user_id, role) VALUES
     ('d0000000-0000-4000-8000-000000000002', 'organizer'),
     ('d0000000-0000-4000-8000-000000000003', 'attendee'),
     ('d0000000-0000-4000-8000-000000000004', 'attendee');
+
+INSERT INTO organizer_profiles (id, user_id, display_name, legal_name, contact_email, description, identity_verified_at) VALUES
+    ('d0000000-0000-4000-8000-000000000101', 'd0000000-0000-4000-8000-000000000001',
+     'Dana Events', 'IP Amirova D.', 'dana@biletflow.kz',
+     'Independent organizer of student and community events in Almaty.', now() - interval '80 days'),
+    ('d0000000-0000-4000-8000-000000000102', 'd0000000-0000-4000-8000-000000000002',
+     'AITU Student Union', 'AITU Student Union', 'timur@biletflow.kz',
+     'Student union running free campus events.', NULL);
+
+INSERT INTO payout_accounts (id, organizer_profile_id, provider, provider_account_ref, masked_account, status, is_simulated, verified_at) VALUES
+    ('d0000000-0000-4000-8000-000000000111', 'd0000000-0000-4000-8000-000000000101',
+     'simulated', 'sim_acct_dana_0001', '**** **** **** 4242', 'verified', true, now() - interval '75 days');
 
 -- -----------------------------------------------------------------------------
 -- 2. Events
@@ -82,6 +97,27 @@ INSERT INTO ticket_types (id, event_id, name, description, price_kzt, quantity_t
     ('d0000000-0000-4000-8000-000000000403', 'd0000000-0000-4000-8000-000000000302',
      'Standard', 'General admission.', 7000, 100, 2, 6,
      now() - interval '5 days', now() + interval '44 days', 2);
+
+-- The paid event has completed the activation checklist (SRS 4.5), so its paid
+-- tickets are on sale.
+UPDATE events SET paid_sales_enabled = true WHERE id = 'd0000000-0000-4000-8000-000000000302';
+
+INSERT INTO payments (id, purpose, event_id, payer_user_id, amount_kzt, status, provider,
+                      provider_payment_ref, is_simulated, paid_at) VALUES
+    ('d0000000-0000-4000-8000-000000000501', 'paid_sales_activation',
+     'd0000000-0000-4000-8000-000000000302', 'd0000000-0000-4000-8000-000000000001',
+     5000, 'succeeded', 'simulated', 'sim_activation_0001', true, now() - interval '6 days');
+
+INSERT INTO paid_sales_activations (
+    event_id, organizer_profile_id, payout_account_id, activation_fee_kzt,
+    activation_payment_id, status, identity_verified_at, payout_verified_at,
+    terms_accepted_at, activated_at
+) VALUES (
+    'd0000000-0000-4000-8000-000000000302', 'd0000000-0000-4000-8000-000000000101',
+    'd0000000-0000-4000-8000-000000000111', 5000,
+    'd0000000-0000-4000-8000-000000000501', 'active',
+    now() - interval '7 days', now() - interval '7 days',
+    now() - interval '6 days', now() - interval '6 days');
 
 -- -----------------------------------------------------------------------------
 -- 3. Orders and tickets

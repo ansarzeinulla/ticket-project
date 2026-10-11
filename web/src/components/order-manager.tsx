@@ -114,7 +114,19 @@ export function OrderManager({ eventID }: { eventID: string }) {
                       {formatWhen(order.placed_at ?? order.created_at)}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-right">{order.ticket_count}</td>
+                  <td className="px-4 py-3 text-right">
+                    <div>{order.live_tickets}</div>
+                    {order.live_tickets !== order.ticket_count && (
+                      <div className="text-xs text-foreground-muted">
+                        of {order.ticket_count} issued
+                      </div>
+                    )}
+                    {order.checked_in > 0 && (
+                      <div className="text-xs text-foreground-muted">
+                        {order.checked_in} checked in
+                      </div>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-right">{formatKZT(order.total_kzt)}</td>
                   <td className="px-4 py-3">
                     <span

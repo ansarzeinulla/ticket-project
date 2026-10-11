@@ -46,6 +46,36 @@ jobs:
       - name: Format, vet and test
         run: make api-check
 
+  smoke:
+    name: API acceptance (cURL)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: api/go.sum
+      - name: Start PostgreSQL
+        run: |
+          cp .env.example .env
+          docker compose up -d
+          make wait
+      - name: Start the API
+        run: |
+          set -a && . ./.env && set +a
+          cd api && go build -o bin/api ./cmd/api
+          ./bin/api &
+          # /health checks the database too, so this waits for a genuinely
+          # usable API rather than just an open port.
+          for _ in $(seq 1 60); do
+            curl -fsS http://localhost:8080/health && break
+            sleep 1
+          done
+      # Buys through the real HTTP stack and proves a basket bigger than the
+      # stock left is refused with nothing written.
+      - name: cURL acceptance checks
+        run: make api-smoke
+
   web:
     name: Web app
     runs-on: ubuntu-latest

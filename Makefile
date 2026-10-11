@@ -8,7 +8,7 @@ DB_NAME ?= biletflow
 PSQL     = $(COMPOSE) exec -T db psql -U $(DB_USER) -d $(DB_NAME) -v ON_ERROR_STOP=1
 
 .DEFAULT_GOAL := help
-.PHONY: help up down reset wait psql seed test api-run api-test api-check \
+.PHONY: help up down reset wait psql seed test api-run api-test api-smoke api-check \
 	web-install web-dev web-check scan-install scan-dev scan-check
 
 help: ## Show this help
@@ -51,6 +51,9 @@ api-run: ## Run the API on http://localhost:8080 (needs `make up`)
 
 api-test: ## Run the Go tests (integration tests need `make up`)
 	cd api && go test ./... -count=1
+
+api-smoke: ## cURL acceptance checks against a running API (needs `make api-run`)
+	@./api/scripts/smoke_test.sh
 
 api-check: ## Go: format check, vet and tests
 	@cd api && test -z "$$(gofmt -l .)" || (echo "run gofmt on:"; gofmt -l .; exit 1)

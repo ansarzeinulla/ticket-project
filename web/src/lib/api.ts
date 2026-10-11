@@ -8,6 +8,8 @@
 import { getToken } from "@/lib/session";
 import type {
   AcceptedResponse,
+  Activation,
+  ActivationSubmission,
   ApiErrorBody,
   AuthResponse,
   BiletEvent,
@@ -19,7 +21,10 @@ import type {
   EventOrder,
   EventResponse,
   Guest,
+  OrganizerProfile,
+  ProfilePatch,
   PublicEventResponse,
+  SeatMap,
   TicketType,
   TicketTypeListResponse,
   TicketTypeResponse,
@@ -34,6 +39,27 @@ import type {
 export const API_BASE_URL = (
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080/api/v1"
 ).replace(/\/+$/, "");
+
+/**
+ * The printable A4 PDF for one ticket.
+ *
+ * A plain link rather than a fetch: the API answers with
+ * `Content-Disposition: attachment`, which is what makes the browser download
+ * the file across origins (the HTML `download` attribute is ignored
+ * cross-origin, the header is not).
+ */
+export function ticketPDFURL(ticketID: string): string {
+  return `${API_BASE_URL}/tickets/${ticketID}/pdf`;
+}
+
+/**
+ * The admission QR as a PNG. The API renders it with the same encoder the PDF
+ * uses, so the preview on screen and the code on the printed page can never
+ * drift apart.
+ */
+export function ticketQRURL(ticketID: string): string {
+  return `${API_BASE_URL}/tickets/${ticketID}/qr.png`;
+}
 
 /**
  * A failed API call, carrying the pieces of the Go error envelope so the UI can
@@ -197,6 +223,15 @@ export const api = {
     });
   },
 
+  /** GET /events/{id}/seats - the live seat map of an assigned-seating event. */
+  async seatMap(eventID: string, signal?: AbortSignal): Promise<SeatMap> {
+    const data = await request<{ seat_map: SeatMap }>(`/events/${eventID}/seats`, {
+      token: null,
+      signal,
+    });
+    return data.seat_map;
+  },
+
   /** GET /orders/{id} - the id is the capability, so no token is needed. */
   getOrder(id: string, signal?: AbortSignal): Promise<CheckoutResult> {
     return request<CheckoutResult>(`/orders/${id}`, { token: null, signal });
@@ -291,6 +326,45 @@ export const api = {
   /** DELETE /ticket-types/{id} */
   deleteTicketType(id: string): Promise<void> {
     return request<void>(`/ticket-types/${id}`, { method: "DELETE" });
+  },
+
+  // --- organizer profile (SRS 4.1) ---------------------------------------------
+
+  /** GET /auth/profile - the caller's organizer profile, with masked payouts. */
+  getProfile(signal?: AbortSignal): Promise<{ profile: OrganizerProfile }> {
+    return request("/auth/profile", { signal });
+  },
+
+  /** PATCH /auth/profile - an absent key is left alone, an explicit null clears. */
+  updateProfile(patch: ProfilePatch): Promise<{ profile: OrganizerProfile }> {
+    return request("/auth/profile", { method: "PATCH", body: patch });
+  },
+
+  /** POST /auth/password - change the signed-in account's password. */
+  changePassword(currentPassword: string, newPassword: string): Promise<void> {
+    return request("/auth/password", {
+      method: "POST",
+      body: { current_password: currentPassword, new_password: newPassword },
+    });
+  },
+
+  // --- paid-sales activation (SRS 4.5) -------------------------------------------
+
+  /** GET /events/{id}/activation - the checklist and what is outstanding. */
+  async eventActivation(eventID: string, signal?: AbortSignal): Promise<Activation> {
+    const data = await request<{ activation: Activation }>(`/events/${eventID}/activation`, {
+      signal,
+    });
+    return data.activation;
+  },
+
+  /** POST /events/{id}/activation - complete one or more checklist steps. */
+  async advanceActivation(eventID: string, steps: ActivationSubmission): Promise<Activation> {
+    const data = await request<{ activation: Activation }>(`/events/${eventID}/activation`, {
+      method: "POST",
+      body: steps,
+    });
+    return data.activation;
   },
 
   // --- who is coming (organizer) -----------------------------------------------

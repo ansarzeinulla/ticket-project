@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
+import { ActivationChecklist } from "@/components/activation-checklist";
 import { AttendeeList } from "@/components/attendee-list";
 import { OrderManager } from "@/components/order-manager";
 import { TicketTypeManager } from "@/components/ticket-type-manager";
@@ -100,6 +101,13 @@ export function EventDetail({ eventID }: { eventID: string }) {
           </Alert>
         )}
       </div>
+
+      {/*
+        Activation sits above the numbers: an organizer whose paid tickets are
+        not on sale needs to know that before they wonder why nothing has sold.
+        It renders nothing at all for a free event.
+      */}
+      <ActivationChecklist eventID={event.id} />
 
       <OrderManager eventID={event.id} />
 
