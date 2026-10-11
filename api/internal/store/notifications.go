@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -97,4 +98,12 @@ func (s *NotificationStore) ListForOrder(ctx context.Context, orderID uuid.UUID)
 		out = append(out, n)
 	}
 	return out, rows.Err()
+}
+
+// nullableString turns an empty string into NULL, for optional text columns.
+func nullableString(s string) *string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	return &s
 }

@@ -6,10 +6,17 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { ApiError, api } from "@/lib/api";
 import { formatKZT, formatTiyn, toTiyn } from "@/lib/money";
-import type { Seat, SeatMap as SeatMapData, SeatSection, SeatStatus } from "@/lib/types";
+import type { Money, Seat, SeatMap as SeatMapData, SeatSection, SeatStatus } from "@/lib/types";
+
+/** What the attendee picked, carried to the payment step. */
+export interface SeatChoice {
+  seatIDs: string[];
+  lines: { id: string; section: string; price: Money }[];
+  totalTiyn: number;
+}
 
 /**
- * How the six seat states are drawn (SRS 4.3.1).
+ * How the seat states are drawn (SRS 4.3.1).
  *
  * The SRS requires them to be distinguished "with both colors and text or
  * symbols", and that is not decoration: roughly one man in twelve cannot tell
@@ -33,12 +40,6 @@ const SEAT_STYLE: Record<
     stroke: "var(--color-brand-strong)",
     label: "Selected",
     symbol: "✓",
-  },
-  held: {
-    fill: "var(--color-warning-soft)",
-    stroke: "var(--color-warning)",
-    label: "Held by someone",
-    symbol: "⏳",
   },
   sold: {
     fill: "var(--color-surface-muted)",
@@ -68,17 +69,16 @@ const PADDING = 26;
  */
 export function SeatMapPicker({
   eventID,
-  onHeld,
+  onChosen,
 }: {
   eventID: string;
-  /** Called once the seats are reserved, with the basket to check out. */
-  onHeld: (orderID: string) => void;
+  /** Called with the chosen seats, their prices and the total, to pay for. */
+  onChosen: (choice: SeatChoice) => void;
 }) {
   const [plan, setPlan] = useState<SeatMapData | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [holding, setHolding] = useState(false);
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -138,25 +138,19 @@ export function SeatMapPicker({
     0,
   );
 
-  async function reserve() {
-    setHolding(true);
-    setError(null);
-    try {
-      const hold = await api.holdSeats(eventID, selected);
-      onHeld(hold.order_id);
-    } catch (cause) {
-      setError(
-        cause instanceof ApiError
-          ? cause.message
-          : "Could not reserve those seats. Try again.",
-      );
-      // Somebody else may have taken one while this browser was deciding, so
-      // the map is re-read rather than left showing a seat that is now gone.
-      await load();
-      setSelected([]);
-    } finally {
-      setHolding(false);
-    }
+  function proceed() {
+    onChosen({
+      seatIDs: selected,
+      lines: selected.map((id) => {
+        const entry = priceBySeat.get(id);
+        return {
+          id,
+          section: entry?.section.name ?? "",
+          price: entry?.price ?? "0",
+        };
+      }),
+      totalTiyn,
+    });
   }
 
   if (loading) {
@@ -326,12 +320,8 @@ export function SeatMapPicker({
           <span className="text-lg font-semibold tabular-nums">
             {formatTiyn(totalTiyn)}
           </span>
-          <Button
-            disabled={selected.length === 0}
-            loading={holding}
-            onClick={() => void reserve()}
-          >
-            Hold these seats
+          <Button disabled={selected.length === 0} onClick={proceed}>
+            Continue
           </Button>
         </div>
       </div>

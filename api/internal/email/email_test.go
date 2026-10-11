@@ -9,6 +9,89 @@ import (
 	"testing"
 )
 
+func sampleOrder() OrderDetails {
+	return OrderDetails{
+		BuyerName:   "Aliya Toleuova",
+		BuyerEmail:  "aliya@biletflow.test",
+		OrderNumber: "BF-ABC123XYZ0",
+		EventTitle:  "Almaty Autumn Fest 2026",
+		EventVenue:  "Gorky Park Stage, Almaty",
+		EventWhen:   "Sat 17 Oct 2026, 19:00 (+06)",
+		TotalKZT:    "10000.00",
+		OrderURL:    "http://localhost:3000/orders/11111111-1111-1111-1111-111111111111",
+		Tickets: []TicketLine{
+			{TicketCode: "BF-TKT-AAAA", TypeName: "General Admission",
+				PDFURL: "http://localhost:8080/api/v1/tickets/aaaa/pdf"},
+			{TicketCode: "BF-TKT-BBBB", TypeName: "General Admission",
+				PDFURL: "http://localhost:8080/api/v1/tickets/bbbb/pdf"},
+		},
+	}
+}
+
+func TestOrderConfirmationCarriesWhatTheAttendeeNeeds(t *testing.T) {
+	msg := OrderConfirmation(sampleOrder())
+
+	if msg.To != "aliya@biletflow.test" {
+		t.Errorf("To = %q", msg.To)
+	}
+	// The subject is specified by the phase brief: "Your Tickets to [Event]".
+	if msg.Subject != "Your Tickets to Almaty Autumn Fest 2026" {
+		t.Errorf("Subject = %q", msg.Subject)
+	}
+	if msg.Type != TypeOrderConfirmation {
+		t.Errorf("Type = %q", msg.Type)
+	}
+
+	for _, want := range []string{
+		"Hi Aliya,",
+		"BF-ABC123XYZ0",
+		"Gorky Park Stage, Almaty",
+		"Sat 17 Oct 2026, 19:00 (+06)",
+		"10000.00 KZT (simulated payment)",
+		"http://localhost:8080/api/v1/tickets/aaaa/pdf",
+		"http://localhost:8080/api/v1/tickets/bbbb/pdf",
+		"http://localhost:3000/orders/11111111-1111-1111-1111-111111111111",
+	} {
+		if !strings.Contains(msg.Body, want) {
+			t.Errorf("body is missing %q", want)
+		}
+	}
+}
+
+// TestOrderConfirmationDegradesGracefully covers the fields a guest checkout
+// can legitimately leave empty. An email is not the place to discover that a
+// venue was optional.
+func TestOrderConfirmationDegradesGracefully(t *testing.T) {
+	d := sampleOrder()
+	d.BuyerName = ""
+	d.EventVenue = ""
+	d.EventWhen = ""
+	d.OrderURL = ""
+	d.Tickets = nil
+
+	body := OrderConfirmation(d).Body
+
+	if !strings.Contains(body, "Hi there,") {
+		t.Errorf("a missing name should greet the reader anyway; got:\n%s", body)
+	}
+	for _, unwanted := range []string{"When:", "Where:", "Download your tickets"} {
+		if strings.Contains(body, unwanted) {
+			t.Errorf("body still has an empty %q section:\n%s", unwanted, body)
+		}
+	}
+}
+
+func TestOrderConfirmationCountsTickets(t *testing.T) {
+	one := sampleOrder()
+	one.Tickets = one.Tickets[:1]
+	if !strings.Contains(OrderConfirmation(one).Body, "Your ticket is attached") {
+		t.Error("a single ticket should not be described in the plural")
+	}
+	if !strings.Contains(OrderConfirmation(sampleOrder()).Body, "Your 2 tickets are attached") {
+		t.Error("two tickets should be counted")
+	}
+}
+
 func sampleAccount() AccountTokenDetails {
 	return AccountTokenDetails{
 		FullName:  "Aliya Nurlanovna",

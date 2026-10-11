@@ -21,20 +21,18 @@ import (
 
 // testConfig mirrors production settings except for the bcrypt cost, which is
 // dropped to the minimum so the suite is not dominated by hashing time.
-// testFeePercent is the processing charge the test server applies.
-const testFeePercent = "3.5"
 
 func testConfig(t *testing.T) config.Config {
 	t.Helper()
 	return config.Config{
-		// Uploads land in a directory the test framework removes afterwards,
-		// so a test run leaves nothing behind on disk.
-		UploadDir:      t.TempDir(),
 		Env:            "test",
 		JWTSecret:      "integration-test-secret",
 		JWTIssuer:      "biletflow-test",
 		AccessTokenTTL: time.Hour,
 		BcryptCost:     bcrypt.MinCost,
+		// Uploads land in a directory the test framework removes afterwards,
+		// so a test run leaves nothing behind on disk.
+		UploadDir: t.TempDir(),
 	}
 }
 

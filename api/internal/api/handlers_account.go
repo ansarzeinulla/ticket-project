@@ -202,7 +202,11 @@ func (s *Server) sendPasswordReset(issued store.IssuedToken) {
 		Link:      s.cfg.WebBaseURL + "/reset-password?token=" + issued.Token,
 		ExpiresIn: humanDuration(store.PasswordResetTTL),
 	})
-	s.mailer.SendAsync(msg)
+	userID := issued.UserID
+	s.dispatch(msg, store.NotificationParams{
+		UserID:         &userID,
+		RecipientEmail: issued.Email,
+	})
 }
 
 // sendEmailVerification emails a confirmation token (SRS 4.1).
@@ -214,7 +218,11 @@ func (s *Server) sendEmailVerification(issued store.IssuedToken) {
 		Link:      s.cfg.WebBaseURL + "/verify-email?token=" + issued.Token,
 		ExpiresIn: humanDuration(store.EmailVerificationTTL),
 	})
-	s.mailer.SendAsync(msg)
+	userID := issued.UserID
+	s.dispatch(msg, store.NotificationParams{
+		UserID:         &userID,
+		RecipientEmail: issued.Email,
+	})
 }
 
 // humanDuration renders a TTL the way a person would say it.

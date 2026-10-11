@@ -229,6 +229,34 @@ func TestCreateEventRejectsDuplicateExplicitSlug(t *testing.T) {
 	requireErrorCode(t, c.post("/api/v1/events", acc.Token, body), http.StatusConflict, "conflict")
 }
 
+func TestCreateEventWritesAuditEntry(t *testing.T) {
+	c := newClient(t)
+	acc := c.register("audit")
+	eventID, _ := c.createEvent(acc.Token, "Audited Event")
+
+	var action, entityType string
+	var actor uuid.UUID
+	err := c.pool.QueryRow(t.Context(), `
+		SELECT action, entity_type, actor_user_id FROM audit_logs
+		 WHERE event_id = $1 ORDER BY created_at DESC LIMIT 1`, eventID).
+		Scan(&action, &entityType, &actor)
+	if err != nil {
+		t.Fatalf("no audit entry for the created event: %v", err)
+	}
+
+	if action != "event.created" {
+		t.Errorf("action = %q, want event.created", action)
+	}
+	if entityType != "event" {
+		t.Errorf("entity_type = %q, want event", entityType)
+	}
+	if actor != acc.ID {
+		t.Errorf("actor_user_id = %v, want %v", actor, acc.ID)
+	}
+}
+
+// --- reading -----------------------------------------------------------------
+
 func TestGetEventVisibilityRules(t *testing.T) {
 	c := newClient(t)
 	owner := c.register("owner")
@@ -650,6 +678,8 @@ func TestUnpublishRequiresPublishedEvent(t *testing.T) {
 	requireErrorCode(t, c.post("/api/v1/events/"+eventID.String()+"/unpublish", owner.Token, nil),
 		http.StatusConflict, "conflict")
 }
+
+// --- deleting ----------------------------------------------------------------
 
 func TestDeleteDraftEvent(t *testing.T) {
 	c := newClient(t)

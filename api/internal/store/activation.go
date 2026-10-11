@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"time"
 
@@ -19,34 +18,13 @@ const (
 	ActivationSuspended  = "suspended"
 )
 
-// SimulatedActivationFeeKZT is the fallback activation fee.
+// SimulatedActivationFeeKZT is the activation fee.
 //
 // SRS 4.5 requires the system to record payment of an activation fee. Nothing
 // is charged to anybody: the payment row it produces carries is_simulated =
 // true, and SRS 4.6 forbids presenting demonstration records as real
 // transactions.
-//
-// SRS 4.12 requires administrators to be able to "configure activation fees",
-// so the live value comes from platform_settings. This constant is what the
-// store falls back to when that row is missing or unreadable - a misconfigured
-// setting must not stop an organizer activating paid sales.
 const SimulatedActivationFeeKZT = "5000.00"
-
-// feeKZT reads the configured activation fee. It is a method so the store can
-// consult platform_settings without every caller having to.
-func (s *ActivationStore) feeKZT(ctx context.Context) string {
-	var raw []byte
-	if err := s.pool.QueryRow(ctx,
-		`SELECT value FROM platform_settings WHERE key = 'activation_fee_kzt'`,
-	).Scan(&raw); err != nil {
-		return SimulatedActivationFeeKZT
-	}
-	var fee string
-	if err := json.Unmarshal(raw, &fee); err != nil || blankAmount(fee) {
-		return SimulatedActivationFeeKZT
-	}
-	return fee
-}
 
 // Activation is an event's paid-sales activation state (SRS 4.5).
 type Activation struct {
@@ -161,7 +139,7 @@ func (s *ActivationStore) ForEvent(ctx context.Context, eventID uuid.UUID) (Acti
 		a = Activation{
 			EventID:          eventID,
 			Status:           ActivationNotStarted,
-			ActivationFeeKZT: s.feeKZT(ctx),
+			ActivationFeeKZT: SimulatedActivationFeeKZT,
 		}
 		a.finish()
 	} else if err != nil {
@@ -203,9 +181,7 @@ type AdvanceParams struct {
 // final transition into its own call would leave a window where the checklist
 // reads complete while sales are still shut.
 func (s *ActivationStore) Advance(ctx context.Context, p AdvanceParams) (Activation, error) {
-	// Read once, so the checklist row, the payment row and the audit line all
-	// quote the same figure even if an administrator changes it mid-flight.
-	fee := s.feeKZT(ctx)
+	fee := SimulatedActivationFeeKZT
 
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -246,8 +222,7 @@ func (s *ActivationStore) Advance(ctx context.Context, p AdvanceParams) (Activat
 		return Activation{}, mapError(err)
 	}
 
-	// A platform admin's suspension outranks the organizer's checklist
-	// (SRS 4.5, final bullet). Only an admin can lift it.
+	// A suspension outranks the organizer's checklist (SRS 4.5, final bullet).
 	if status == ActivationSuspended {
 		return Activation{}, ErrPaidSalesSuspended
 	}
@@ -375,101 +350,6 @@ func (s *ActivationStore) Advance(ctx context.Context, p AdvanceParams) (Activat
 	}
 
 	required, err := s.paidTicketsExist(ctx, p.EventID)
-	if err != nil {
-		return Activation{}, err
-	}
-	activation.RequiredForSales = required
-	return activation, nil
-}
-
-// SetSuspended stops or restores paid sales for one event (SRS 4.5, final
-// bullet: platform administrators may suspend paid sales where fraud or a
-// policy violation is suspected).
-//
-// This is narrower than the Phase 8 event suspension, which stops an event
-// selling anything at all. Suspending paid sales leaves free registration
-// working, which is the proportionate response when the concern is about money
-// rather than about the event itself.
-func (s *ActivationStore) SetSuspended(
-	ctx context.Context, eventID, adminID uuid.UUID, suspended bool, reason string,
-) (Activation, error) {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return Activation{}, err
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	var activationID uuid.UUID
-	err = tx.QueryRow(ctx, `SELECT id FROM paid_sales_activations WHERE event_id = $1`,
-		eventID).Scan(&activationID)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return Activation{}, ErrNotFound
-	}
-	if err != nil {
-		return Activation{}, mapError(err)
-	}
-
-	if suspended {
-		_, err = tx.Exec(ctx, `
-			UPDATE paid_sales_activations
-			   SET status = 'suspended', suspended_at = now(),
-			       suspended_by = $2, suspension_reason = $3
-			 WHERE id = $1`, activationID, adminID, nullableString(reason))
-	} else {
-		// Lifting returns the event to in_progress, not straight to active:
-		// the same UPDATE that activates on completion decides that, and it
-		// re-checks the whole checklist rather than trusting the old status.
-		_, err = tx.Exec(ctx, `
-			UPDATE paid_sales_activations
-			   SET status = CASE
-			           WHEN identity_verified_at IS NOT NULL
-			            AND payout_verified_at   IS NOT NULL
-			            AND terms_accepted_at    IS NOT NULL
-			            AND activation_payment_id IS NOT NULL THEN 'active'::activation_status
-			           ELSE 'in_progress'::activation_status END,
-			       suspended_at = NULL, suspended_by = NULL, suspension_reason = NULL
-			 WHERE id = $1`, activationID)
-	}
-	if err != nil {
-		return Activation{}, mapError(err)
-	}
-
-	if _, err := tx.Exec(ctx, `
-		UPDATE events e
-		   SET paid_sales_enabled = (a.status = 'active')
-		  FROM paid_sales_activations a
-		 WHERE a.id = $1 AND e.id = a.event_id`, activationID); err != nil {
-		return Activation{}, mapError(err)
-	}
-
-	action, description := "event.paid_sales_unsuspended", "Paid sales restored by BiletFlow"
-	if suspended {
-		action, description = "event.paid_sales_suspended", "Paid sales suspended by BiletFlow"
-		if reason != "" {
-			description += ": " + reason
-		}
-	}
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO audit_logs (event_id, actor_user_id, action, entity_type, entity_id, description)
-		VALUES ($1, $2, $3, 'event', $4, $5)`,
-		eventID, adminID, action, eventID.String(), description); err != nil {
-		return Activation{}, mapError(err)
-	}
-
-	activation, err := scanActivation(tx.QueryRow(ctx, `
-		SELECT `+activationColumns+`
-		  FROM paid_sales_activations a
-		  LEFT JOIN payments p ON p.id = a.activation_payment_id
-		 WHERE a.id = $1`, activationID))
-	if err != nil {
-		return Activation{}, mapError(err)
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return Activation{}, mapError(err)
-	}
-
-	required, err := s.paidTicketsExist(ctx, eventID)
 	if err != nil {
 		return Activation{}, err
 	}

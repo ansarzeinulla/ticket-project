@@ -12,6 +12,8 @@ package email
 import (
 	"context"
 	"fmt"
+	"io"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -41,6 +43,34 @@ type Sender interface {
 // rule is the width of the console frame: wide enough for a URL, narrow
 // enough to survive a split terminal.
 const ruleWidth = 74
+
+// ConsoleSender writes messages to an io.Writer, one framed block each.
+type ConsoleSender struct {
+	mu  sync.Mutex
+	out io.Writer
+}
+
+// NewConsoleSender writes to stdout, as the phase brief requires. A nil writer
+// means os.Stdout.
+func NewConsoleSender(out io.Writer) *ConsoleSender {
+	if out == nil {
+		out = os.Stdout
+	}
+	return &ConsoleSender{out: out}
+}
+
+// Send prints the message.
+//
+// The whole block is assembled first and written under a mutex, so two
+// concurrent sends cannot interleave their lines into an unreadable mess.
+func (c *ConsoleSender) Send(_ context.Context, msg Message) error {
+	block := Render(msg)
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	_, err := io.WriteString(c.out, block)
+	return err
+}
 
 // Render formats a message as the console block. It is exported so tests can
 // assert on the exact output a marker would read.

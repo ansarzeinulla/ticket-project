@@ -201,6 +201,9 @@ func (s *Server) handleCreateEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.appendAudit(r, event.ID, userID, "event.created", "event", event.ID.String(),
+		"Created event "+event.Title)
+
 	w.Header().Set("Location", "/api/v1/events/"+event.ID.String())
 	httpx.WriteJSON(w, http.StatusCreated, eventResponse{Event: event})
 }
@@ -472,6 +475,9 @@ func (s *Server) handleUpdateEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.appendAudit(r, updated.ID, mustUserID(r.Context()), "event.updated", "event",
+		updated.ID.String(), "Updated event "+updated.Title)
+
 	httpx.WriteJSON(w, http.StatusOK, eventResponse{Event: updated})
 }
 
@@ -509,6 +515,10 @@ func (s *Server) handleDeleteEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The audit entry outlives the event: audit_logs holds no foreign keys.
+	s.appendAudit(r, event.ID, mustUserID(r.Context()), "event.deleted", "event",
+		event.ID.String(), "Deleted draft event "+event.Title)
+
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -545,6 +555,9 @@ func (s *Server) handlePublishEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.appendAudit(r, published.ID, mustUserID(r.Context()), "event.published", "event",
+		published.ID.String(), "Published event "+published.Title)
+
 	httpx.WriteJSON(w, http.StatusOK, eventResponse{Event: published})
 }
 
@@ -566,6 +579,9 @@ func (s *Server) handleUnpublishEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.appendAudit(r, updated.ID, mustUserID(r.Context()), "event.unpublished", "event",
+		updated.ID.String(), "Unpublished event "+updated.Title)
+
 	httpx.WriteJSON(w, http.StatusOK, eventResponse{Event: updated})
 }
 
@@ -585,6 +601,9 @@ func (s *Server) handleCancelEvent(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteInternalError(w, r, err)
 		return
 	}
+
+	s.appendAudit(r, cancelled.ID, mustUserID(r.Context()), "event.cancelled", "event",
+		cancelled.ID.String(), "Cancelled event "+cancelled.Title)
 
 	httpx.WriteJSON(w, http.StatusOK, eventResponse{Event: cancelled})
 }
@@ -619,7 +638,11 @@ func (s *Server) loadOwnedEvent(w http.ResponseWriter, r *http.Request) (store.E
 		return store.Event{}, false
 	}
 
-	if event.OrganizerID != mustUserID(r.Context()) {
+	claims, _ := claimsFromContext(r.Context())
+	userID := mustUserID(r.Context())
+
+	// Platform admins may act on any event for moderation (SRS 4.12).
+	if event.OrganizerID != userID && !(claims != nil && claims.HasRole(store.RolePlatformAdmin)) {
 		httpx.WriteError(w, http.StatusForbidden, httpx.CodeForbidden,
 			"Only the organizer of this event can perform this action.")
 		return store.Event{}, false
@@ -629,7 +652,7 @@ func (s *Server) loadOwnedEvent(w http.ResponseWriter, r *http.Request) (store.E
 
 // canView reports whether the requester may see this event. Published public
 // and unlisted events are visible to anyone with the link; anything else is
-// restricted to the organizer.
+// restricted to the organizer and platform admins.
 func (s *Server) canView(r *http.Request, event store.Event) bool {
 	if event.Status == store.EventStatusPublished && event.Visibility != store.VisibilityPrivate {
 		return true
@@ -638,6 +661,9 @@ func (s *Server) canView(r *http.Request, event store.Event) bool {
 	claims, ok := claimsFromContext(r.Context())
 	if !ok {
 		return false
+	}
+	if claims.HasRole(store.RolePlatformAdmin) {
+		return true
 	}
 	userID, err := claims.UserID()
 	return err == nil && userID == event.OrganizerID
@@ -671,4 +697,21 @@ func pagination(r *http.Request) (limit, offset int, errs fieldErrors) {
 		}
 	}
 	return limit, offset, errs
+}
+
+// appendAudit records a timeline entry. A failure here must not fail the
+// request that already succeeded, so it is logged rather than returned.
+func (s *Server) appendAudit(r *http.Request, eventID, actorID uuid.UUID, action, entityType, entityID, description string) {
+	err := s.audit.Append(r.Context(), store.AuditEntry{
+		EventID:     &eventID,
+		ActorUserID: &actorID,
+		Action:      action,
+		EntityType:  entityType,
+		EntityID:    entityID,
+		Description: description,
+		Metadata:    map[string]any{"request_id": httpx.RequestIDFromContext(r.Context())},
+	})
+	if err != nil {
+		httpx.LogAuditFailure(r.Context(), action, err)
+	}
 }
