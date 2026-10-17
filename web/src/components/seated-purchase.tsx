@@ -3,26 +3,34 @@
 import { useState } from "react";
 
 import { SeatCheckout } from "@/components/seat-checkout";
-import { SeatMapPicker, type SeatChoice } from "@/components/seat-map";
+import { SeatMapPicker } from "@/components/seat-map";
 
 /**
- * The assigned-seating purchase flow (SRS 4.3.1): pick seats, then pay for
- * them. Two components, one at a time, so the payment form never shows seats
- * the map no longer has.
+ * The assigned-seating purchase flow (SRS 4.3.1, 4.6).
+ *
+ * Two steps, one at a time: pick seats, then pay for the reservation those
+ * seats produced. They are separate components because they are separate
+ * states of the world - before the hold nothing is reserved, after it a
+ * timer is running - and pretending otherwise is how a checkout ends up
+ * showing a countdown for seats nobody has claimed.
  */
 export function SeatedPurchase({ eventID }: { eventID: string }) {
-  const [choice, setChoice] = useState<SeatChoice | null>(null);
+  const [orderID, setOrderID] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  if (choice) {
+  if (orderID) {
     return (
       <SeatCheckout
-        eventID={eventID}
-        choice={choice}
-        onBack={() => setChoice(null)}
-        onSeatGone={() => {
-          setChoice(null);
-          setNotice("Somebody else has just bought one of those seats. Please choose again.");
+        orderID={orderID}
+        onExpired={() => {
+          setOrderID(null);
+          setNotice(
+            "Your reservation ran out and the seats are back on sale. Please choose again.",
+          );
+        }}
+        onCancelled={() => {
+          setOrderID(null);
+          setNotice("Those seats are back on sale.");
         }}
       />
     );
@@ -38,14 +46,14 @@ export function SeatedPurchase({ eventID }: { eventID: string }) {
           {notice}
         </p>
       )}
-      {/* Remounted after a lost seat, so the map is re-read rather than showing
-          the seats as they were before somebody else took one. */}
+      {/* Remounted whenever a hold ends, so the map is re-read rather than
+          showing the seats as they were before somebody else took one. */}
       <SeatMapPicker
         key={notice ?? "initial"}
         eventID={eventID}
-        onChosen={(picked) => {
+        onHeld={(id) => {
           setNotice(null);
-          setChoice(picked);
+          setOrderID(id);
         }}
       />
     </div>
