@@ -12,11 +12,13 @@ import (
 
 // Seat states the map distinguishes (SRS 4.3.1).
 //
-// The SRS asks for available, selected, sold, unavailable and accessible to be
-// told apart. "Selected" is the client's own business - it is what this browser
-// has clicked and nobody else can know it - so the server reports the rest.
+// The SRS asks for available, selected, temporarily held, sold, unavailable and
+// accessible to be told apart. "Selected" is the client's own business - it is
+// what this browser has clicked and nobody else can know it - so the server
+// reports the other five.
 const (
 	SeatAvailable   = "available"
+	SeatHeld        = "held"
 	SeatSold        = "sold"
 	SeatUnavailable = "unavailable"
 )
@@ -126,7 +128,12 @@ func (s *SeatingStore) MapForEvent(ctx context.Context, eventID uuid.UUID) (Seat
 		       -- Sold: a live ticket names this seat.
 		       EXISTS (SELECT 1 FROM tickets t
 		                WHERE t.seat_id = st.id
-		                  AND t.status IN ('valid', 'checked_in'))                AS sold
+		                  AND t.status IN ('valid', 'checked_in'))                AS sold,
+		       -- Held: somebody's basket has it, and that basket is still alive.
+		       EXISTS (SELECT 1 FROM seat_holds h
+		                WHERE h.seat_id = st.id
+		                  AND h.status = 'active'
+		                  AND h.expires_at > now())                               AS held
 		  FROM venue_sections sec
 		  JOIN seat_rows r  ON r.section_id = sec.id
 		  JOIN seats st     ON st.row_id = r.id
@@ -166,13 +173,13 @@ func (s *SeatingStore) MapForEvent(ctx context.Context, eventID uuid.UUID) (Seat
 			seatNumber                string
 			x, y                      float64
 			accessible, available     bool
-			sold                      bool
+			sold, held                bool
 		)
 		if err := rows.Scan(&secID, &secName, &category, &secOrder,
 			&ticketTypeID, &ticketTypeName, &priceKZT,
 			&rowID, &rowLbl, &rowOrder,
 			&seatID, &seatNumber, &x, &y, &accessible, &available,
-			&sold); err != nil {
+			&sold, &held); err != nil {
 			return SeatMap{}, err
 		}
 
@@ -196,13 +203,16 @@ func (s *SeatingStore) MapForEvent(ctx context.Context, eventID uuid.UUID) (Seat
 			rowIndex[rowID] = ri
 		}
 
-		// A seat taken out of service is unavailable whatever else is true of it.
+		// The order matters: a sold seat that is also held is sold, and a seat
+		// taken out of service is unavailable whatever else is true of it.
 		status := SeatAvailable
 		switch {
 		case !available:
 			status = SeatUnavailable
 		case sold:
 			status = SeatSold
+		case held:
+			status = SeatHeld
 		}
 
 		plan.Sections[si].Rows[ri].Seats = append(plan.Sections[si].Rows[ri].Seats, Seat{
@@ -256,9 +266,8 @@ func (e *SeatUnavailableError) Error() string {
 // what stops a crafted request from claiming an Orchestra seat at Balcony
 // prices.
 //
-// The seats are locked FOR UPDATE in id order, so two buyers racing for the
-// same pair of seats queue rather than deadlock - and the second one then sees
-// the seat sold.
+// The seats are locked FOR UPDATE in id order, so two baskets racing for the
+// same pair of seats queue rather than deadlock.
 func resolveSeats(
 	ctx context.Context, tx pgx.Tx, eventID uuid.UUID, seatIDs []uuid.UUID,
 ) ([]SeatAssignment, error) {
