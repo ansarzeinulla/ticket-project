@@ -2,6 +2,8 @@
 package api
 
 import (
+	"context"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -54,7 +56,10 @@ func NewWithSender(cfg config.Config, pool *pgxpool.Pool, sender email.Sender) *
 		accountTokens: store.NewTokenStore(pool),
 		events:        store.NewEventStore(pool),
 		ticketTypes:   store.NewTicketTypeStore(pool),
-		checkout:      store.NewCheckoutStore(pool),
+		checkout: store.NewCheckoutStoreWithFees(pool, store.Fees{
+			Percent:  cfg.ProcessingFeePercent,
+			FixedKZT: cfg.ProcessingFeeFixedKZT,
+		}),
 		seating:       store.NewSeatingStore(pool),
 		activations:   store.NewActivationStore(pool),
 		tickets:       store.NewTicketStore(pool),
@@ -71,6 +76,24 @@ func NewWithSender(cfg config.Config, pool *pgxpool.Pool, sender email.Sender) *
 	// owns the notification store it marks.
 	s.mailer = email.NewMailer(sender, s.markNotification)
 	return s
+}
+
+// StartHoldSweeper releases abandoned baskets on a timer (SRS 4.6).
+//
+// It returns immediately; the sweep runs until the context is cancelled. The
+// opportunistic release inside the hold transaction already guarantees that a
+// stale basket never blocks a real sale - this keeps the counters honest for
+// everything else, so an event page shows the right number remaining even when
+// nobody is shopping.
+func (s *Server) StartHoldSweeper(ctx context.Context) {
+	sweeper := store.NewSweeper(s.checkout, time.Minute, func(released int, err error) {
+		if err != nil {
+			slog.Error("hold sweeper", "error", err)
+			return
+		}
+		slog.Info("released abandoned reservations", "ticket_types_touched", released)
+	})
+	go sweeper.Run(ctx)
 }
 
 // Mailer exposes the email dispatcher so main can drain it on shutdown and
@@ -151,6 +174,14 @@ func (s *Server) Handler() http.Handler {
 	// Public: an attendee sees what is left before deciding, and before
 	// signing in.
 	mux.HandleFunc("GET /api/v1/events/{id}/seats", s.optionalAuth(s.handleEventSeatMap))
+
+	// --- cart holds (SRS 4.6, 4.3.1) ----------------------------------------
+	// Anonymous, like checkout: an attendee picks seats before signing in, and
+	// demanding an account to look at a seat map would lose the sale.
+	mux.HandleFunc("POST /api/v1/events/{id}/holds", s.optionalAuth(s.handleCreateHold))
+	mux.HandleFunc("GET /api/v1/orders/{id}/hold", s.optionalAuth(s.handleGetHold))
+	mux.HandleFunc("DELETE /api/v1/orders/{id}/hold", s.optionalAuth(s.handleReleaseHold))
+	mux.HandleFunc("POST /api/v1/orders/{id}/confirm", s.optionalAuth(s.handleConfirmHold))
 
 	// --- paid-sales activation (SRS 4.5) ------------------------------------
 	mux.HandleFunc("GET /api/v1/events/{id}/activation", s.requireAuth(s.handleGetActivation))

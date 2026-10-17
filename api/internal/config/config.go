@@ -25,9 +25,16 @@ type Config struct {
 	APIBaseURL string
 	// UploadDir is where event banners are written. Local disk stands in for
 	// object storage in this MVP.
-	UploadDir      string
-	AccessTokenTTL time.Duration
-	BcryptCost     int
+	UploadDir string
+	// ProcessingFeePercent and ProcessingFeeFixedKZT are the payment-processing
+	// charge (SRS 3.3), as decimal strings so the rate never passes through a
+	// float. SRS 3.3 leaves the amount "to be determined"; 3.5% is a plausible
+	// card rate for the region and is what an unconfigured deployment charges.
+	// Set PROCESSING_FEE_PERCENT=0 to switch the charge off entirely.
+	ProcessingFeePercent  string
+	ProcessingFeeFixedKZT string
+	AccessTokenTTL        time.Duration
+	BcryptCost            int
 }
 
 // devSecret is used only outside production. Production refuses to start
@@ -47,6 +54,9 @@ func Load() (Config, error) {
 		WebBaseURL: strings.TrimRight(envString("WEB_BASE_URL", "http://localhost:3000"), "/"),
 		APIBaseURL: strings.TrimRight(envString("API_BASE_URL", "http://localhost:8080"), "/"),
 		UploadDir:  envString("UPLOAD_DIR", "./data/uploads"),
+
+		ProcessingFeePercent:  envString("PROCESSING_FEE_PERCENT", "3.5"),
+		ProcessingFeeFixedKZT: envString("PROCESSING_FEE_FIXED_KZT", "0"),
 	}
 
 	var err error

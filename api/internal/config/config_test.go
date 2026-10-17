@@ -25,3 +25,19 @@ func TestLoadRejectsBadPort(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadReadsTheProcessingFee(t *testing.T) {
+	t.Setenv("PROCESSING_FEE_PERCENT", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.ProcessingFeePercent != "3.5" || cfg.ProcessingFeeFixedKZT != "0" {
+		t.Errorf("default fee = %q + %q, want 3.5%% + 0", cfg.ProcessingFeePercent, cfg.ProcessingFeeFixedKZT)
+	}
+
+	t.Setenv("PROCESSING_FEE_PERCENT", "0")
+	if cfg, _ := Load(); cfg.ProcessingFeePercent != "0" {
+		t.Errorf("PROCESSING_FEE_PERCENT=0 read as %q", cfg.ProcessingFeePercent)
+	}
+}
