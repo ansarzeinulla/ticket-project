@@ -71,8 +71,9 @@ jobs:
             curl -fsS http://localhost:8080/health && break
             sleep 1
           done
-      # Buys through the real HTTP stack and proves a basket bigger than the
-      # stock left is refused with nothing written.
+      # Buys through the real HTTP stack, proves a basket bigger than the
+      # stock left is refused with nothing written, then scans the ticket in
+      # at the gate and proves a second scan is refused.
       - name: cURL acceptance checks
         run: make api-smoke
 
@@ -90,6 +91,21 @@ jobs:
         working-directory: web
       - name: Lint, typecheck and build
         run: make web-check
+
+  mobile:
+    name: Scanner app typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - run: npm ci
+        working-directory: mobile
+      - name: Typecheck
+        run: make scan-check
 
   docker:
     name: Container images build
