@@ -25,6 +25,8 @@ import type {
   ProfilePatch,
   PublicEventResponse,
   SeatMap,
+  StaffMember,
+  StaffResponse,
   TicketType,
   TicketTypeListResponse,
   TicketTypeResponse,
@@ -382,6 +384,23 @@ export const api = {
       signal,
     });
     return data.attendees;
+  },
+
+  // --- Event staff (SRS 4.8) ---------------------------------------------------
+
+  /** GET /events/{id}/staff - who can scan at the gate. */
+  listStaff(eventID: string, signal?: AbortSignal): Promise<StaffResponse> {
+    return request<StaffResponse>(`/events/${eventID}/staff`, { signal });
+  },
+
+  /** POST /events/{id}/staff - name a scanner by email. */
+  assignStaff(eventID: string, email: string, role: string): Promise<{ assignment: StaffMember }> {
+    return request(`/events/${eventID}/staff`, { method: "POST", body: { email, role } });
+  },
+
+  /** DELETE /events/{id}/staff/{assignmentId} - revoke the gate. */
+  revokeStaff(eventID: string, assignmentID: string): Promise<void> {
+    return request(`/events/${eventID}/staff/${assignmentID}`, { method: "DELETE" });
   },
 
   /** POST /uploads/images - an event banner (SRS 4.2). */
