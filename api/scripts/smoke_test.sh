@@ -318,11 +318,11 @@ ORDER_ID="$(json_get "$HTTP_BODY" order.id)"
 ORDER_STATUS="$(json_get "$HTTP_BODY" order.status)"
 ORDER_TOTAL="$(json_get "$HTTP_BODY" order.total_kzt)"
 
-if [ "$ORDER_STATUS" = "paid" ] && [ "$ORDER_TOTAL" = "10000.00" ]; then
-    pass "10b the order is paid for 10000.00 KZT"
+if [ "$ORDER_STATUS" = "paid" ] && [ "$ORDER_TOTAL" = "10350.00" ]; then
+    pass "10b the order is paid for 10350.00 KZT (10000 + the 3.5% processing charge)"
     info "order id: $ORDER_ID"
 else
-    fail "10b order is ${ORDER_STATUS:-none} for ${ORDER_TOTAL:-none}, want paid / 10000.00"
+    fail "10b order is ${ORDER_STATUS:-none} for ${ORDER_TOTAL:-none}, want paid / 10350.00"
 fi
 
 # The inventory is checked outside the API, straight from PostgreSQL.

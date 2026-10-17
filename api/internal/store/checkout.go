@@ -175,12 +175,29 @@ func isPositiveAmount(s string) bool {
 // CheckoutStore performs the reservation and purchase transactions.
 type CheckoutStore struct {
 	pool *pgxpool.Pool
+	// fees is the processing charge this deployment applies (SRS 3.3).
+	fees Fees
 }
 
-// NewCheckoutStore builds a CheckoutStore.
+// NewCheckoutStore builds a CheckoutStore charging the default fee.
 func NewCheckoutStore(pool *pgxpool.Pool) *CheckoutStore {
-	return &CheckoutStore{pool: pool}
+	return &CheckoutStore{pool: pool, fees: DefaultFees}
 }
+
+// NewCheckoutStoreWithFees builds one with an explicit fee schedule, which is
+// what lets a deployment configure the charge and a test pin it.
+func NewCheckoutStoreWithFees(pool *pgxpool.Pool, fees Fees) *CheckoutStore {
+	if fees.Percent == "" {
+		fees.Percent = DefaultFees.Percent
+	}
+	if fees.FixedKZT == "" {
+		fees.FixedKZT = DefaultFees.FixedKZT
+	}
+	return &CheckoutStore{pool: pool, fees: fees}
+}
+
+// Fees reports the schedule in force, so the API can quote it.
+func (s *CheckoutStore) Fees() Fees { return s.fees }
 
 // lockedTicketType is the inventory snapshot read under a row lock.
 type lockedTicketType struct {

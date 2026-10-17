@@ -41,6 +41,10 @@ type Hold struct {
 	// SecondsRemaining is what a countdown renders. Computed rather than left
 	// to the client, whose clock may be anywhere.
 	SecondsRemaining int `json:"seconds_remaining"`
+	// EstimatedFeeKZT and EstimatedTotalKZT price the basket, so an attendee
+	// sees what they will pay before committing (SRS 4.3.1).
+	EstimatedFeeKZT   string `json:"estimated_processing_fee_kzt"`
+	EstimatedTotalKZT string `json:"estimated_total_kzt"`
 }
 
 // HoldParams describes a basket to reserve.
@@ -56,6 +60,26 @@ type HoldParams struct {
 	// this basket is holding (SRS 4.3.1).
 	SeatIDs []uuid.UUID
 }
+
+// Fees is the processing charge configuration (SRS 3.3).
+//
+// The fee is what the payment processor takes on a transaction. It is added to
+// the attendee's total and never reaches the organizer, which is what SRS 3.3
+// means by "deducted from each transaction" - the organizer's proceeds are the
+// ticket price, and the charge for moving the money is not theirs to keep.
+//
+// A free basket is charged nothing, per SRS 3.3's "free events: no platform
+// fee". That is a rule about the amount, not about the event: a free ticket
+// bought alongside a paid one is part of a transaction that does move money.
+type Fees struct {
+	// Percent of the discounted subtotal, as a decimal string ("3.5").
+	Percent string
+	// Fixed component in KZT, as a decimal string.
+	FixedKZT string
+}
+
+// DefaultFees is what an unconfigured deployment charges.
+var DefaultFees = Fees{Percent: "3.5", FixedKZT: "0"}
 
 // CheckoutStore methods below implement the two-step flow. The one-shot
 // Checkout in checkout.go composes them inside a single transaction.
@@ -190,12 +214,19 @@ func (s *CheckoutStore) hold(ctx context.Context, tx pgx.Tx, p HoldParams) (Hold
 		return Hold{}, err
 	}
 
+	fee, total, err := estimateFee(ctx, tx, held.OrderID, s.fees)
+	if err != nil {
+		return Hold{}, err
+	}
+
 	held.EventID = p.EventID
 	held.Status = "pending"
 	held.Items = items
 	held.SubtotalKZT = subtotal
 	held.ReservedUntil = expiresAt
 	held.SecondsRemaining = secondsUntil(expiresAt)
+	held.EstimatedFeeKZT = fee
+	held.EstimatedTotalKZT = total
 	return held, nil
 }
 
@@ -318,6 +349,11 @@ func (s *CheckoutStore) confirm(
 			 WHERE id = $1`, item.TicketTypeID, item.Quantity); err != nil {
 			return CheckoutResult{}, mapError(err)
 		}
+	}
+
+	// --- 5. The processing charge (SRS 3.3) ---------------------------------
+	if err := chargeFee(ctx, tx, p.OrderID, s.fees); err != nil {
+		return CheckoutResult{}, err
 	}
 
 	// The simulated payment succeeds immediately, so the order is paid.
@@ -480,6 +516,10 @@ func (s *CheckoutStore) GetHold(ctx context.Context, orderID uuid.UUID) (Hold, e
 	if held.Items, err = orderItemsFor(ctx, tx, orderID); err != nil {
 		return Hold{}, err
 	}
+	if held.EstimatedFeeKZT, held.EstimatedTotalKZT, err =
+		estimateFee(ctx, tx, orderID, s.fees); err != nil {
+		return Hold{}, err
+	}
 	return held, mapError(tx.Commit(ctx))
 }
 
@@ -552,6 +592,42 @@ func releaseExpired(ctx context.Context, tx pgx.Tx, eventID *uuid.UUID) (int, er
 func releaseExpiredForEvent(ctx context.Context, tx pgx.Tx, eventID uuid.UUID) error {
 	_, err := releaseExpired(ctx, tx, &eventID)
 	return err
+}
+
+// estimateFee prices a basket without writing anything.
+func estimateFee(ctx context.Context, tx pgx.Tx, orderID uuid.UUID, fees Fees) (string, string, error) {
+	var fee, total string
+	err := tx.QueryRow(ctx, `
+		SELECT f.fee::text, (subtotal_kzt - discount_kzt + f.fee)::text
+		  FROM orders,
+		       LATERAL (SELECT CASE WHEN subtotal_kzt - discount_kzt > 0
+		                            THEN round((subtotal_kzt - discount_kzt)
+		                                       * $2::numeric / 100 + $3::numeric, 2)
+		                            ELSE 0 END AS fee) AS f
+		 WHERE orders.id = $1`, orderID, fees.Percent, fees.FixedKZT).Scan(&fee, &total)
+	if err != nil {
+		return "", "", mapError(err)
+	}
+	return fee, total, nil
+}
+
+// chargeFee writes the processing charge and the resulting total (SRS 3.3).
+//
+// orders_total_math_chk holds that total = subtotal - discount + fee, so both
+// columns have to move in the same statement or the row would be rejected
+// halfway.
+func chargeFee(ctx context.Context, tx pgx.Tx, orderID uuid.UUID, fees Fees) error {
+	_, err := tx.Exec(ctx, `
+		UPDATE orders o
+		   SET processing_fee_kzt = f.fee,
+		       total_kzt          = o.subtotal_kzt - o.discount_kzt + f.fee
+		  FROM (SELECT CASE WHEN subtotal_kzt - discount_kzt > 0
+		                    THEN round((subtotal_kzt - discount_kzt)
+		                               * $2::numeric / 100 + $3::numeric, 2)
+		                    ELSE 0 END AS fee
+		          FROM orders WHERE id = $1) AS f
+		 WHERE o.id = $1`, orderID, fees.Percent, fees.FixedKZT)
+	return mapError(err)
 }
 
 // holdSeats reserves specific seats for an assigned-seating basket.
