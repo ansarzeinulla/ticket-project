@@ -13,10 +13,10 @@ import {
 import { ApiError, api } from "../lib/api";
 import { useAuth } from "../lib/auth-context";
 import { radius, theme } from "../lib/theme";
-import type { MobileEvent } from "../lib/types";
+import type { ScannableEvent } from "../lib/types";
 
 /** Renders a start time in the event's own timezone, not the phone's. */
-function formatStart(event: MobileEvent): string {
+function formatStart(event: ScannableEvent): string {
   try {
     return new Intl.DateTimeFormat("en-GB", {
       timeZone: event.timezone,
@@ -31,14 +31,14 @@ function formatStart(event: MobileEvent): string {
 export default function EventsScreen() {
   const { user, signOut } = useAuth();
 
-  const [events, setEvents] = useState<MobileEvent[]>([]);
+  const [events, setEvents] = useState<ScannableEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      setEvents(await api.myPublishedEvents());
+      setEvents(await api.scannableEvents());
       setError(null);
     } catch (cause) {
       if (cause instanceof ApiError && cause.isSessionExpired) {
@@ -53,7 +53,8 @@ export default function EventsScreen() {
     }
   }, [signOut]);
 
-  // Re-fetch whenever the screen comes back into view.
+  // Re-fetch whenever the screen comes back into view, so the counts are fresh
+  // after a shift at the gate.
   useFocusEffect(
     useCallback(() => {
       void load();
@@ -78,7 +79,7 @@ export default function EventsScreen() {
     <View style={styles.flex}>
       <View style={styles.header}>
         <View style={styles.headerText}>
-          <Text style={styles.who}>{user?.full_name}</Text>
+          <Text style={styles.who}>{user?.full_name ?? "Event Admin"}</Text>
           <Text style={styles.muted}>{user?.email}</Text>
         </View>
         <Pressable onPress={handleSignOut} hitSlop={12} testID="sign-out">
@@ -108,22 +109,55 @@ export default function EventsScreen() {
         }
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>No published events</Text>
+            <Text style={styles.emptyTitle}>No events to scan</Text>
             <Text style={styles.muted}>
-              Publish an event from the web dashboard and it appears here. Pull
-              down to refresh.
+              An organizer needs to assign you as an Event Admin before an event
+              appears here. Pull down to refresh.
             </Text>
           </View>
         }
-        renderItem={({ item }) => (
-          <View style={styles.card} testID={`event-${item.id}`}>
-            <Text style={styles.cardTitle} numberOfLines={2}>
-              {item.title}
-            </Text>
-            <Text style={styles.muted}>{formatStart(item)}</Text>
-            {item.venue_name ? <Text style={styles.muted}>{item.venue_name}</Text> : null}
-          </View>
-        )}
+        renderItem={({ item }) => {
+          const remaining = Math.max(0, item.stats.issued - item.stats.checked_in);
+          return (
+            <Pressable
+              style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+              onPress={() => router.push(`/scanner?eventId=${item.id}`)}
+              testID={`event-${item.id}`}
+            >
+              <View style={styles.cardHeader}>
+                <Text style={styles.cardTitle} numberOfLines={2}>
+                  {item.title}
+                </Text>
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>
+                    {item.access_via === "organizer" ? "Organizer" : "Event Admin"}
+                  </Text>
+                </View>
+              </View>
+
+              <Text style={styles.muted}>{formatStart(item)}</Text>
+              {item.venue_name ? (
+                <Text style={styles.muted}>{item.venue_name}</Text>
+              ) : null}
+
+              <View style={styles.stats}>
+                <View style={styles.stat}>
+                  <Text style={styles.statValue}>{item.stats.checked_in}</Text>
+                  <Text style={styles.statLabel}>Checked in</Text>
+                </View>
+                <View style={styles.stat}>
+                  <Text style={styles.statValue}>{remaining}</Text>
+                  <Text style={styles.statLabel}>Expected</Text>
+                </View>
+                <View style={styles.stat}>
+                  <Text style={styles.statValue}>{item.stats.issued}</Text>
+                  <Text style={styles.statLabel}>Tickets</Text>
+                </View>
+              </View>
+
+            </Pressable>
+          );
+        }}
       />
     </View>
   );
@@ -160,7 +194,20 @@ const styles = StyleSheet.create({
     padding: 18,
     gap: 4,
   },
+  cardPressed: { opacity: 0.7 },
+  cardHeader: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
   cardTitle: { color: theme.text, fontSize: 17, fontWeight: "700", flex: 1 },
+  badge: {
+    backgroundColor: theme.surfaceAlt,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  badgeText: { color: theme.brand, fontSize: 11, fontWeight: "600" },
+  stats: { flexDirection: "row", gap: 28, marginTop: 14 },
+  stat: {},
+  statValue: { color: theme.text, fontSize: 20, fontWeight: "700" },
+  statLabel: { color: theme.textMuted, fontSize: 11, marginTop: 2 },
   empty: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32, gap: 10 },
   emptyTitle: { color: theme.text, fontSize: 17, fontWeight: "600" },
   errorBox: {

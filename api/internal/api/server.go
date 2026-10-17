@@ -2,6 +2,8 @@
 package api
 
 import (
+	"context"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -33,6 +35,8 @@ type Server struct {
 	guests        *store.GuestStore
 	profiles      *store.ProfileStore
 	audit         *store.AuditStore
+	staff         *store.StaffStore
+	checkIns      *store.CheckInStore
 
 	hasher *auth.Hasher
 	tokens *auth.TokenService
@@ -54,7 +58,10 @@ func NewWithSender(cfg config.Config, pool *pgxpool.Pool, sender email.Sender) *
 		accountTokens: store.NewTokenStore(pool),
 		events:        store.NewEventStore(pool),
 		ticketTypes:   store.NewTicketTypeStore(pool),
-		checkout:      store.NewCheckoutStore(pool),
+		checkout: store.NewCheckoutStoreWithFees(pool, store.Fees{
+			Percent:  cfg.ProcessingFeePercent,
+			FixedKZT: cfg.ProcessingFeeFixedKZT,
+		}),
 		seating:       store.NewSeatingStore(pool),
 		activations:   store.NewActivationStore(pool),
 		tickets:       store.NewTicketStore(pool),
@@ -62,6 +69,8 @@ func NewWithSender(cfg config.Config, pool *pgxpool.Pool, sender email.Sender) *
 		guests:        store.NewGuestStore(pool),
 		profiles:      store.NewProfileStore(pool),
 		audit:         store.NewAuditStore(pool),
+		staff:         store.NewStaffStore(pool),
+		checkIns:      store.NewCheckInStore(pool),
 		hasher:        auth.NewHasher(cfg.BcryptCost),
 		tokens:        auth.NewTokenService(cfg.JWTSecret, cfg.JWTIssuer, cfg.AccessTokenTTL),
 		now:           time.Now,
@@ -71,6 +80,24 @@ func NewWithSender(cfg config.Config, pool *pgxpool.Pool, sender email.Sender) *
 	// owns the notification store it marks.
 	s.mailer = email.NewMailer(sender, s.markNotification)
 	return s
+}
+
+// StartHoldSweeper releases abandoned baskets on a timer (SRS 4.6).
+//
+// It returns immediately; the sweep runs until the context is cancelled. The
+// opportunistic release inside the hold transaction already guarantees that a
+// stale basket never blocks a real sale - this keeps the counters honest for
+// everything else, so an event page shows the right number remaining even when
+// nobody is shopping.
+func (s *Server) StartHoldSweeper(ctx context.Context) {
+	sweeper := store.NewSweeper(s.checkout, time.Minute, func(released int, err error) {
+		if err != nil {
+			slog.Error("hold sweeper", "error", err)
+			return
+		}
+		slog.Info("released abandoned reservations", "ticket_types_touched", released)
+	})
+	go sweeper.Run(ctx)
 }
 
 // Mailer exposes the email dispatcher so main can drain it on shutdown and
@@ -152,6 +179,14 @@ func (s *Server) Handler() http.Handler {
 	// signing in.
 	mux.HandleFunc("GET /api/v1/events/{id}/seats", s.optionalAuth(s.handleEventSeatMap))
 
+	// --- cart holds (SRS 4.6, 4.3.1) ----------------------------------------
+	// Anonymous, like checkout: an attendee picks seats before signing in, and
+	// demanding an account to look at a seat map would lose the sale.
+	mux.HandleFunc("POST /api/v1/events/{id}/holds", s.optionalAuth(s.handleCreateHold))
+	mux.HandleFunc("GET /api/v1/orders/{id}/hold", s.optionalAuth(s.handleGetHold))
+	mux.HandleFunc("DELETE /api/v1/orders/{id}/hold", s.optionalAuth(s.handleReleaseHold))
+	mux.HandleFunc("POST /api/v1/orders/{id}/confirm", s.optionalAuth(s.handleConfirmHold))
+
 	// --- paid-sales activation (SRS 4.5) ------------------------------------
 	mux.HandleFunc("GET /api/v1/events/{id}/activation", s.requireAuth(s.handleGetActivation))
 	mux.HandleFunc("POST /api/v1/events/{id}/activation", s.requireAuth(s.handleAdvanceActivation))
@@ -166,6 +201,19 @@ func (s *Server) Handler() http.Handler {
 	// --- who is coming (organizer) ------------------------------------------
 	mux.HandleFunc("GET /api/v1/events/{id}/orders", s.requireAuth(s.handleListEventOrders))
 	mux.HandleFunc("GET /api/v1/events/{id}/attendees", s.requireAuth(s.handleListAttendees))
+
+	// --- check-in (the scanner app) -----------------------------------------
+	// "/events/scannable" is a literal segment, so ServeMux prefers it over
+	// "/events/{id}".
+	mux.HandleFunc("GET /api/v1/events/scannable", s.requireAuth(s.handleListScannableEvents))
+	mux.HandleFunc("POST /api/v1/events/{id}/check-in", s.requireAuth(s.handleCheckIn))
+	mux.HandleFunc("GET /api/v1/events/{id}/check-in/stats", s.requireAuth(s.handleCheckInStats))
+	mux.HandleFunc("POST /api/v1/tickets/{id}/check-in/reverse", s.requireAuth(s.handleReverseCheckIn))
+
+	// --- event staff --------------------------------------------------------
+	mux.HandleFunc("GET /api/v1/events/{id}/staff", s.requireAuth(s.handleListStaff))
+	mux.HandleFunc("POST /api/v1/events/{id}/staff", s.requireAuth(s.handleAssignStaff))
+	mux.HandleFunc("DELETE /api/v1/events/{id}/staff/{assignmentId}", s.requireAuth(s.handleRevokeStaff))
 
 	// No catch-all route: it would shadow ServeMux's own 405 handling.
 	// jsonRouterErrors turns the stdlib's plain-text 404/405 into the envelope.
