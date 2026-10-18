@@ -206,40 +206,39 @@ func TestSeatMapDescribesThePredefinedLayout(t *testing.T) {
 	}
 }
 
-// buySeats checks out the given seats as a guest.
-func (c *client) buySeats(eventID uuid.UUID, seats ...string) response {
-	return c.post("/api/v1/events/"+eventID.String()+"/checkout", "", map[string]any{
-		"buyer_name": "Seat Buyer", "buyer_email": "seat@biletflow.test",
-		"seat_ids": seats,
-	})
-}
-
-// TestSeatMapShowsSoldSeats is the state SRS 4.3.1 asks the map to show once a
-// seat is gone.
-func TestSeatMapShowsSoldSeats(t *testing.T) {
+// TestSeatMapShowsHeldAndSoldSeats is the state machine SRS 4.3.1 asks the map
+// to distinguish.
+func TestSeatMapShowsHeldAndSoldSeats(t *testing.T) {
 	c := newClient(t)
 	organizer := c.register("seatstates")
 	eventID, _ := c.seatedEvent(organizer.Token, "Seat States Fest")
 
 	all := seatsOf(t, c.get("/api/v1/events/"+eventID.String()+"/seats", ""))
+	holdSeat := all[0]["id"].(string)
 	buySeat := all[1]["id"].(string)
 
-	requireStatus(t, c.buySeats(eventID, buySeat), http.StatusCreated)
+	// One seat held by an open basket.
+	held := c.post("/api/v1/events/"+eventID.String()+"/holds", "",
+		map[string]any{"seat_ids": []string{holdSeat}})
+	requireStatus(t, held, http.StatusCreated)
 
-	res := c.get("/api/v1/events/"+eventID.String()+"/seats", "")
+	// One seat bought outright.
+	bought := c.post("/api/v1/events/"+eventID.String()+"/checkout", "", map[string]any{
+		"buyer_name": "Seat Buyer", "buyer_email": "seat@biletflow.test",
+		"seat_ids": []string{buySeat},
+	})
+	requireStatus(t, bought, http.StatusCreated)
+
 	states := map[string]string{}
-	for _, seat := range seatsOf(t, res) {
+	for _, seat := range seatsOf(t, c.get("/api/v1/events/"+eventID.String()+"/seats", "")) {
 		states[seat["id"].(string)] = seat["status"].(string)
 	}
 
+	if states[holdSeat] != "held" {
+		t.Errorf("the held seat reads %q, want held", states[holdSeat])
+	}
 	if states[buySeat] != "sold" {
 		t.Errorf("the sold seat reads %q, want sold", states[buySeat])
-	}
-	if states[all[0]["id"].(string)] != "available" {
-		t.Errorf("an untouched seat reads %q, want available", states[all[0]["id"].(string)])
-	}
-	if plan := res.Body["seat_map"].(map[string]any); plan["available_seats"] != float64(fixtureSeats-1) {
-		t.Errorf("available_seats = %v, want %d", plan["available_seats"], fixtureSeats-1)
 	}
 }
 
@@ -268,36 +267,41 @@ func TestSeatPriceComesFromTheSeat(t *testing.T) {
 
 	// The request names only the seat. The tier - and therefore the price - is
 	// decided by the server from where the seat is.
-	bought := c.buySeats(eventID, orchestraSeat)
-	requireStatus(t, bought, http.StatusCreated)
+	held := c.post("/api/v1/events/"+eventID.String()+"/holds", "",
+		map[string]any{"seat_ids": []string{orchestraSeat}})
+	requireStatus(t, held, http.StatusCreated)
 
-	order := bought.Body["order"].(map[string]any)
-	if order["subtotal_kzt"] != "12000.00" {
-		t.Errorf("subtotal = %v, want the Orchestra price of 12000.00", order["subtotal_kzt"])
+	hold := held.Body["hold"].(map[string]any)
+	if hold["subtotal_kzt"] != "12000.00" {
+		t.Errorf("subtotal = %v, want the Orchestra price of 12000.00", hold["subtotal_kzt"])
 	}
 }
 
-// TestTwoBuyersCannotBuyTheSameSeat is SRS 4.3.1's "the system shall prevent
+// TestTwoBasketsCannotHoldTheSameSeat is SRS 4.3.1's "the system shall prevent
 // two orders from purchasing the same seat".
-func TestTwoBuyersCannotBuyTheSameSeat(t *testing.T) {
+func TestTwoBasketsCannotHoldTheSameSeat(t *testing.T) {
 	c := newClient(t)
 	organizer := c.register("seatrace")
 	eventID, _ := c.seatedEvent(organizer.Token, "Seat Race Fest")
 
 	seat := seatsOf(t, c.get("/api/v1/events/"+eventID.String()+"/seats", ""))[0]["id"].(string)
 
-	requireStatus(t, c.buySeats(eventID, seat), http.StatusCreated)
-	requireErrorCode(t, c.buySeats(eventID, seat), http.StatusConflict, CodeSeatUnavailable)
+	first := c.post("/api/v1/events/"+eventID.String()+"/holds", "",
+		map[string]any{"seat_ids": []string{seat}})
+	requireStatus(t, first, http.StatusCreated)
 
-	var live int
-	if err := c.pool.QueryRow(c.t.Context(),
-		`SELECT count(*) FROM tickets WHERE seat_id = $1 AND status IN ('valid', 'checked_in')`,
-		seat).Scan(&live); err != nil {
-		t.Fatalf("count tickets: %v", err)
+	second := c.post("/api/v1/events/"+eventID.String()+"/holds", "",
+		map[string]any{"seat_ids": []string{seat}})
+	if second.Status != http.StatusConflict {
+		t.Fatalf("a second basket took the same seat: %d %s", second.Status, second.Raw)
 	}
-	if live != 1 {
-		t.Errorf("live tickets on the seat = %d, want 1", live)
-	}
+
+	// Releasing the first puts the seat back.
+	orderID := first.Body["hold"].(map[string]any)["order_id"].(string)
+	requireStatus(t, c.delete("/api/v1/orders/"+orderID+"/hold", ""), http.StatusOK)
+
+	requireStatus(t, c.post("/api/v1/events/"+eventID.String()+"/holds", "",
+		map[string]any{"seat_ids": []string{seat}}), http.StatusCreated)
 }
 
 // TestSeatsAreRecordedOnTheTicket is SRS 4.3.1's "the assigned section, row and
@@ -310,7 +314,10 @@ func TestSeatsAreRecordedOnTheTicket(t *testing.T) {
 	all := seatsOf(t, c.get("/api/v1/events/"+eventID.String()+"/seats", ""))
 	seats := []string{all[0]["id"].(string), all[1]["id"].(string)}
 
-	bought := c.buySeats(eventID, seats...)
+	bought := c.post("/api/v1/events/"+eventID.String()+"/checkout", "", map[string]any{
+		"buyer_name": "Seated Buyer", "buyer_email": "seated@biletflow.test",
+		"seat_ids": seats,
+	})
 	requireStatus(t, bought, http.StatusCreated)
 
 	if tickets := bought.Body["tickets"].([]any); len(tickets) != 2 {
@@ -364,7 +371,8 @@ func TestSeatFromAnotherEventIsRefused(t *testing.T) {
 	organizer := c.register("seatforeign")
 	eventID, _, _ := c.sellableEvent(organizer.Token, "No Seats Here", "5000", 10)
 
-	res := c.buySeats(eventID, uuid.NewString())
+	res := c.post("/api/v1/events/"+eventID.String()+"/holds", "",
+		map[string]any{"seat_ids": []string{uuid.NewString()}})
 	if res.Status != http.StatusConflict && res.Status != http.StatusNotFound {
 		t.Errorf("a foreign seat was accepted: %d %s", res.Status, res.Raw)
 	}
