@@ -278,6 +278,24 @@ export interface EventOrder {
   created_at: string;
 }
 
+export type StaffRole = "event_admin" | "support_staff" | "manager";
+
+/** Somebody an organizer has authorised to work an event (SRS 4.8). */
+export interface StaffMember {
+  id: string;
+  event_id: string;
+  user_id: string;
+  user_name: string;
+  user_email: string;
+  role: StaffRole;
+  assigned_at: string;
+  revoked_at?: string;
+}
+
+export interface StaffResponse {
+  staff: StaffMember[];
+}
+
 /** One issued ticket with the person it was issued to. */
 export interface Guest {
   ticket_id: string;
