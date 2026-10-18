@@ -310,6 +310,17 @@ export default function ScannerScreen() {
         >
           <Text style={styles.manualButtonText}>Enter code by hand</Text>
         </Pressable>
+        {/*
+          The last resort when there is no code to enter at all: a dead phone,
+          a ticket left at home (SRS 4.8).
+        */}
+        <Pressable
+          style={styles.manualButton}
+          onPress={() => router.push(`/attendees/${eventId}`)}
+          testID="open-attendee-search"
+        >
+          <Text style={styles.manualButtonText}>Find attendee by name</Text>
+        </Pressable>
         <Text style={styles.who}>{user?.email}</Text>
       </View>
 

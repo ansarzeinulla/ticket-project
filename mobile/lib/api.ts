@@ -1,6 +1,7 @@
 import { API_BASE_URL } from "./config";
 import { loadToken } from "./session";
 import type {
+  AttendeeTicket,
   AuthResponse,
   CheckInStats,
   CheckInSuccess,
@@ -144,6 +145,32 @@ export const api = {
     const data = await request<{ result: string; check_in: CheckInSuccess }>(
       `/events/${eventID}/check-in`,
       { method: "POST", body: { qr_token: qrToken, device_label: device } },
+    );
+    return data.check_in;
+  },
+
+  /** Manual attendee lookup for when a QR will not scan (SRS 4.8). */
+  async searchAttendees(eventID: string, query: string): Promise<AttendeeTicket[]> {
+    const data = await request<{ attendees: AttendeeTicket[] }>(
+      `/events/${eventID}/attendees?q=${encodeURIComponent(query)}`,
+    );
+    return data.attendees;
+  },
+
+  /**
+   * Admit somebody found by name rather than by camera (SRS 4.8).
+   *
+   * The server runs the identical transaction as a scan - same row lock, same
+   * duplicate protection - so this is a real check-in, not a lesser one.
+   */
+  async checkInManually(
+    eventID: string,
+    ticketID: string,
+    device: string,
+  ): Promise<CheckInSuccess> {
+    const data = await request<{ result: string; check_in: CheckInSuccess }>(
+      `/events/${eventID}/check-in/manual`,
+      { method: "POST", body: { ticket_id: ticketID, device_label: device } },
     );
     return data.check_in;
   },

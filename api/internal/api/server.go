@@ -198,7 +198,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/tickets/{id}/pdf", s.handleTicketPDF)
 	mux.HandleFunc("GET /api/v1/tickets/{id}/qr.png", s.handleTicketQR)
 
-	// --- who is coming (organizer) ------------------------------------------
+	// --- who is coming (organizer; the attendee list also serves door staff) --
 	mux.HandleFunc("GET /api/v1/events/{id}/orders", s.requireAuth(s.handleListEventOrders))
 	mux.HandleFunc("GET /api/v1/events/{id}/attendees", s.requireAuth(s.handleListAttendees))
 
@@ -207,6 +207,10 @@ func (s *Server) Handler() http.Handler {
 	// "/events/{id}".
 	mux.HandleFunc("GET /api/v1/events/scannable", s.requireAuth(s.handleListScannableEvents))
 	mux.HandleFunc("POST /api/v1/events/{id}/check-in", s.requireAuth(s.handleCheckIn))
+	// SRS 4.8: staff can find somebody by name when a QR will not scan. The
+	// search itself is GET /events/{id}/attendees, shared with the dashboard.
+	mux.HandleFunc("POST /api/v1/events/{id}/check-in/manual",
+		s.requireAuth(s.handleManualCheckIn))
 	mux.HandleFunc("GET /api/v1/events/{id}/check-in/stats", s.requireAuth(s.handleCheckInStats))
 	mux.HandleFunc("POST /api/v1/tickets/{id}/check-in/reverse", s.requireAuth(s.handleReverseCheckIn))
 

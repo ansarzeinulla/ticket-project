@@ -482,3 +482,76 @@ func TestCheckInStatsTrackProgress(t *testing.T) {
 		t.Errorf("checked_in = %v, want 2 after two scans", stats["checked_in"])
 	}
 }
+
+// SRS 4.8: when a QR will not scan, door staff find the attendee by name and
+// admit them by ticket id - through the same transaction as a scan.
+func TestManualCheckInFindsAttendeeByName(t *testing.T) {
+	c := newClient(t)
+	organizer := c.register("manualGate")
+	scanner := c.register("manualScanner")
+	stranger := c.register("manualNosy")
+
+	eventID, _, ticketTypeID := c.sellableEvent(organizer.Token, "Manual Gate Event", "1000", 5)
+	requireStatus(t, c.buy(eventID, ticketTypeID, 1, "Aigerim Serikova", "aigerim@biletflow.test"),
+		http.StatusCreated)
+
+	search := func(token, query string) response {
+		return c.get("/api/v1/events/"+eventID.String()+"/attendees?q="+query, token)
+	}
+	manual := func(token, ticketID string) response {
+		return c.post("/api/v1/events/"+eventID.String()+"/check-in/manual", token,
+			map[string]any{"ticket_id": ticketID})
+	}
+
+	// --- an attendee list is not public ------------------------------------
+	requireErrorCode(t, search("", "aigerim"), http.StatusUnauthorized, "unauthorized")
+	requireErrorCode(t, search(stranger.Token, "aigerim"), http.StatusForbidden, "forbidden")
+	requireErrorCode(t, search(scanner.Token, "aigerim"), http.StatusForbidden, "forbidden")
+
+	// --- once assigned, door staff may search --------------------------------
+	requireStatus(t, c.post("/api/v1/events/"+eventID.String()+"/staff", organizer.Token,
+		map[string]any{"email": scanner.Email}), http.StatusCreated)
+
+	found := search(scanner.Token, "aigerim")
+	requireStatus(t, found, http.StatusOK)
+	attendees, _ := found.Body["attendees"].([]any)
+	if len(attendees) != 1 {
+		t.Fatalf("matches for \"aigerim\" = %d, want 1", len(attendees))
+	}
+	match := attendees[0].(map[string]any)
+	if match["full_name"] != "Aigerim Serikova" || match["status"] != "valid" {
+		t.Errorf("match = %v, want Aigerim Serikova with a valid ticket", match)
+	}
+	// The search must not hand out an admission credential.
+	if _, leaked := match["qr_token"]; leaked {
+		t.Error("the attendee search exposed a QR token")
+	}
+
+	// --- and admit them with no QR code ---------------------------------------
+	ticketID := match["ticket_id"].(string)
+	admitted := manual(scanner.Token, ticketID)
+	requireStatus(t, admitted, http.StatusOK)
+	if checkIn(admitted)["attendee_name"] != "Aigerim Serikova" {
+		t.Errorf("check_in = %v, want Aigerim Serikova", admitted.Body["check_in"])
+	}
+	if got := c.ticketStatus(ticketID); got != "checked_in" {
+		t.Errorf("ticket status = %q after a manual check-in, want checked_in", got)
+	}
+
+	// It is a real check-in: the same duplicate protection applies.
+	requireErrorCode(t, manual(scanner.Token, ticketID), http.StatusConflict, CodeAlreadyCheckedIn)
+
+	var device string
+	if err := c.pool.QueryRow(t.Context(), `
+		SELECT COALESCE(device_label, '') FROM check_in_records
+		 WHERE ticket_id = $1 AND reversed_at IS NULL`, uuid.MustParse(ticketID)).Scan(&device); err != nil {
+		t.Fatalf("read the check-in record: %v", err)
+	}
+	if device != "manual search" {
+		t.Errorf("device_label = %q, want the manual marker", device)
+	}
+
+	requireErrorCode(t, manual(scanner.Token, "not-a-uuid"),
+		http.StatusUnprocessableEntity, "validation_failed")
+	requireErrorCode(t, manual(stranger.Token, ticketID), http.StatusForbidden, "forbidden")
+}

@@ -34,10 +34,12 @@ func (s *Server) handleListEventOrders(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleListAttendees lists the people holding tickets, searchable by name,
-// email, ticket code or order number. An attendee list must not be readable by
-// anyone who happens to know an event id, so it is the organizer's only.
+// email, ticket code or order number. It is also the scanner app's manual
+// lookup (SRS 4.8), so it is authorised the way scanning is: the organizer or
+// somebody assigned to work this event's door. An attendee list must not be
+// readable by anyone who happens to know an event id.
 func (s *Server) handleListAttendees(w http.ResponseWriter, r *http.Request) {
-	event, ok := s.loadOwnedEvent(w, r)
+	eventID, ok := s.eventIDForScanning(w, r)
 	if !ok {
 		return
 	}
@@ -49,7 +51,7 @@ func (s *Server) handleListAttendees(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	guests, err := s.guests.ListGuests(r.Context(), event.ID, query)
+	guests, err := s.guests.ListGuests(r.Context(), eventID, query)
 	if err != nil {
 		httpx.WriteInternalError(w, r, err)
 		return

@@ -155,6 +155,20 @@ export default function EventsScreen() {
                 </View>
               </View>
 
+              {/*
+                The card itself opens the camera, which is what staff want
+                nine times in ten. This is the other way in, for when a QR
+                cannot be scanned at all (SRS 4.8).
+              */}
+              <View style={styles.secondaryRow}>
+                <Pressable
+                  onPress={() => router.push(`/attendees/${item.id}`)}
+                  testID={`find-attendee-${item.id}`}
+                  style={({ pressed }) => [styles.secondary, pressed && styles.cardPressed]}
+                >
+                  <Text style={styles.secondaryText}>Find by name</Text>
+                </Pressable>
+              </View>
             </Pressable>
           );
         }}
@@ -210,6 +224,16 @@ const styles = StyleSheet.create({
   statLabel: { color: theme.textMuted, fontSize: 11, marginTop: 2 },
   empty: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32, gap: 10 },
   emptyTitle: { color: theme.text, fontSize: 17, fontWeight: "600" },
+  secondaryRow: { flexDirection: "row", gap: 10, marginTop: 12 },
+  secondary: {
+    flex: 1,
+    borderColor: theme.border,
+    borderWidth: 1,
+    borderRadius: radius.sm,
+    paddingVertical: 10,
+    alignItems: "center",
+  },
+  secondaryText: { color: theme.brand, fontSize: 14, fontWeight: "600" },
   errorBox: {
     margin: 16,
     backgroundColor: "#450a0a",

@@ -55,3 +55,20 @@ export type ScanErrorCode =
   | "unauthorized"
   | "network_error"
   | string;
+
+/**
+ * One ticket in the manual attendee search (SRS 4.8).
+ *
+ * Deliberately carries no QR token: staff searching by name are standing next
+ * to the person, and handing every device a working admission credential for
+ * every attendee would make the QR code pointless. Check-in goes by ticket id.
+ */
+export interface AttendeeTicket {
+  ticket_id: string;
+  ticket_code: string;
+  full_name: string;
+  email: string;
+  ticket_type_name: string;
+  status: "valid" | "checked_in" | "cancelled" | "refunded";
+  order_number: string;
+}
