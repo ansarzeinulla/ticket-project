@@ -6,11 +6,12 @@ week by week.
 
 ---
 
-## What exists today (week 4)
+## What exists today (week 5)
 
 Accounts and organizer profiles, events with ticket types, a public event page,
-banner uploads, assigned seating, and a checkout that sells tickets in one
-transaction with a simulated payment. Paid tickets only sell once the organizer
+banner uploads, assigned seating, and a checkout that reserves a basket for 15
+minutes before it is paid for, charging a 3.5% processing fee on top, with a
+simulated payment. Paid tickets only sell once the organizer
 has completed the activation checklist. Every ticket has a QR code and a
 printable A4 PDF, and every event an `.ics` calendar file. Emails - including
 the order confirmation - are recorded in the `notifications` table and printed
@@ -91,7 +92,11 @@ make api-run   # the API on :8080
 | `GET` | `/api/v1/public/events/{slug}` | – | the attendee view: event, on-sale types, `on_sale`, `sold_out` |
 | `POST` | `/api/v1/uploads/images` | Bearer | multipart field `file`; JPEG, PNG, GIF or WebP, 5 MB, at least 200×200 |
 | `POST` | `/api/v1/events/{id}/checkout` | optional | `201` order, tickets and simulated payment; `items` by tier, or `seat_ids` for assigned seating |
-| `GET` | `/api/v1/events/{id}/seats` | optional | the seat map of an assigned-seating event, each seat `available`, `sold` or `unavailable` |
+| `GET` | `/api/v1/events/{id}/seats` | optional | the seat map of an assigned-seating event, each seat `available`, `held`, `sold` or `unavailable` |
+| `POST` | `/api/v1/events/{id}/holds` | optional | `201` a basket reserved for 15 minutes, with the fee quoted |
+| `GET` | `/api/v1/orders/{id}/hold` | optional | read the basket back; `409 hold_expired` once it has run out |
+| `DELETE` | `/api/v1/orders/{id}/hold` | optional | release it now; the tickets are back on sale |
+| `POST` | `/api/v1/orders/{id}/confirm` | optional | pay for the basket; tickets are issued |
 | `GET` | `/api/v1/orders/{id}` | optional | the order, its lines and tickets; the UUID is the capability |
 | `GET` | `/api/v1/events/{id}/activation` | Bearer | the paid-sales checklist and what is outstanding |
 | `POST` | `/api/v1/events/{id}/activation` | Bearer | ticks steps: `confirm_identity`, `confirm_payout`, `accept_terms`, `pay_activation_fee` |
@@ -137,6 +142,25 @@ curl -s -X POST localhost:8080/api/v1/events/$EVENT_ID/checkout \
   refuses a second live ticket on one seat whatever happens.
 - There is no real payment: a `payments` row with `is_simulated = true` is
   written, and the order is `paid` immediately.
+
+### Reserved, then sold
+
+Checkout is two steps. `POST /events/{id}/holds` takes the stock off the shelf
+as `quantity_reserved` (and the seats as `seat_holds`) for 15 minutes without
+selling anything; `POST /orders/{id}/confirm` turns the basket into a sale.
+The one-step `POST /events/{id}/checkout` is the same two steps inside one
+transaction - there is one implementation of buying a ticket, not two.
+
+A basket goes back on sale three ways: the attendee cancels it, somebody else's
+purchase notices it has run out (so a stale basket can never be why a sale is
+refused), or the background sweeper does - once a minute, from `main.go`.
+
+### The processing charge
+
+SRS 3.3: 3.5% of the ticket total is added on top, rounded to the tiyn by
+PostgreSQL, and quoted on the basket before the attendee pays. A free basket
+pays nothing. `orders_total_math_chk` holds that total = subtotal - discount +
+fee on every row.
 - **Paid tickets need an activated event** (SRS 4.5). Until the organizer has
   ticked all four steps, a paid line answers `403 paid_sales_not_active`; free
   tiers of the same event keep selling. The check runs inside the checkout
