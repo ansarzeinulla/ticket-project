@@ -55,6 +55,10 @@ func TestCheckoutSendsOneConfirmationPerOrder(t *testing.T) {
 	if msg.Subject != "Your Tickets to Confirmation Concert" {
 		t.Errorf("subject = %q", msg.Subject)
 	}
+	// What the attendee actually paid: 2 x 5000 plus the 3.5% charge.
+	if !strings.Contains(msg.Body, "10350.00 KZT") {
+		t.Errorf("the email does not state the 10350.00 KZT paid:\n%s", msg.Body)
+	}
 
 	// Every ticket is in the email, each with a link that downloads it.
 	for _, raw := range bought.Body["tickets"].([]any) {
