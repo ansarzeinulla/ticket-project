@@ -36,6 +36,7 @@ type Server struct {
 	profiles      *store.ProfileStore
 	audit         *store.AuditStore
 	staff         *store.StaffStore
+	checkIns      *store.CheckInStore
 
 	hasher *auth.Hasher
 	tokens *auth.TokenService
@@ -69,6 +70,7 @@ func NewWithSender(cfg config.Config, pool *pgxpool.Pool, sender email.Sender) *
 		profiles:      store.NewProfileStore(pool),
 		audit:         store.NewAuditStore(pool),
 		staff:         store.NewStaffStore(pool),
+		checkIns:      store.NewCheckInStore(pool),
 		hasher:        auth.NewHasher(cfg.BcryptCost),
 		tokens:        auth.NewTokenService(cfg.JWTSecret, cfg.JWTIssuer, cfg.AccessTokenTTL),
 		now:           time.Now,
@@ -199,6 +201,14 @@ func (s *Server) Handler() http.Handler {
 	// --- who is coming (organizer) ------------------------------------------
 	mux.HandleFunc("GET /api/v1/events/{id}/orders", s.requireAuth(s.handleListEventOrders))
 	mux.HandleFunc("GET /api/v1/events/{id}/attendees", s.requireAuth(s.handleListAttendees))
+
+	// --- check-in (the scanner app) -----------------------------------------
+	// "/events/scannable" is a literal segment, so ServeMux prefers it over
+	// "/events/{id}".
+	mux.HandleFunc("GET /api/v1/events/scannable", s.requireAuth(s.handleListScannableEvents))
+	mux.HandleFunc("POST /api/v1/events/{id}/check-in", s.requireAuth(s.handleCheckIn))
+	mux.HandleFunc("GET /api/v1/events/{id}/check-in/stats", s.requireAuth(s.handleCheckInStats))
+	mux.HandleFunc("POST /api/v1/tickets/{id}/check-in/reverse", s.requireAuth(s.handleReverseCheckIn))
 
 	// --- event staff --------------------------------------------------------
 	mux.HandleFunc("GET /api/v1/events/{id}/staff", s.requireAuth(s.handleListStaff))

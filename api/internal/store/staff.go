@@ -25,7 +25,23 @@ type StaffAssignment struct {
 	RevokedAt  *time.Time `json:"revoked_at,omitempty"`
 }
 
-// StaffStore manages the people an organizer puts on an event's door.
+// ScannableEvent is an event the caller may run check-in for. It is what fills
+// the event selector in the scanner app.
+type ScannableEvent struct {
+	ID        uuid.UUID `json:"id"`
+	Title     string    `json:"title"`
+	Slug      string    `json:"slug"`
+	StartsAt  time.Time `json:"starts_at"`
+	EndsAt    time.Time `json:"ends_at"`
+	Timezone  string    `json:"timezone"`
+	VenueName string    `json:"venue_name,omitempty"`
+	Status    string    `json:"status"`
+	// How the caller comes to have access: "organizer" or a staff role.
+	AccessVia string       `json:"access_via"`
+	Stats     CheckInStats `json:"stats"`
+}
+
+// StaffStore manages event staff and the events a person may scan.
 type StaffStore struct {
 	pool *pgxpool.Pool
 }
@@ -49,6 +65,48 @@ func (s *StaffStore) CanScan(ctx context.Context, eventID, userID uuid.UUID) (bo
 			   AND revoked_at IS NULL AND role::text = ANY($3)
 		)`, eventID, userID, scannerRoles).Scan(&allowed)
 	return allowed, mapError(err)
+}
+
+// ListScannable returns every event the user may check in for, soonest first.
+func (s *StaffStore) ListScannable(ctx context.Context, userID uuid.UUID) ([]ScannableEvent, error) {
+	rows, err := s.pool.Query(ctx, `
+		WITH accessible AS (
+			SELECT e.id, 'organizer' AS access_via
+			  FROM events e
+			 WHERE e.organizer_id = $1
+			UNION
+			SELECT sa.event_id, sa.role::text
+			  FROM staff_assignments sa
+			 WHERE sa.user_id = $1
+			   AND sa.revoked_at IS NULL
+			   AND sa.role::text = ANY($2)
+		)
+		SELECT e.id, e.title, e.slug, e.starts_at, e.ends_at, e.timezone,
+		       COALESCE(e.venue_name, ''), e.status::text, a.access_via,
+		       COALESCE(count(t.id) FILTER (WHERE t.status IN ('valid', 'checked_in')), 0),
+		       COALESCE(count(t.id) FILTER (WHERE t.status = 'checked_in'), 0)
+		  FROM accessible a
+		  JOIN events e ON e.id = a.id
+		  LEFT JOIN tickets t ON t.event_id = e.id
+		 WHERE e.status <> 'cancelled'
+		 GROUP BY e.id, e.title, e.slug, e.starts_at, e.ends_at, e.timezone,
+		          e.venue_name, e.status, a.access_via
+		 ORDER BY e.starts_at ASC`, userID, scannerRoles)
+	if err != nil {
+		return nil, mapError(err)
+	}
+	defer rows.Close()
+
+	events := []ScannableEvent{}
+	for rows.Next() {
+		var e ScannableEvent
+		if err := rows.Scan(&e.ID, &e.Title, &e.Slug, &e.StartsAt, &e.EndsAt, &e.Timezone,
+			&e.VenueName, &e.Status, &e.AccessVia, &e.Stats.Issued, &e.Stats.CheckedIn); err != nil {
+			return nil, err
+		}
+		events = append(events, e)
+	}
+	return events, rows.Err()
 }
 
 // AssignByEmail gives an existing account a scanner role on an event. Staff are

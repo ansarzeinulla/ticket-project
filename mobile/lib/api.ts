@@ -1,17 +1,39 @@
 import { API_BASE_URL } from "./config";
 import { loadToken } from "./session";
-import type { AuthResponse, MobileEvent, User } from "./types";
+import type {
+  AuthResponse,
+  CheckInStats,
+  CheckInSuccess,
+  ScanErrorCode,
+  ScannableEvent,
+  User,
+} from "./types";
 
-/** A failed API call, carrying the code from the Go error envelope. */
+/**
+ * A failed API call. `code` is what the scanner switches on to choose between
+ * the green and the red screen, and the extra fields let the red screen say
+ * something specific instead of "denied".
+ */
 export class ApiError extends Error {
   readonly status: number;
-  readonly code: string;
+  readonly code: ScanErrorCode;
+  readonly attendeeName?: string;
+  readonly checkedInAt?: string;
+  readonly stats?: CheckInStats;
 
-  constructor(status: number, code: string, message: string) {
+  constructor(
+    status: number,
+    code: ScanErrorCode,
+    message: string,
+    extra: { attendeeName?: string; checkedInAt?: string; stats?: CheckInStats } = {},
+  ) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
+    this.attendeeName = extra.attendeeName;
+    this.checkedInAt = extra.checkedInAt;
+    this.stats = extra.stats;
   }
 
   get isNetworkError(): boolean {
@@ -31,7 +53,7 @@ interface RequestOptions {
   anonymous?: boolean;
 }
 
-/** Staff at a door cannot wait on a hung request. */
+/** A scan should fail fast: staff cannot wait at a gate. */
 const REQUEST_TIMEOUT_MS = 10_000;
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -69,11 +91,28 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   const parsed: unknown = await response.json().catch(() => null);
 
   if (!response.ok) {
-    const error = (parsed as { error?: { code?: string; message?: string } } | null)?.error;
+    const envelope = parsed as
+      | {
+          error?: {
+            code?: string;
+            message?: string;
+            attendee_name?: string;
+            checked_in_at?: string;
+            stats?: CheckInStats;
+          };
+        }
+      | null;
+    const error = envelope?.error;
+
     throw new ApiError(
       response.status,
       error?.code ?? "unknown_error",
       error?.message ?? `Request failed with HTTP ${response.status}.`,
+      {
+        attendeeName: error?.attendee_name,
+        checkedInAt: error?.checked_in_at,
+        stats: error?.stats,
+      },
     );
   }
 
@@ -94,9 +133,32 @@ export const api = {
     return data.user;
   },
 
-  /** The signed-in organizer's published events. */
-  async myPublishedEvents(): Promise<MobileEvent[]> {
-    const data = await request<{ events: MobileEvent[] }>("/events/mine?status=published&limit=100");
+  /** The events this account may run check-in for - the event selector. */
+  async scannableEvents(): Promise<ScannableEvent[]> {
+    const data = await request<{ events: ScannableEvent[] }>("/events/scannable");
     return data.events;
+  },
+
+  /** The scan itself. Throws ApiError with a scanner code on refusal. */
+  async checkIn(eventID: string, qrToken: string, device: string): Promise<CheckInSuccess> {
+    const data = await request<{ result: string; check_in: CheckInSuccess }>(
+      `/events/${eventID}/check-in`,
+      { method: "POST", body: { qr_token: qrToken, device_label: device } },
+    );
+    return data.check_in;
+  },
+
+  async stats(eventID: string): Promise<CheckInStats> {
+    const data = await request<{ stats: CheckInStats }>(`/events/${eventID}/check-in/stats`);
+    return data.stats;
+  },
+
+  /** Undo an accidental admission (SRS 4.8). */
+  async reverseCheckIn(ticketID: string, reason: string): Promise<CheckInStats> {
+    const data = await request<{ stats: CheckInStats }>(
+      `/tickets/${ticketID}/check-in/reverse`,
+      { method: "POST", body: { reason } },
+    );
+    return data.stats;
   },
 };
