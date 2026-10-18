@@ -11,6 +11,74 @@ import (
 	"github.com/biletflow/api/internal/store"
 )
 
+// --- processing fees (SRS 3.3) -----------------------------------------------
+
+// TestProcessingFeeIsCharged pins the arithmetic (SRS 3.3): 3.5% of what the
+// attendee pays for the tickets, added on top, quoted before they commit.
+func TestProcessingFeeIsCharged(t *testing.T) {
+	c := newClient(t)
+	organizer := c.register("feearithmetic")
+	eventID, _, ticketTypeID := c.sellableEvent(organizer.Token, "Fee Arithmetic Fest", "5000", 20)
+
+	// The basket quotes the fee before anything is paid.
+	held := c.post("/api/v1/events/"+eventID.String()+"/holds", "", map[string]any{
+		"items": []map[string]any{{"ticket_type_id": ticketTypeID.String(), "quantity": 2}},
+	})
+	requireStatus(t, held, http.StatusCreated)
+	hold := held.Body["hold"].(map[string]any)
+	if hold["estimated_processing_fee_kzt"] != "350.00" || hold["estimated_total_kzt"] != "10350.00" {
+		t.Errorf("quote = %v / %v, want 350.00 / 10350.00",
+			hold["estimated_processing_fee_kzt"], hold["estimated_total_kzt"])
+	}
+
+	bought := c.buy(eventID, ticketTypeID, 2, "Fee Buyer", "fee@biletflow.test")
+	requireStatus(t, bought, http.StatusCreated)
+
+	order := bought.Body["order"].(map[string]any)
+	for field, want := range map[string]string{
+		"subtotal_kzt":       "10000.00",
+		"processing_fee_kzt": "350.00",
+		"total_kzt":          "10350.00",
+	} {
+		if order[field] != want {
+			t.Errorf("%s = %v, want %v", field, order[field], want)
+		}
+	}
+
+	// The payment is for what the attendee actually owes, fee included.
+	if payment := bought.Body["payment"].(map[string]any); payment["amount_kzt"] != "10350.00" {
+		t.Errorf("payment amount = %v, want 10350.00", payment["amount_kzt"])
+	}
+
+	// And the database agrees, because orders_total_math_chk would have
+	// refused the row otherwise.
+	var subtotal, fee, total string
+	if err := c.pool.QueryRow(t.Context(), `
+		SELECT subtotal_kzt::text, processing_fee_kzt::text, total_kzt::text
+		  FROM orders WHERE id = $1`, order["id"]).Scan(&subtotal, &fee, &total); err != nil {
+		t.Fatalf("read the order: %v", err)
+	}
+	if subtotal != "10000.00" || fee != "350.00" || total != "10350.00" {
+		t.Errorf("db row = %s/%s/%s", subtotal, fee, total)
+	}
+}
+
+// TestFreeRegistrationPaysNoFee is SRS 3.3's "free events: no platform fee".
+func TestFreeRegistrationPaysNoFee(t *testing.T) {
+	c := newClient(t)
+	organizer := c.register("freenofee")
+	eventID, _, ticketTypeID := c.sellableEvent(organizer.Token, "Free No Fee Fest", "0", 20)
+
+	bought := c.buy(eventID, ticketTypeID, 2, "Free Rider", "freefee@biletflow.test")
+	requireStatus(t, bought, http.StatusCreated)
+
+	order := bought.Body["order"].(map[string]any)
+	if order["processing_fee_kzt"] != "0.00" || order["total_kzt"] != "0.00" {
+		t.Errorf("a free registration was charged: fee=%v total=%v",
+			order["processing_fee_kzt"], order["total_kzt"])
+	}
+}
+
 // --- cart holds (SRS 4.6) ----------------------------------------------------
 
 // holdBasket reserves tickets and returns the decoded hold.
@@ -48,6 +116,12 @@ func TestHoldReservesWithoutSelling(t *testing.T) {
 	hold := held.Body["hold"].(map[string]any)
 	if hold["subtotal_kzt"] != "15000.00" {
 		t.Errorf("subtotal = %v, want 15000.00", hold["subtotal_kzt"])
+	}
+	// The attendee is quoted the fee before committing.
+	if hold["estimated_processing_fee_kzt"] != "525.00" ||
+		hold["estimated_total_kzt"] != "15525.00" {
+		t.Errorf("quote = %v / %v, want 525.00 and 15525.00",
+			hold["estimated_processing_fee_kzt"], hold["estimated_total_kzt"])
 	}
 	if seconds, _ := hold["seconds_remaining"].(float64); seconds < 600 || seconds > 900 {
 		t.Errorf("seconds_remaining = %v, want about 15 minutes", seconds)
@@ -116,7 +190,7 @@ func TestConfirmTurnsAHoldIntoASale(t *testing.T) {
 	requireStatus(t, confirmed, http.StatusOK)
 
 	order := confirmed.Body["order"].(map[string]any)
-	if order["status"] != "paid" || order["total_kzt"] != "10000.00" {
+	if order["status"] != "paid" || order["total_kzt"] != "10350.00" {
 		t.Errorf("confirmed order = %v", order)
 	}
 	if tickets := confirmed.Body["tickets"].([]any); len(tickets) != 2 {
