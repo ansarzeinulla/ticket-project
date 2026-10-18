@@ -11,6 +11,8 @@
 #             is refused
 #   tickets:  download the A4 PDF ticket and its QR preview, export the event
 #             as an .ics file
+#   the gate: the organizer scans the ticket in, a second scan is refused as
+#             already used, the counter moves, and an undo frees the ticket
 #
 # Usage:
 #   ./api/scripts/smoke_test.sh                 against http://localhost:8080
@@ -318,11 +320,11 @@ ORDER_ID="$(json_get "$HTTP_BODY" order.id)"
 ORDER_STATUS="$(json_get "$HTTP_BODY" order.status)"
 ORDER_TOTAL="$(json_get "$HTTP_BODY" order.total_kzt)"
 
-if [ "$ORDER_STATUS" = "paid" ] && [ "$ORDER_TOTAL" = "10000.00" ]; then
-    pass "10b the order is paid for 10000.00 KZT"
+if [ "$ORDER_STATUS" = "paid" ] && [ "$ORDER_TOTAL" = "10350.00" ]; then
+    pass "10b the order is paid for 10350.00 KZT (10000 + the 3.5% processing charge)"
     info "order id: $ORDER_ID"
 else
-    fail "10b order is ${ORDER_STATUS:-none} for ${ORDER_TOTAL:-none}, want paid / 10000.00"
+    fail "10b order is ${ORDER_STATUS:-none} for ${ORDER_TOTAL:-none}, want paid / 10350.00"
 fi
 
 # The inventory is checked outside the API, straight from PostgreSQL.
@@ -420,6 +422,51 @@ else
 fi
 
 rm -f "$PDF_FILE" "$PDF_HEADERS" "$QR_FILE" "$QR_HEADERS"
+
+
+# --- the gate: check-in (SRS 4.8) --------------------------------------------
+
+request GET /api/v1/events/scannable "$TOKEN" -
+expect_status 200 "20  the scanner lists the events this account may scan"
+if printf '%s' "$HTTP_BODY" | grep -q "\"id\":\"${EVENT_ID}\""; then
+    pass "20b the organizer's own event is in the list"
+else
+    fail "20b the event is missing from /events/scannable"
+fi
+
+SCAN_BODY="{\"qr_token\":\"${TICKET_TOKEN}\",\"device_label\":\"smoke test\"}"
+request POST /api/v1/events/"$EVENT_ID"/check-in "$TOKEN" "$SCAN_BODY"
+expect_status 200 "21  the first scan admits the ticket"
+
+request POST /api/v1/events/"$EVENT_ID"/check-in "$TOKEN" "$SCAN_BODY"
+if expect_status 409 "22  the same ticket scanned again is refused"; then
+    if [ "$(json_get "$HTTP_BODY" error.code)" = "already_checked_in" ]; then
+        pass "22b the refusal says already_checked_in, with when it was first used"
+    else
+        fail "22b the refusal code is $(json_get "$HTTP_BODY" error.code), want already_checked_in"
+    fi
+fi
+
+ACTIVE="$(docker compose exec -T db psql -U "$DB_USER" -d "$DB_NAME" -qtAX -c \
+    "SELECT count(*) FROM check_in_records WHERE ticket_id = '${TICKET_ID}' AND reversed_at IS NULL;" 2>&1 | tr -d '\r\n ')"
+if [ "$ACTIVE" = "1" ]; then
+    pass "22c PostgreSQL holds exactly one active check-in for the ticket"
+else
+    fail "22c active check-ins for the ticket: ${ACTIVE:-unknown}, want 1"
+fi
+
+request GET /api/v1/events/"$EVENT_ID"/check-in/stats "$TOKEN" -
+expect_status 200 "23  the live counter answers"
+if [ "$(json_get "$HTTP_BODY" stats.checked_in)" = "1" ]; then
+    pass "23b one of $(json_get "$HTTP_BODY" stats.issued) tickets is checked in"
+else
+    fail "23b checked_in is $(json_get "$HTTP_BODY" stats.checked_in), want 1"
+fi
+
+request POST /api/v1/tickets/"$TICKET_ID"/check-in/reverse "$TOKEN" '{"reason":"smoke test"}'
+expect_status 200 "24  an accidental check-in can be undone"
+request POST /api/v1/events/"$EVENT_ID"/check-in "$TOKEN" "$SCAN_BODY"
+expect_status 200 "24b after the undo the ticket scans again"
 
 
 # --- calendar export (SRS 4.11) ----------------------------------------------

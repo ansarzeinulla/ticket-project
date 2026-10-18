@@ -255,10 +255,7 @@ export interface CheckoutInput {
   buyer_name: string;
   buyer_email: string;
   buyer_phone?: string;
-  /** By tier, for general admission. */
-  items?: { ticket_type_id: string; quantity: number }[];
-  /** By seat, for assigned seating: the server prices each seat itself. */
-  seat_ids?: string[];
+  items: { ticket_type_id: string; quantity: number }[];
 }
 
 /** One row of the organizer's order list. */
@@ -278,6 +275,24 @@ export interface EventOrder {
   created_at: string;
 }
 
+export type StaffRole = "event_admin" | "support_staff" | "manager";
+
+/** Somebody an organizer has authorised to work an event (SRS 4.8). */
+export interface StaffMember {
+  id: string;
+  event_id: string;
+  user_id: string;
+  user_name: string;
+  user_email: string;
+  role: StaffRole;
+  assigned_at: string;
+  revoked_at?: string;
+}
+
+export interface StaffResponse {
+  staff: StaffMember[];
+}
+
 /** One issued ticket with the person it was issued to. */
 export interface Guest {
   ticket_id: string;
@@ -289,7 +304,13 @@ export interface Guest {
   order_number: string;
 }
 
-export type SeatStatus = "available" | "sold" | "unavailable";
+/**
+ * What the server knows about a seat.
+ *
+ * "Selected" is deliberately absent: that is this browser's own state, and no
+ * other client can know it.
+ */
+export type SeatStatus = "available" | "held" | "sold" | "unavailable";
 
 export interface Seat {
   id: string;
@@ -327,6 +348,20 @@ export interface SeatMap {
   max_y: number;
   total_seats: number;
   available_seats: number;
+}
+
+/** A reserved basket (SRS 4.6). */
+export interface Hold {
+  order_id: string;
+  order_number: string;
+  event_id: string;
+  status: string;
+  items: OrderItem[];
+  subtotal_kzt: Money;
+  reserved_until: string;
+  seconds_remaining: number;
+  estimated_processing_fee_kzt: Money;
+  estimated_total_kzt: Money;
 }
 
 export type ActivationStep = "identity" | "payout" | "terms" | "fee";

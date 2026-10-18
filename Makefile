@@ -71,11 +71,11 @@ web-check: ## Web: lint, typecheck and production build
 	cd web && npm run typecheck
 	cd web && npm run build
 
-scan-install: ## Install the mobile app dependencies
+scan-install: ## Install the scanner app dependencies
 	cd mobile && npm install
 
-scan-dev: ## Run the mobile app with Expo (needs `make api-run`)
+scan-dev: ## Run the scanner app in Expo; open it in Expo Go (needs `make api-run`)
 	cd mobile && npx expo start
 
-scan-check: ## Typecheck the mobile app
+scan-check: ## Typecheck the scanner app
 	cd mobile && npx tsc --noEmit

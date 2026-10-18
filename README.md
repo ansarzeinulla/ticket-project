@@ -79,12 +79,14 @@ REST API; neither talks to the database.
 
 ## Run it locally
 
-Requires Docker, Go 1.25 and Node 24. Three terminals:
+Requires Docker, Go 1.25 and Node 24. Three terminals, and a fourth for the
+scanner:
 
 ```bash
 make up && make seed   # PostgreSQL on localhost:5433, schema applied, demo data loaded
 make api-run           # API on http://localhost:8080
 make web-install && make web-dev   # web on http://localhost:3000
+make scan-install && make scan-dev # scanner app in Expo Go (see mobile/README.md)
 ```
 
 `make help` lists every target.
@@ -104,11 +106,15 @@ With the three terminals running, the project can be used end to end:
    `notifications` table).
 4. **Back to the organizer.** The event's page on the dashboard now lists the
    order and every ticket holder. Paid tickets only go on sale once the
-   activation checklist on that page is complete.
+   activation checklist on that page is complete. Under **Gate staff** the
+   organizer names who may scan tickets at the entrance.
+5. **At the door.** Sign in to the scanner app as `scanner@biletflow.kz` (same
+   password), choose the event and scan the ticket's QR - or type its code, or
+   find the attendee by name. A second scan of the same ticket is refused.
 
 What each step must do, and what it must refuse, is written down in `1.md`
-(accounts), `2.md` (events and ticket types), `3.md` (checkout) and `4.md`
-(ticket delivery).
+(accounts), `2.md` (events and ticket types), `3.md` (checkout), `4.md`
+(ticket delivery) and `5.md` (check-in at the door).
 
 ## Checks
 
@@ -120,4 +126,5 @@ The same commands run in CI on every pull request:
 | `make api-check` | Go formatting, `go vet`, unit and integration tests (needs `make up`) |
 | `make api-smoke` | cURL acceptance checks against a running API |
 | `make web-check` | ESLint, TypeScript, production build |
+| `make scan-check` | TypeScript for the scanner app |
 

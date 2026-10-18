@@ -21,10 +21,13 @@ import type {
   EventOrder,
   EventResponse,
   Guest,
+  Hold,
   OrganizerProfile,
   ProfilePatch,
   PublicEventResponse,
   SeatMap,
+  StaffMember,
+  StaffResponse,
   TicketType,
   TicketTypeListResponse,
   TicketTypeResponse,
@@ -232,6 +235,43 @@ export const api = {
     return data.seat_map;
   },
 
+  /**
+   * POST /events/{id}/holds - reserve seats for 15 minutes.
+   *
+   * Only seat ids travel: what a seat costs follows from where it is, and the
+   * server decides that. A basket that named its own prices would be a basket
+   * that could name the wrong ones.
+   */
+  async holdSeats(eventID: string, seatIDs: string[]): Promise<Hold> {
+    const data = await request<{ hold: Hold }>(`/events/${eventID}/holds`, {
+      method: "POST",
+      body: { seat_ids: seatIDs },
+    });
+    return data.hold;
+  },
+
+  /** GET /orders/{id}/hold - read a basket back, e.g. after a reload. */
+  async getHold(orderID: string, signal?: AbortSignal): Promise<Hold> {
+    const data = await request<{ hold: Hold }>(`/orders/${orderID}/hold`, { signal });
+    return data.hold;
+  },
+
+  /** DELETE /orders/{id}/hold - give the seats back now. */
+  releaseHold(orderID: string): Promise<{ status: string }> {
+    return request(`/orders/${orderID}/hold`, { method: "DELETE" });
+  },
+
+  /** POST /orders/{id}/confirm - pay for a held basket. */
+  confirmHold(
+    orderID: string,
+    input: { buyer_name: string; buyer_email: string },
+  ): Promise<CheckoutResult> {
+    return request<CheckoutResult>(`/orders/${orderID}/confirm`, {
+      method: "POST",
+      body: input,
+    });
+  },
+
   /** GET /orders/{id} - the id is the capability, so no token is needed. */
   getOrder(id: string, signal?: AbortSignal): Promise<CheckoutResult> {
     return request<CheckoutResult>(`/orders/${id}`, { token: null, signal });
@@ -382,6 +422,23 @@ export const api = {
       signal,
     });
     return data.attendees;
+  },
+
+  // --- Event staff (SRS 4.8) ---------------------------------------------------
+
+  /** GET /events/{id}/staff - who can scan at the gate. */
+  listStaff(eventID: string, signal?: AbortSignal): Promise<StaffResponse> {
+    return request<StaffResponse>(`/events/${eventID}/staff`, { signal });
+  },
+
+  /** POST /events/{id}/staff - name a scanner by email. */
+  assignStaff(eventID: string, email: string, role: string): Promise<{ assignment: StaffMember }> {
+    return request(`/events/${eventID}/staff`, { method: "POST", body: { email, role } });
+  },
+
+  /** DELETE /events/{id}/staff/{assignmentId} - revoke the gate. */
+  revokeStaff(eventID: string, assignmentID: string): Promise<void> {
+    return request(`/events/${eventID}/staff/${assignmentID}`, { method: "DELETE" });
   },
 
   /** POST /uploads/images - an event banner (SRS 4.2). */

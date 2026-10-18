@@ -156,10 +156,26 @@ func (s *Server) writeCheckoutError(w http.ResponseWriter, r *http.Request, err 
 		notOnSaleErr  *store.NotOnSaleError
 		maxErr        *store.ExceedsMaxPerOrderError
 		seatGone      *store.SeatUnavailableError
+		seatTaken     *store.SeatTakenError
 		activationErr *store.PaidSalesNotActiveError
 	)
 
 	switch {
+	case errors.Is(err, store.ErrHoldExpired):
+		// 409 rather than 410: the basket is gone, but the tickets are back on
+		// sale, so the useful thing for the UI to do is start again - not to
+		// tell somebody the page has vanished.
+		httpx.WriteError(w, http.StatusConflict, CodeHoldExpired,
+			"This reservation has expired and the tickets are back on sale. Please pick them again.")
+
+	case errors.Is(err, store.ErrHoldNotPending):
+		httpx.WriteError(w, http.StatusConflict, CodeHoldNotPending,
+			"This basket is no longer open - it may already have been paid for or cancelled.")
+
+	case errors.As(err, &seatTaken):
+		httpx.WriteError(w, http.StatusConflict, CodeSeatTaken,
+			"Somebody just took that seat. Choose another.")
+
 	case errors.As(err, &activationErr):
 		// 403 rather than 409: this is not a race the attendee can retry out
 		// of, it is the event not being cleared to take money yet (SRS 4.5).
@@ -305,18 +321,4 @@ func mergeCheckoutItems(requested []checkoutItemRequest) ([]store.CheckoutItem, 
 		items = append(items, store.CheckoutItem{TicketTypeID: id, Quantity: merged[id]})
 	}
 	return items, errs
-}
-
-// parseUUIDs converts a list of ids, rejecting the whole list if any is
-// malformed - a basket half-understood is worse than one refused.
-func parseUUIDs(raw []string) ([]uuid.UUID, error) {
-	out := make([]uuid.UUID, 0, len(raw))
-	for _, value := range raw {
-		id, err := uuid.Parse(value)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, id)
-	}
-	return out, nil
 }

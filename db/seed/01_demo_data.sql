@@ -4,9 +4,10 @@
 -- Not loaded automatically. Run it with:  make seed
 -- Re-runnable: it deletes its own rows first, so it never duplicates.
 --
--- Contents: 2 organizers with profiles, 2 attendees, 1 published free event
---           and 1 published paid event whose paid sales are activated, with
---           one order on each.
+-- Contents: 2 organizers with profiles, 2 attendees, 1 door scanner assigned to
+--           both events, 1 published free event and 1 published paid event
+--           whose paid sales are activated, with one order on each. The free
+--           ticket has already been used at the door.
 --
 -- All demo rows live in the d0000000-... UUID space.
 -- =============================================================================
@@ -35,14 +36,16 @@ INSERT INTO users (id, email, password_hash, full_name, phone, locale, status, e
     ('d0000000-0000-4000-8000-000000000001', 'dana@biletflow.kz',  '$2a$12$rFCQOCmARbTQxdRMSB7wde/xelwF29B8BnCrEk5tyV3fsUvI8NI06', 'Dana Amirova',    '+7 701 111 11 11', 'kk', 'active', now() - interval '90 days'),
     ('d0000000-0000-4000-8000-000000000002', 'timur@biletflow.kz', '$2a$12$rFCQOCmARbTQxdRMSB7wde/xelwF29B8BnCrEk5tyV3fsUvI8NI06', 'Timur Bekov',     '+7 701 222 22 22', 'ru', 'active', now() - interval '60 days'),
     ('d0000000-0000-4000-8000-000000000003', 'nurlan@example.kz',  '$2a$12$rFCQOCmARbTQxdRMSB7wde/xelwF29B8BnCrEk5tyV3fsUvI8NI06', 'Nurlan Sagyndyk', '+7 705 333 33 33', 'kk', 'active', now() - interval '30 days'),
-    ('d0000000-0000-4000-8000-000000000004', 'aigerim@example.kz', '$2a$12$rFCQOCmARbTQxdRMSB7wde/xelwF29B8BnCrEk5tyV3fsUvI8NI06', 'Aigerim Zhaksy',  '+7 705 444 44 44', 'ru', 'active', now() - interval '25 days');
+    ('d0000000-0000-4000-8000-000000000004', 'aigerim@example.kz', '$2a$12$rFCQOCmARbTQxdRMSB7wde/xelwF29B8BnCrEk5tyV3fsUvI8NI06', 'Aigerim Zhaksy',  '+7 705 444 44 44', 'ru', 'active', now() - interval '25 days'),
+    ('d0000000-0000-4000-8000-000000000006', 'scanner@biletflow.kz', '$2a$12$rFCQOCmARbTQxdRMSB7wde/xelwF29B8BnCrEk5tyV3fsUvI8NI06', 'Askar Kassym', '+7 707 666 66 66', 'kk', 'active', now() - interval '15 days');
 
 INSERT INTO user_roles (user_id, role) VALUES
     ('d0000000-0000-4000-8000-000000000001', 'organizer'),
     ('d0000000-0000-4000-8000-000000000001', 'attendee'),
     ('d0000000-0000-4000-8000-000000000002', 'organizer'),
     ('d0000000-0000-4000-8000-000000000003', 'attendee'),
-    ('d0000000-0000-4000-8000-000000000004', 'attendee');
+    ('d0000000-0000-4000-8000-000000000004', 'attendee'),
+    ('d0000000-0000-4000-8000-000000000006', 'event_admin');
 
 INSERT INTO organizer_profiles (id, user_id, display_name, legal_name, contact_email, description, identity_verified_at) VALUES
     ('d0000000-0000-4000-8000-000000000101', 'd0000000-0000-4000-8000-000000000001',
@@ -119,6 +122,12 @@ INSERT INTO paid_sales_activations (
     now() - interval '7 days', now() - interval '7 days',
     now() - interval '6 days', now() - interval '6 days');
 
+-- Door staff (SRS 4.8): the scanner account may check attendees in at both
+-- events, each assigned by that event's organizer.
+INSERT INTO staff_assignments (event_id, user_id, role, assigned_by) VALUES
+    ('d0000000-0000-4000-8000-000000000301', 'd0000000-0000-4000-8000-000000000006', 'event_admin', 'd0000000-0000-4000-8000-000000000002'),
+    ('d0000000-0000-4000-8000-000000000302', 'd0000000-0000-4000-8000-000000000006', 'event_admin', 'd0000000-0000-4000-8000-000000000001');
+
 -- -----------------------------------------------------------------------------
 -- 3. Orders and tickets
 -- -----------------------------------------------------------------------------
@@ -147,6 +156,14 @@ INSERT INTO tickets (id, ticket_code, order_id, order_item_id, event_id, ticket_
      'd0000000-0000-4000-8000-000000000301', 'd0000000-0000-4000-8000-000000000401',
      'd0000000-0000-4000-8000-000000000721', 'TKT_DEMOFREE0000000001', 'valid',
      now() - interval '9 days');
+
+-- The free ticket has already been through the door, so the scanner has a
+-- repeat entry to refuse (5.md).
+INSERT INTO check_in_records (ticket_id, event_id, checked_in_by, checked_in_at, device_label) VALUES
+    ('d0000000-0000-4000-8000-000000000731', 'd0000000-0000-4000-8000-000000000301',
+     'd0000000-0000-4000-8000-000000000006', now() - interval '2 hours', 'ios scanner');
+UPDATE tickets SET status = 'checked_in', checked_in_at = now() - interval '2 hours'
+ WHERE id = 'd0000000-0000-4000-8000-000000000731';
 
 -- 3b. A paid order: two Standard tickets, 2 x 7000 = 14000 KZT, simulated payment.
 INSERT INTO orders (id, order_number, event_id, buyer_user_id, buyer_email, buyer_name, buyer_phone,

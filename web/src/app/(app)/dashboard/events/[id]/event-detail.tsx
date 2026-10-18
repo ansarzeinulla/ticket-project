@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ActivationChecklist } from "@/components/activation-checklist";
 import { AttendeeList } from "@/components/attendee-list";
 import { OrderManager } from "@/components/order-manager";
+import { StaffManager } from "@/components/staff-manager";
 import { TicketTypeManager } from "@/components/ticket-type-manager";
 import { Alert } from "@/components/ui/alert";
 import { Spinner } from "@/components/ui/button";
@@ -114,6 +115,8 @@ export function EventDetail({ eventID }: { eventID: string }) {
       <TicketTypeManager eventID={event.id} />
 
       <AttendeeList eventID={event.id} />
+
+      <StaffManager eventID={event.id} />
     </div>
   );
 }
