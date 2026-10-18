@@ -56,7 +56,10 @@ func NewWithSender(cfg config.Config, pool *pgxpool.Pool, sender email.Sender) *
 		accountTokens: store.NewTokenStore(pool),
 		events:        store.NewEventStore(pool),
 		ticketTypes:   store.NewTicketTypeStore(pool),
-		checkout:      store.NewCheckoutStore(pool),
+		checkout: store.NewCheckoutStoreWithFees(pool, store.Fees{
+			Percent:  cfg.ProcessingFeePercent,
+			FixedKZT: cfg.ProcessingFeeFixedKZT,
+		}),
 		seating:       store.NewSeatingStore(pool),
 		activations:   store.NewActivationStore(pool),
 		tickets:       store.NewTicketStore(pool),
