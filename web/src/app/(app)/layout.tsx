@@ -10,9 +10,9 @@ import { useAuth } from "@/lib/auth-context";
 /**
  * The signed-in shell.
  *
- * middleware.ts already turned away requests with no token cookie. This second
- * gate covers the case the middleware cannot see: a cookie that exists but the
- * API has rejected, which AuthProvider discovers on its /auth/me call.
+ * proxy.ts already turned away requests with no token cookie. This second gate
+ * covers the case the proxy cannot see: a cookie that exists but the API has
+ * rejected, which AuthProvider discovers on its /auth/me call.
  */
 export default function AppLayout({ children }: { children: ReactNode }) {
   const { status } = useAuth();
