@@ -547,7 +547,7 @@ func TestManualCheckInFindsAttendeeByName(t *testing.T) {
 		t.Fatalf("matches for \"aigerim\" = %d, want 1", len(attendees))
 	}
 	match := attendees[0].(map[string]any)
-	if match["full_name"] != "Aigerim Serikova" || match["status"] != "valid" {
+	if match["attendee_name"] != "Aigerim Serikova" || match["status"] != "valid" {
 		t.Errorf("match = %v, want Aigerim Serikova with a valid ticket", match)
 	}
 	// The search must not hand out an admission credential.

@@ -7,6 +7,7 @@ import { ActivationChecklist } from "@/components/activation-checklist";
 import { AttendeeList } from "@/components/attendee-list";
 import { OrderManager } from "@/components/order-manager";
 import { StaffManager } from "@/components/staff-manager";
+import { SupportInbox } from "@/components/support-inbox";
 import { TicketTypeManager } from "@/components/ticket-type-manager";
 import { Alert } from "@/components/ui/alert";
 import { Spinner } from "@/components/ui/button";
@@ -16,6 +17,11 @@ import { formatInTimezone } from "@/lib/datetime";
 import type { BiletEvent } from "@/lib/types";
 
 export function EventDetail({ eventID }: { eventID: string }) {
+  // Bumped when something elsewhere on the page changes the figures - a
+  // refund, or paid sales opening - so the panels below re-read rather than
+  // showing numbers the organizer just invalidated.
+  const [refreshKey, setRefreshKey] = useState(0);
+
   const [event, setEvent] = useState<BiletEvent | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -86,7 +92,12 @@ export function EventDetail({ eventID }: { eventID: string }) {
           </div>
         </dl>
 
-        {event.status === "published" ? (
+        {event.status === "suspended" ? (
+          <Alert tone="error" title="Suspended by BiletFlow">
+            A platform administrator has suspended this event pending review. Ticket
+            sales are blocked. Existing ticket holders can still be checked in.
+          </Alert>
+        ) : event.status === "published" ? (
           <p className="mt-4 text-sm">
             <Link
               href={`/events/${event.slug}`}
@@ -108,15 +119,26 @@ export function EventDetail({ eventID }: { eventID: string }) {
         not on sale needs to know that before they wonder why nothing has sold.
         It renders nothing at all for a free event.
       */}
-      <ActivationChecklist eventID={event.id} />
+      <ActivationChecklist eventID={event.id} onActivated={() => setRefreshKey((n) => n + 1)} />
 
-      <OrderManager eventID={event.id} />
+      <OrderManager
+        eventID={event.id}
+        onRefunded={() => setRefreshKey((n) => n + 1)}
+      />
 
-      <TicketTypeManager eventID={event.id} />
+      {/*
+        Keyed on the refresh counter: a refund returns inventory, so leaving
+        this panel showing the pre-refund "sold" would contradict the order
+        list directly above it.
+      */}
+      <TicketTypeManager key={`types-${refreshKey}`} eventID={event.id} />
 
-      <AttendeeList eventID={event.id} />
+      <AttendeeList key={`attendees-${refreshKey}`} eventID={event.id} />
 
       <StaffManager eventID={event.id} />
+
+      <SupportInbox eventID={event.id} />
+
     </div>
   );
 }

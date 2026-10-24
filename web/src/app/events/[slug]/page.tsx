@@ -30,6 +30,7 @@ export default async function PublicEventPage({
     ticket_types: ticketTypes,
     on_sale: onSale,
     sold_out: soldOut,
+    suspended,
     paid_sales_active: paidSalesActive,
     paid_sales_required: paidSalesRequired,
   } = data;
@@ -37,7 +38,7 @@ export default async function PublicEventPage({
   // Paid tickets exist but the organizer has not finished activation, so the
   // checkout would refuse them (SRS 4.5). Saying so beats letting somebody
   // pick tickets and fill in a form that cannot succeed.
-  const paidSalesPending = paidSalesRequired && !paidSalesActive;
+  const paidSalesPending = paidSalesRequired && !paidSalesActive && !suspended;
   const hasFreeTier = ticketTypes.some((type) => type.is_free);
 
   return (
@@ -89,6 +90,21 @@ export default async function PublicEventPage({
           </dl>
         </header>
 
+        {suspended && (
+          <div
+            role="alert"
+            className="rounded-xl border border-danger/40 bg-danger-soft p-5"
+            data-testid="suspended-banner"
+          >
+            <h2 className="text-base font-semibold text-danger">Ticket sales suspended</h2>
+            <p className="mt-1 text-sm text-danger/90">
+              BiletFlow has suspended this event pending review, so no new tickets can be
+              bought. Tickets already issued remain valid — if you are holding one, contact
+              the organizer from your order page for the latest information.
+            </p>
+          </div>
+        )}
+
         {paidSalesPending && (
           <div
             role="status"
@@ -124,11 +140,11 @@ export default async function PublicEventPage({
           stepping a quantity: the attendee is choosing *where* to sit, and a
           "+/-" cannot express that (SRS 4.3.1).
         */}
-        {!(paidSalesPending && !hasFreeTier) && event.seating_mode === "assigned_seating" && (
-          <SeatedPurchase eventID={event.id} />
-        )}
+        {!suspended && !(paidSalesPending && !hasFreeTier) &&
+          event.seating_mode === "assigned_seating" && <SeatedPurchase eventID={event.id} />}
 
-        {!(paidSalesPending && !hasFreeTier) && event.seating_mode !== "assigned_seating" && (
+        {!suspended && !(paidSalesPending && !hasFreeTier) &&
+          event.seating_mode !== "assigned_seating" && (
           <TicketSelector
             eventID={event.id}
             eventTitle={event.title}

@@ -254,6 +254,152 @@ func TestPayoutStatusIsNotResentOnEveryChecklistSave(t *testing.T) {
 
 // --- Support-case assignment and status (SRS 4.13) ---------------------------
 
+// openSupportCase has an attendee open a case against an organizer's event.
+func (c *client) openSupportCase(
+	organizerToken string, attendee account, title string,
+) (eventID string, caseID string) {
+	c.t.Helper()
+
+	id, _, ticketTypeID := c.sellableEvent(organizerToken, title, "0", 10)
+	bought := c.post("/api/v1/events/"+id.String()+"/checkout", attendee.Token, map[string]any{
+		"buyer_name":  "Case Opener",
+		"buyer_email": attendee.Email,
+		"items":       []map[string]any{{"ticket_type_id": ticketTypeID.String(), "quantity": 1}},
+	})
+	requireStatus(c.t, bought, http.StatusCreated)
+
+	opened := c.post("/api/v1/support/cases", attendee.Token, map[string]any{
+		"category": "ticket_delivery",
+		"subject":  "My ticket has not arrived",
+		"message":  "I completed the registration but received nothing.",
+		"order_id": orderIDOf(c.t, bought),
+	})
+	requireStatus(c.t, opened, http.StatusCreated)
+
+	return id.String(), opened.Body["case"].(map[string]any)["id"].(string)
+}
+
+// TestCaseCanBeAssignedToANamedPerson is SRS 4.13: "Authorized staff shall be
+// able to assign a case."
+func TestCaseCanBeAssignedToANamedPerson(t *testing.T) {
+	c := newClient(t)
+	organizer := c.register("assignorganizer")
+	attendee := c.register("assignattendee")
+	colleague := c.register("assigncolleague")
+
+	_, caseID := c.openSupportCase(organizer.Token, attendee, "Assignable Case")
+
+	res := c.post("/api/v1/support/cases/"+caseID+"/assign", organizer.Token,
+		map[string]any{"email": colleague.Email})
+	requireStatus(t, res, http.StatusOK)
+
+	supportCase := res.Body["case"].(map[string]any)
+	if supportCase["assigned_to_user_id"] != colleague.ID.String() {
+		t.Errorf("assigned_to_user_id = %v, want %s",
+			supportCase["assigned_to_user_id"], colleague.ID)
+	}
+
+	// SRS 4.10: the requester is told who has their case.
+	msgs := c.mailOfType(attendee.Email, email.TypeSupportAssigned)
+	if len(msgs) != 1 {
+		t.Fatalf("assignment emails = %d, want 1", len(msgs))
+	}
+
+	// And it can be handed back to the pool.
+	res = c.post("/api/v1/support/cases/"+caseID+"/assign", organizer.Token,
+		map[string]any{"email": ""})
+	requireStatus(t, res, http.StatusOK)
+	if _, present := res.Body["case"].(map[string]any)["assigned_to_user_id"]; present {
+		t.Errorf("the case is still assigned after being handed back: %s", res.Raw)
+	}
+}
+
+// TestAssignmentIsStaffOnly - an attendee cannot decide who handles their case.
+func TestAssignmentIsStaffOnly(t *testing.T) {
+	c := newClient(t)
+	organizer := c.register("assignauthzorg")
+	attendee := c.register("assignauthzatt")
+
+	_, caseID := c.openSupportCase(organizer.Token, attendee, "Authorized Assignment")
+
+	requireStatus(t, c.post("/api/v1/support/cases/"+caseID+"/assign", attendee.Token,
+		map[string]any{"email": attendee.Email}), http.StatusForbidden)
+	requireStatus(t, c.post("/api/v1/support/cases/"+caseID+"/assign", "",
+		map[string]any{"email": attendee.Email}), http.StatusUnauthorized)
+}
+
+// TestAssignmentNeedsARealAccount.
+func TestAssignmentNeedsARealAccount(t *testing.T) {
+	c := newClient(t)
+	organizer := c.register("assignmissing")
+	attendee := c.register("assignmissingatt")
+
+	_, caseID := c.openSupportCase(organizer.Token, attendee, "Missing Assignee")
+
+	res := c.post("/api/v1/support/cases/"+caseID+"/assign", organizer.Token,
+		map[string]any{"email": "nobody@biletflow.test"})
+	requireStatus(t, res, http.StatusUnprocessableEntity)
+	if _, ok := res.errorFields()["email"]; !ok {
+		t.Errorf("no field error on email: %s", res.Raw)
+	}
+}
+
+// TestRequesterIsToldWhenTheirCaseChangesStatus is SRS 4.13's "status changes"
+// notification.
+func TestRequesterIsToldWhenTheirCaseChangesStatus(t *testing.T) {
+	c := newClient(t)
+	organizer := c.register("statusorganizer")
+	attendee := c.register("statusattendee")
+
+	_, caseID := c.openSupportCase(organizer.Token, attendee, "Status Change Case")
+
+	requireStatus(t, c.patch("/api/v1/support/cases/"+caseID, organizer.Token,
+		map[string]any{"status": "waiting_for_customer"}), http.StatusOK)
+
+	msgs := c.mailOfType(attendee.Email, email.TypeSupportStatusChanged)
+	if len(msgs) != 1 {
+		t.Fatalf("status-change emails = %d, want 1", len(msgs))
+	}
+	// The enum label must not leak into an attendee's inbox.
+	if strings.Contains(msgs[0].Subject, "waiting_for_customer") {
+		t.Errorf("the subject shows a raw enum label: %q", msgs[0].Subject)
+	}
+	if !strings.Contains(msgs[0].Body, "waiting on a reply from you") {
+		t.Errorf("the email does not say what is expected of them: %s", msgs[0].Body)
+	}
+
+	// Setting the same status again is not a change and sends nothing more.
+	requireStatus(t, c.patch("/api/v1/support/cases/"+caseID, organizer.Token,
+		map[string]any{"status": "waiting_for_customer"}), http.StatusOK)
+	if msgs := c.mailOfType(attendee.Email, email.TypeSupportStatusChanged); len(msgs) != 1 {
+		t.Errorf("status-change emails = %d after a no-op change, want 1", len(msgs))
+	}
+}
+
+// TestEveryNotificationTypeInTheSRSHasATemplate is the coverage check: SRS 4.10
+// lists nine, SRS 4.13 adds two more.
+func TestEveryNotificationTypeInTheSRSHasATemplate(t *testing.T) {
+	required := map[string]string{
+		"account verification":       email.TypeEmailVerification,
+		"purchase confirmation":      email.TypeOrderConfirmation,
+		"payment failure":            email.TypePaymentFailed,
+		"event updates":              email.TypeEventUpdated,
+		"event cancellation":         email.TypeEventCancelled,
+		"refund completion":          email.TypeRefundCompleted,
+		"organizer payout status":    email.TypePayoutStatus,
+		"new support message":        email.TypeSupportMessage,
+		"support-case assignment":    email.TypeSupportAssigned,
+		"support-case status change": email.TypeSupportStatusChanged,
+		"registration cancellation":  email.TypeRegistrationCancelled,
+		"password reset":             email.TypePasswordReset,
+	}
+	for name, msgType := range required {
+		if msgType == "" {
+			t.Errorf("SRS notification %q has no type constant", name)
+		}
+	}
+}
+
 func bodiesOf(msgs []email.Message) []string {
 	out := make([]string, 0, len(msgs))
 	for _, m := range msgs {

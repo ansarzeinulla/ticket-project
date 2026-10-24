@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -187,6 +188,74 @@ func (s *Server) sendEventUpdate(event store.Event, changes []string) {
 	}
 }
 
+// sendSupportCaseAssigned tells the requester who picked their case up
+// (SRS 4.10, 4.13: "support-case assignment").
+func (s *Server) sendSupportCaseAssigned(supportCase store.SupportCase, assigneeName string) {
+	ctx, cancel := context.WithTimeout(context.Background(), notifyTimeout)
+	defer cancel()
+
+	requester, err := s.support.RequesterContact(ctx, supportCase.ID)
+	if err != nil {
+		return
+	}
+	// Assigning a case to its own requester is not news to them.
+	if supportCase.AssignedToID != nil && requester.UserID != nil &&
+		*supportCase.AssignedToID == *requester.UserID {
+		return
+	}
+
+	msg := email.SupportCaseAssigned(email.SupportCaseDetails{
+		RecipientName:  requester.FullName,
+		RecipientEmail: requester.Email,
+		CaseNumber:     supportCase.CaseNumber,
+		Subject:        supportCase.Subject,
+		AssigneeName:   assigneeName,
+		CaseURL:        s.cfg.WebBaseURL + "/support/" + supportCase.ID.String(),
+	})
+
+	s.dispatch(msg, store.NotificationParams{
+		UserID:         requester.UserID,
+		RecipientEmail: requester.Email,
+		EventID:        supportCase.EventID,
+		SupportCaseID:  &supportCase.ID,
+	})
+}
+
+// sendSupportStatusChanged tells the requester their case moved
+// (SRS 4.10, 4.13: "support-case status changes").
+//
+// Only the requester is told. Staff changing the status already know, and the
+// point of the notification is that somebody waiting on an answer finds out
+// without having to poll the page.
+func (s *Server) sendSupportStatusChanged(supportCase store.SupportCase, actorID uuid.UUID) {
+	ctx, cancel := context.WithTimeout(context.Background(), notifyTimeout)
+	defer cancel()
+
+	requester, err := s.support.RequesterContact(ctx, supportCase.ID)
+	if err != nil {
+		return
+	}
+	if requester.UserID != nil && *requester.UserID == actorID {
+		return
+	}
+
+	msg := email.SupportCaseStatusChanged(email.SupportCaseDetails{
+		RecipientName:  requester.FullName,
+		RecipientEmail: requester.Email,
+		CaseNumber:     supportCase.CaseNumber,
+		Subject:        supportCase.Subject,
+		Status:         supportCase.Status,
+		CaseURL:        s.cfg.WebBaseURL + "/support/" + supportCase.ID.String(),
+	})
+
+	s.dispatch(msg, store.NotificationParams{
+		UserID:         requester.UserID,
+		RecipientEmail: requester.Email,
+		EventID:        supportCase.EventID,
+		SupportCaseID:  &supportCase.ID,
+	})
+}
+
 // dispatch records the message in the outbox and hands it to the mailer.
 //
 // The row is written synchronously so a test - or an operator - can see that a
@@ -315,4 +384,76 @@ func (s *Server) sendEventCancelled(event store.Event) {
 			OrderID:        &orderID,
 		})
 	}
+}
+
+// sendSupportMessageNotice tells the other side of a conversation that a reply
+// has arrived (SRS 4.10, 4.13).
+//
+// Internal notes are deliberately never notified: they exist so staff can talk
+// among themselves, and emailing the attendee about one would defeat the whole
+// point of the checkbox.
+func (s *Server) sendSupportMessageNotice(
+	supportCase store.SupportCase, senderID uuid.UUID, senderName, body string, internal bool,
+) {
+	if internal {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), notifyTimeout)
+	defer cancel()
+
+	recipient, err := s.support.Counterpart(ctx, supportCase.ID, senderID)
+	if err != nil {
+		// A case with nobody on the other side is not an error worth shouting
+		// about; there is simply no one to tell.
+		return
+	}
+	if recipient.UserID != nil && *recipient.UserID == senderID {
+		return
+	}
+
+	title := "your event"
+	if supportCase.EventTitle != nil {
+		title = *supportCase.EventTitle
+	}
+
+	msg := email.NewSupportMessage(email.SupportMessageDetails{
+		RecipientName:  recipient.FullName,
+		Email:          recipient.Email,
+		EventTitle:     title,
+		CaseSubject:    supportCase.Subject,
+		SenderName:     senderName,
+		MessagePreview: truncateForPreview(body, 400),
+		CaseURL:        s.cfg.WebBaseURL + "/orders/" + orderIDForCase(supportCase),
+	})
+
+	s.dispatch(msg, store.NotificationParams{
+		UserID:         recipient.UserID,
+		RecipientEmail: recipient.Email,
+		EventID:        supportCase.EventID,
+		OrderID:        supportCase.OrderID,
+	})
+}
+
+// orderIDForCase returns the order a case hangs off, so the link lands on the
+// page where the thread is rendered.
+func orderIDForCase(supportCase store.SupportCase) string {
+	if supportCase.OrderID != nil {
+		return supportCase.OrderID.String()
+	}
+	return ""
+}
+
+// truncateForPreview keeps a quoted message to a readable length, cutting on a
+// word boundary rather than mid-word.
+func truncateForPreview(body string, limit int) string {
+	body = strings.TrimSpace(body)
+	if len(body) <= limit {
+		return body
+	}
+	cut := body[:limit]
+	if space := strings.LastIndexByte(cut, ' '); space > limit/2 {
+		cut = cut[:space]
+	}
+	return cut + "…"
 }
