@@ -38,6 +38,8 @@ type Server struct {
 	staff         *store.StaffStore
 	checkIns      *store.CheckInStore
 	refunds       *store.RefundStore
+	moderation    *store.ModerationStore
+	admin         *store.AdminStore
 
 	hasher *auth.Hasher
 	tokens *auth.TokenService
@@ -73,6 +75,8 @@ func NewWithSender(cfg config.Config, pool *pgxpool.Pool, sender email.Sender) *
 		staff:         store.NewStaffStore(pool),
 		checkIns:      store.NewCheckInStore(pool),
 		refunds:       store.NewRefundStore(pool),
+		moderation:    store.NewModerationStore(pool),
+		admin:         store.NewAdminStore(pool),
 		hasher:        auth.NewHasher(cfg.BcryptCost),
 		tokens:        auth.NewTokenService(cfg.JWTSecret, cfg.JWTIssuer, cfg.AccessTokenTTL),
 		now:           time.Now,
@@ -222,6 +226,42 @@ func (s *Server) Handler() http.Handler {
 		s.requireAuth(s.handleManualCheckIn))
 	mux.HandleFunc("GET /api/v1/events/{id}/check-in/stats", s.requireAuth(s.handleCheckInStats))
 	mux.HandleFunc("POST /api/v1/tickets/{id}/check-in/reverse", s.requireAuth(s.handleReverseCheckIn))
+
+	// --- platform moderation (SRS 4.12) -------------------------------------
+	mux.HandleFunc("POST /api/v1/admin/events/{id}/suspend",
+		s.requirePlatformAdmin(s.handleSuspendEvent))
+	mux.HandleFunc("POST /api/v1/admin/events/{id}/unsuspend",
+		s.requirePlatformAdmin(s.handleUnsuspendEvent))
+	// Narrower than suspending the event: this stops the money while leaving
+	// free registration open (SRS 4.5).
+	mux.HandleFunc("POST /api/v1/admin/events/{id}/paid-sales/suspend",
+		s.requirePlatformAdmin(s.handleSuspendPaidSales))
+	mux.HandleFunc("POST /api/v1/admin/events/{id}/paid-sales/unsuspend",
+		s.requirePlatformAdmin(s.handleUnsuspendPaidSales))
+
+	// --- the administrative portal (SRS 2.1, 4.12) --------------------------
+	// SRS 4.12: "Suspend users or events." Events have been suspendable since
+	// Phase 8; this is the other half.
+	mux.HandleFunc("POST /api/v1/admin/users/{id}/suspend",
+		s.requirePlatformAdmin(s.handleSuspendUser))
+	mux.HandleFunc("POST /api/v1/admin/users/{id}/unsuspend",
+		s.requirePlatformAdmin(s.handleUnsuspendUser))
+
+	// SRS 4.12: "Review reported events." Anyone signed in can file a report;
+	// only platform staff can see or decide the queue.
+	mux.HandleFunc("POST /api/v1/events/{id}/report", s.requireAuth(s.handleReportEvent))
+	mux.HandleFunc("GET /api/v1/admin/event-reports", s.requirePlatformAdmin(s.handleListReports))
+	mux.HandleFunc("PATCH /api/v1/admin/event-reports/{id}",
+		s.requirePlatformAdmin(s.handleReviewReport))
+
+	// SRS 4.12: "Configure activation fees and platform settings."
+	mux.HandleFunc("GET /api/v1/admin/settings", s.requirePlatformAdmin(s.handleListSettings))
+	mux.HandleFunc("PATCH /api/v1/admin/settings/{key}",
+		s.requirePlatformAdmin(s.handleUpdateSetting))
+
+	mux.HandleFunc("GET /api/v1/admin/search", s.requirePlatformAdmin(s.handleAdminSearch))
+	mux.HandleFunc("GET /api/v1/admin/reports/events.csv",
+		s.requirePlatformAdmin(s.handleAdminReport))
 
 	// --- event staff --------------------------------------------------------
 	mux.HandleFunc("GET /api/v1/events/{id}/staff", s.requireAuth(s.handleListStaff))

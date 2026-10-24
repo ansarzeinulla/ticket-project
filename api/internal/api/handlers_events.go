@@ -281,7 +281,7 @@ func (s *Server) handleListMyEvents(w http.ResponseWriter, r *http.Request) {
 	if v := r.URL.Query().Get("status"); v != "" {
 		switch v {
 		case store.EventStatusDraft, store.EventStatusPublished, store.EventStatusUnpublished,
-			store.EventStatusCancelled, store.EventStatusCompleted:
+			store.EventStatusCancelled, store.EventStatusCompleted, store.EventStatusSuspended:
 			filter.Statuses = []string{v}
 		default:
 			errs.add("status", "Unknown status filter.")
