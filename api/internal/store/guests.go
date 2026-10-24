@@ -2,27 +2,10 @@ package store
 
 import (
 	"context"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
-
-// EventOrder is one row of the organizer's order list.
-type EventOrder struct {
-	ID          uuid.UUID `json:"id"`
-	OrderNumber string    `json:"order_number"`
-	BuyerName   string    `json:"buyer_name"`
-	BuyerEmail  string    `json:"buyer_email"`
-	Status      string    `json:"status"`
-	TotalKZT    string    `json:"total_kzt"`
-	TicketCount int       `json:"ticket_count"`
-	// LiveTickets still admit somebody; CheckedIn already have.
-	LiveTickets int        `json:"live_tickets"`
-	CheckedIn   int        `json:"checked_in"`
-	PlacedAt    *time.Time `json:"placed_at,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
-}
 
 // Guest is one issued ticket with the person it was issued to.
 type Guest struct {
@@ -45,39 +28,6 @@ func NewGuestStore(pool *pgxpool.Pool) *GuestStore { return &GuestStore{pool: po
 
 // guestListLimit keeps one page to what a dashboard table can show.
 const guestListLimit = 200
-
-// ListEventOrders returns an event's orders, newest first.
-func (s *GuestStore) ListEventOrders(ctx context.Context, eventID uuid.UUID) ([]EventOrder, error) {
-	rows, err := s.pool.Query(ctx, `
-		SELECT o.id, o.order_number, o.buyer_name, o.buyer_email, o.status::text,
-		       o.total_kzt::text,
-		       count(t.id)                                                   AS ticket_count,
-		       count(t.id) FILTER (WHERE t.status IN ('valid', 'checked_in')) AS live_tickets,
-		       count(t.id) FILTER (WHERE t.status = 'checked_in')             AS checked_in,
-		       o.placed_at, o.created_at
-		  FROM orders o
-		  LEFT JOIN tickets t ON t.order_id = o.id
-		 WHERE o.event_id = $1
-		 GROUP BY o.id
-		 ORDER BY o.created_at DESC
-		 LIMIT $2`, eventID, guestListLimit)
-	if err != nil {
-		return nil, mapError(err)
-	}
-	defer rows.Close()
-
-	orders := []EventOrder{}
-	for rows.Next() {
-		var o EventOrder
-		if err := rows.Scan(&o.ID, &o.OrderNumber, &o.BuyerName, &o.BuyerEmail, &o.Status,
-			&o.TotalKZT, &o.TicketCount, &o.LiveTickets, &o.CheckedIn,
-			&o.PlacedAt, &o.CreatedAt); err != nil {
-			return nil, err
-		}
-		orders = append(orders, o)
-	}
-	return orders, rows.Err()
-}
 
 // ListGuests returns the tickets issued for an event, optionally narrowed by a
 // name, email, ticket code or order number.
