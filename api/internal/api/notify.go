@@ -99,6 +99,94 @@ func (s *Server) sendCancellationConfirmation(result store.CancelResult, reason 
 	})
 }
 
+// sendPaymentFailure tells a buyer their payment did not go through and that
+// no tickets were issued (SRS 4.10, "payment failure").
+//
+// There is no order row to point at: the decline happens before the order is
+// written, precisely so a failed transaction leaves nothing behind that could
+// be mistaken for a purchase (SRS 4.6).
+func (s *Server) sendPaymentFailure(
+	event store.Event, buyerName, buyerEmail, amountKZT, reason string,
+) {
+	msg := email.PaymentFailed(email.PaymentFailureDetails{
+		BuyerName:   buyerName,
+		BuyerEmail:  buyerEmail,
+		OrderNumber: "-",
+		EventTitle:  event.Title,
+		AmountKZT:   amountKZT,
+		Reason:      reason,
+		RetryURL:    s.cfg.WebBaseURL + "/events/" + event.Slug,
+	})
+
+	eventID := event.ID
+	s.dispatch(msg, store.NotificationParams{
+		RecipientEmail: buyerEmail,
+		EventID:        &eventID,
+	})
+}
+
+// sendPayoutStatus tells an organizer where their (simulated) money is
+// (SRS 4.10, "organizer payout status").
+func (s *Server) sendPayoutStatus(
+	organizer store.User, event store.Event, status, amountKZT, masked, note string,
+) {
+	msg := email.PayoutStatus(email.PayoutStatusDetails{
+		OrganizerName:  organizer.FullName,
+		OrganizerEmail: organizer.Email,
+		EventTitle:     event.Title,
+		Status:         status,
+		AmountKZT:      amountKZT,
+		MaskedAccount:  masked,
+		Note:           note,
+	})
+
+	eventID := event.ID
+	organizerID := organizer.ID
+	s.dispatch(msg, store.NotificationParams{
+		UserID:         &organizerID,
+		RecipientEmail: organizer.Email,
+		EventID:        &eventID,
+	})
+}
+
+// sendEventUpdate tells every ticket holder that something they planned around
+// has moved (SRS 4.10, "event updates").
+//
+// Fan-out is one message per distinct buyer address, not one per ticket: a
+// person who bought four seats gets told once.
+func (s *Server) sendEventUpdate(event store.Event, changes []string) {
+	if len(changes) == 0 {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), notifyTimeout)
+	defer cancel()
+
+	holders, err := s.events.TicketHolders(ctx, event.ID)
+	if err != nil {
+		log.Printf("notification: could not list ticket holders for %s: %v", event.ID, err)
+		return
+	}
+
+	for _, h := range holders {
+		msg := email.EventUpdated(email.EventUpdateDetails{
+			AttendeeName:  h.BuyerName,
+			AttendeeEmail: h.BuyerEmail,
+			EventTitle:    event.Title,
+			Changes:       changes,
+			EventURL:      s.cfg.WebBaseURL + "/events/" + event.Slug,
+		})
+		eventID := event.ID
+		orderID := h.OrderID
+		s.dispatch(msg, store.NotificationParams{
+			UserID:         h.UserID,
+			RecipientEmail: h.BuyerEmail,
+			EventID:        &eventID,
+			OrderID:        &orderID,
+		})
+	}
+}
+
 // dispatch records the message in the outbox and hands it to the mailer.
 //
 // The row is written synchronously so a test - or an operator - can see that a
@@ -175,4 +263,56 @@ func eventWhen(event store.Event) string {
 		location = time.UTC
 	}
 	return event.StartsAt.In(location).Format("Mon 2 Jan 2006, 15:04 (MST)")
+}
+
+// localTime renders any instant in an event's own timezone, for the
+// before/after lines on an update notice.
+func localTime(event store.Event, at time.Time) string {
+	location, err := time.LoadLocation(event.Timezone)
+	if err != nil {
+		location = time.UTC
+	}
+	return at.In(location).Format("Mon 2 Jan 2006, 15:04 (MST)")
+}
+
+// sendEventCancelled tells every ticket holder their event is off (SRS 4.10).
+//
+// One message per order rather than per ticket: somebody who bought four seats
+// wants one email, not four. Failures are logged and dropped - a cancellation
+// that has already happened must not be undone because an inbox was
+// unreachable.
+func (s *Server) sendEventCancelled(event store.Event) {
+	ctx, cancel := context.WithTimeout(context.Background(), notifyTimeout)
+	defer cancel()
+
+	holders, err := s.events.TicketHolders(ctx, event.ID)
+	if err != nil {
+		log.Printf("notification: could not list ticket holders for %s: %v", event.ID, err)
+		return
+	}
+
+	policy := ""
+	if event.RefundPolicy != nil {
+		policy = *event.RefundPolicy
+	}
+
+	for _, holder := range holders {
+		msg := email.EventCancelled(email.EventCancelledDetails{
+			AttendeeName: holder.BuyerName,
+			Email:        holder.BuyerEmail,
+			EventTitle:   event.Title,
+			EventWhen:    eventWhen(event),
+			OrderNumber:  holder.OrderNumber,
+			TicketCount:  holder.TicketCount,
+			RefundPolicy: policy,
+		})
+
+		eventID, orderID := event.ID, holder.OrderID
+		s.dispatch(msg, store.NotificationParams{
+			UserID:         holder.UserID,
+			RecipientEmail: holder.BuyerEmail,
+			EventID:        &eventID,
+			OrderID:        &orderID,
+		})
+	}
 }

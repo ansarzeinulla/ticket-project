@@ -314,6 +314,32 @@ func (s *CheckoutStore) confirm(
 		return CheckoutResult{}, ErrHoldExpired
 	}
 
+	// --- 1b. The simulated decline (SRS 4.6, 4.10) --------------------------
+	// SRS 4.10 requires a "payment failure" notification and SRS 4.6 that
+	// "failed or abandoned transactions shall not create valid tickets".
+	// Neither could be demonstrated while the simulated gateway always said
+	// yes, so it needs a way to say no.
+	//
+	// The trigger is a reserved buyer address rather than a field in the
+	// request body: a client-supplied "payment_outcome" would look like the
+	// caller deciding whether their own payment succeeded. A magic address is
+	// the idiom the real card sandboxes use, and nobody owns
+	// decline.simulator.biletflow.kz.
+	//
+	// It is checked here, before anything is written. A one-shot checkout
+	// rolls the whole transaction back, so a declined card holds no stock; a
+	// two-step basket keeps its reservation, so the attendee can try another
+	// card without losing their seats.
+	declineEmail := p.BuyerEmail
+	if declineEmail == "" {
+		declineEmail = order.BuyerEmail
+	}
+	if isPositiveAmount(order.SubtotalKZT) && isDeclineSimulation(declineEmail) {
+		return CheckoutResult{}, &PaymentDeclinedError{
+			Reason: "The simulated payment provider declined this card.",
+		}
+	}
+
 	// --- 2. Whose order it is ----------------------------------------------
 	if err := tx.QueryRow(ctx, `
 		UPDATE orders

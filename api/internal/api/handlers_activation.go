@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
@@ -56,6 +57,56 @@ func (s *Server) handleGetActivation(w http.ResponseWriter, r *http.Request) {
 
 }
 
+// notifyPayoutRegistered confirms the (simulated) payout destination is on
+// file, quoting the masked value so the organizer can check it is the right one.
+func (s *Server) notifyPayoutRegistered(r *http.Request, event store.Event) {
+	organizer, profile, ok := s.payoutContext(r, event)
+	if !ok {
+		return
+	}
+
+	masked := ""
+	if len(profile.PayoutAccounts) > 0 && profile.PayoutAccounts[0].MaskedAccount != nil {
+		masked = *profile.PayoutAccounts[0].MaskedAccount
+	}
+	s.sendPayoutStatus(organizer, event, "destination registered", "", masked,
+		"Ticket revenue for this event will be settled here.")
+}
+
+// notifyPayoutReady confirms the organizer is cleared to take money.
+func (s *Server) notifyPayoutReady(r *http.Request, event store.Event) {
+	organizer, profile, ok := s.payoutContext(r, event)
+	if !ok {
+		return
+	}
+
+	masked := ""
+	if len(profile.PayoutAccounts) > 0 && profile.PayoutAccounts[0].MaskedAccount != nil {
+		masked = *profile.PayoutAccounts[0].MaskedAccount
+	}
+	s.sendPayoutStatus(organizer, event, "ready", "", masked,
+		"Paid sales are open. Settlement is simulated for this release.")
+}
+
+func (s *Server) payoutContext(
+	r *http.Request, event store.Event,
+) (store.User, store.OrganizerProfile, bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), notifyTimeout)
+	defer cancel()
+
+	organizer, err := s.users.GetByID(ctx, event.OrganizerID)
+	if err != nil {
+		return store.User{}, store.OrganizerProfile{}, false
+	}
+	profile, err := s.profiles.Get(ctx, event.OrganizerID)
+	if err != nil {
+		// A missing profile is not a reason to withhold the notification; it
+		// only means there is no masked value to quote.
+		return organizer, store.OrganizerProfile{}, true
+	}
+	return organizer, profile, true
+}
+
 // handleAdvanceActivation completes checklist steps and, once every step is
 // done, opens paid sales (SRS 4.5).
 func (s *Server) handleAdvanceActivation(w http.ResponseWriter, r *http.Request) {
@@ -76,6 +127,13 @@ func (s *Server) handleAdvanceActivation(w http.ResponseWriter, r *http.Request)
 		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeValidationFailed,
 			"Complete at least one checklist step.")
 		return
+	}
+
+	// Read the state before the change, so the notifications below fire once
+	// on the transition rather than on every re-submission of the form.
+	wasActive := false
+	if before, err := s.activations.ForEvent(r.Context(), event.ID); err == nil {
+		wasActive = before.IsActive
 	}
 
 	activation, err := s.activations.Advance(r.Context(), store.AdvanceParams{
@@ -99,6 +157,17 @@ func (s *Server) handleAdvanceActivation(w http.ResponseWriter, r *http.Request)
 	}
 
 	httpx.WriteJSON(w, http.StatusOK, activationResponse{Activation: activation})
+
+	// SRS 4.10: "Organizer payout status." Registering the payout destination
+	// is the first thing that happens to an organizer's money, and completing
+	// the checklist is what clears them to take any - so both are worth
+	// telling them about, and neither has been until now.
+	if req.ConfirmPayout && !wasActive {
+		s.notifyPayoutRegistered(r, event)
+	}
+	if activation.IsActive && !wasActive {
+		s.notifyPayoutReady(r, event)
+	}
 }
 
 type suspendPaidSalesRequest struct {

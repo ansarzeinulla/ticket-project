@@ -199,6 +199,140 @@ const (
 	TypeSupportStatusChanged = "support.status_changed"
 )
 
+// PaymentFailureDetails is what a failed payment notification needs
+// (SRS 4.10, "payment failure").
+type PaymentFailureDetails struct {
+	BuyerName   string
+	BuyerEmail  string
+	OrderNumber string
+	EventTitle  string
+	AmountKZT   string
+	Reason      string
+	RetryURL    string
+}
+
+// PaymentFailed tells a buyer their payment did not go through and that no
+// tickets were issued (SRS 4.6: "Failed or abandoned transactions shall not
+// create valid tickets").
+func PaymentFailed(d PaymentFailureDetails) Message {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "Hi %s,\n\n", firstName(d.BuyerName))
+	fmt.Fprintf(&b, "The payment for order %s did not go through, so no tickets\n", d.OrderNumber)
+	fmt.Fprintf(&b, "were issued for %s.\n\n", d.EventTitle)
+
+	// The amount is omitted rather than guessed: the decline happens before the
+	// order is priced in SQL, and re-deriving a total in Go would be a second,
+	// divergent copy of the pricing rules.
+	if d.AmountKZT != "" {
+		fmt.Fprintf(&b, "  Attempted: %s KZT (simulated)\n", d.AmountKZT)
+	}
+	if d.Reason != "" {
+		fmt.Fprintf(&b, "  Reason:    %s\n", d.Reason)
+	}
+	if d.AmountKZT != "" || d.Reason != "" {
+		b.WriteString("\n")
+	}
+
+	b.WriteString("Nothing was charged. Your seats were released back to the event, so\n")
+	b.WriteString("they may be gone if you wait.\n\n")
+	if d.RetryURL != "" {
+		fmt.Fprintf(&b, "Try again: %s\n\n", d.RetryURL)
+	}
+	b.WriteString("- BiletFlow\n")
+
+	return Message{
+		Type:    TypePaymentFailed,
+		To:      d.BuyerEmail,
+		Subject: "Payment failed for " + d.EventTitle,
+		Body:    b.String(),
+	}
+}
+
+// EventUpdateDetails carries a change an attendee needs to know about.
+type EventUpdateDetails struct {
+	AttendeeName  string
+	AttendeeEmail string
+	EventTitle    string
+	// Changes are human-readable lines, already phrased as before/after by the
+	// caller. The template does not compare rows: what counts as a change
+	// worth an email is a decision for the handler that made it.
+	Changes  []string
+	EventURL string
+}
+
+// EventUpdated tells ticket holders that something they planned around has
+// moved (SRS 4.10, "event updates").
+func EventUpdated(d EventUpdateDetails) Message {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "Hi %s,\n\n", firstName(d.AttendeeName))
+	fmt.Fprintf(&b, "%s has been updated since you booked.\n\n", d.EventTitle)
+
+	for _, line := range d.Changes {
+		fmt.Fprintf(&b, "  %s\n", line)
+	}
+	if len(d.Changes) > 0 {
+		b.WriteString("\n")
+	}
+
+	b.WriteString("Your ticket is unchanged and still admits you.\n\n")
+	if d.EventURL != "" {
+		fmt.Fprintf(&b, "Event page: %s\n\n", d.EventURL)
+	}
+	b.WriteString("- BiletFlow\n")
+
+	return Message{
+		Type:    TypeEventUpdated,
+		To:      d.AttendeeEmail,
+		Subject: "Update to " + d.EventTitle,
+		Body:    b.String(),
+	}
+}
+
+// PayoutStatusDetails is an organizer-facing payout update.
+type PayoutStatusDetails struct {
+	OrganizerName  string
+	OrganizerEmail string
+	EventTitle     string
+	Status         string
+	AmountKZT      string
+	MaskedAccount  string
+	Note           string
+}
+
+// PayoutStatus tells an organizer where their money is (SRS 4.10, "organizer
+// payout status"). Nothing moves: SRS 8 excludes real payouts from the MVP,
+// so the message says so rather than implying a transfer.
+func PayoutStatus(d PayoutStatusDetails) Message {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "Hi %s,\n\n", firstName(d.OrganizerName))
+	fmt.Fprintf(&b, "Payout status for %s: %s.\n\n", d.EventTitle, d.Status)
+
+	if d.AmountKZT != "" {
+		fmt.Fprintf(&b, "  Amount:      %s KZT (simulated)\n", d.AmountKZT)
+	}
+	if d.MaskedAccount != "" {
+		fmt.Fprintf(&b, "  Destination: %s\n", d.MaskedAccount)
+	}
+	if d.Note != "" {
+		fmt.Fprintf(&b, "  Note:        %s\n", d.Note)
+	}
+	b.WriteString("\n")
+
+	b.WriteString("This is a demonstration record. No money has moved and none will:\n")
+	b.WriteString("real payouts are outside the scope of this release.\n\n")
+	b.WriteString("- BiletFlow\n")
+
+	return Message{
+		Type:    TypePayoutStatus,
+		To:      d.OrganizerEmail,
+		Subject: "Payout " + d.Status + " for " + d.EventTitle,
+		Body:    b.String(),
+	}
+}
+
 // AccountTokenDetails carries a single-use token to its owner.
 type AccountTokenDetails struct {
 	FullName string
@@ -249,6 +383,51 @@ func PasswordReset(d AccountTokenDetails) Message {
 		Type:    TypePasswordReset,
 		To:      d.Email,
 		Subject: "Reset your BiletFlow password",
+		Body:    b.String(),
+	}
+}
+
+// EventCancelledDetails is what a cancellation notice needs.
+type EventCancelledDetails struct {
+	AttendeeName string
+	Email        string
+	EventTitle   string
+	EventWhen    string
+	OrderNumber  string
+	TicketCount  int
+	RefundPolicy string
+}
+
+// EventCancelled tells a ticket holder their event is off (SRS 4.10).
+func EventCancelled(d EventCancelledDetails) Message {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "Hi %s,\n\n", firstName(d.AttendeeName))
+	fmt.Fprintf(&b, "%s has been cancelled by the organizer.\n\n", d.EventTitle)
+
+	if d.EventWhen != "" {
+		fmt.Fprintf(&b, "  Was due:  %s\n", d.EventWhen)
+	}
+	fmt.Fprintf(&b, "  Order:    %s\n", d.OrderNumber)
+	fmt.Fprintf(&b, "  Tickets:  %d, now void\n", d.TicketCount)
+	b.WriteString("\n")
+
+	if d.RefundPolicy != "" {
+		b.WriteString("The organizer's refund policy:\n\n")
+		for _, line := range strings.Split(strings.TrimSpace(d.RefundPolicy), "\n") {
+			fmt.Fprintf(&b, "  %s\n", line)
+		}
+		b.WriteString("\n")
+	} else {
+		b.WriteString("Contact the organizer from your order page about a refund.\n\n")
+	}
+
+	b.WriteString("- BiletFlow\n")
+
+	return Message{
+		Type:    TypeEventCancelled,
+		To:      d.Email,
+		Subject: d.EventTitle + " has been cancelled",
 		Body:    b.String(),
 	}
 }
