@@ -1,20 +1,16 @@
-/** The session cookie, read and written from the browser. */
-export const TOKEN_COOKIE = "biletflow_token";
-
-/** Read the access token, or null when nobody is signed in. */
-export function getToken(): string | null {
-  if (typeof document === "undefined") return null;
-  const match = document.cookie.match(/(?:^|;\s*)biletflow_token=([^;]*)/);
-  return match ? decodeURIComponent(match[1]) : null;
-}
-
-/** Store the access token so later requests can attach it. */
-export function setToken(token: string, expiresAt: string): void {
-  const expires = new Date(expiresAt).toUTCString();
-  document.cookie = `${TOKEN_COOKIE}=${encodeURIComponent(token)}; path=/; expires=${expires}; SameSite=Lax`;
-}
-
-/** Forget the session. */
-export function clearToken(): void {
-  document.cookie = `${TOKEN_COOKIE}=; path=/; max-age=0; SameSite=Lax`;
-}
+/**
+ * The name of the session cookie (SRS 7).
+ *
+ * Only the name lives here, and deliberately nothing else. This module used to
+ * expose getToken/setToken/clearToken against a cookie readable by
+ * `document.cookie`, which meant any injected script could lift a session and
+ * replay it anywhere. The token is now httpOnly: it is written by the sign-in
+ * route handler and read by the proxy route handler, and no browser code can
+ * touch it.
+ *
+ * The name is shared because two places that cannot import each other need it:
+ * `proxy.ts`, which runs in the routing layer and only checks that a cookie is
+ * present, and `server-session.ts`, which is server-only and does the real
+ * reading and writing.
+ */
+export const TOKEN_COOKIE = "biletflow_session";
