@@ -442,3 +442,44 @@ func (s *EventStore) HasOrders(ctx context.Context, id uuid.UUID) (bool, error) 
 		`SELECT EXISTS (SELECT 1 FROM orders WHERE event_id = $1)`, id).Scan(&exists)
 	return exists, mapError(err)
 }
+
+// AffectedTicketHolder is one order that a cancellation invalidates.
+type AffectedTicketHolder struct {
+	UserID      *uuid.UUID
+	OrderID     uuid.UUID
+	OrderNumber string
+	BuyerName   string
+	BuyerEmail  string
+	TicketCount int
+}
+
+// TicketHolders lists the people holding live tickets for an event, one entry
+// per order, so a cancellation can tell each of them once (SRS 4.10).
+func (s *EventStore) TicketHolders(
+	ctx context.Context, eventID uuid.UUID,
+) ([]AffectedTicketHolder, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT o.buyer_user_id, o.id, o.order_number, o.buyer_name, o.buyer_email::text,
+		       count(t.id)
+		  FROM orders o
+		  JOIN tickets t ON t.order_id = o.id
+		 WHERE o.event_id = $1
+		   AND t.status IN ('valid', 'checked_in')
+		 GROUP BY o.id
+		 ORDER BY o.created_at`, eventID)
+	if err != nil {
+		return nil, mapError(err)
+	}
+	defer rows.Close()
+
+	out := []AffectedTicketHolder{}
+	for rows.Next() {
+		var h AffectedTicketHolder
+		if err := rows.Scan(&h.UserID, &h.OrderID, &h.OrderNumber,
+			&h.BuyerName, &h.BuyerEmail, &h.TicketCount); err != nil {
+			return nil, err
+		}
+		out = append(out, h)
+	}
+	return out, rows.Err()
+}

@@ -20,6 +20,8 @@ const (
 	CodeInsufficientInventory = "insufficient_inventory"
 	CodeNotOnSale             = "not_on_sale"
 	CodeSalesClosed           = "sales_closed"
+	// CodePaymentFailed reports a declined simulated payment (SRS 4.6, 4.10).
+	CodePaymentFailed = "payment_failed"
 )
 
 type checkoutItemRequest struct {
@@ -126,6 +128,14 @@ func (s *Server) handleCheckout(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		s.writeCheckoutError(w, r, err)
+
+		// SRS 4.10: the buyer is told their payment failed. Sent after the
+		// response, like every other notification, and only for a decline -
+		// an out-of-stock basket is not a payment failure.
+		var declined *store.PaymentDeclinedError
+		if errors.As(err, &declined) {
+			s.sendPaymentFailure(event, req.BuyerName, buyerEmail, "", declined.Reason)
+		}
 		return
 	}
 
@@ -156,6 +166,7 @@ func (s *Server) writeCheckoutError(w http.ResponseWriter, r *http.Request, err 
 		notOnSaleErr  *store.NotOnSaleError
 		maxErr        *store.ExceedsMaxPerOrderError
 		activationErr *store.PaidSalesNotActiveError
+		declinedErr   *store.PaymentDeclinedError
 		seatTaken     *store.SeatTakenError
 		seatGone      *store.SeatUnavailableError
 	)
@@ -179,6 +190,14 @@ func (s *Server) writeCheckoutError(w http.ResponseWriter, r *http.Request, err 
 	case errors.As(err, &seatTaken):
 		httpx.WriteError(w, http.StatusConflict, CodeSeatTaken,
 			"Somebody just took that seat. Choose another.")
+
+	case errors.As(err, &declinedErr):
+		// 402 Payment Required: the request was well formed and the event was
+		// willing to sell, but the (simulated) money did not arrive. SRS 4.6:
+		// "Failed or abandoned transactions shall not create valid tickets" -
+		// the decline happens before any inventory moves, so there is nothing
+		// to unwind and nothing was issued.
+		httpx.WriteError(w, http.StatusPaymentRequired, CodePaymentFailed, declinedErr.Reason)
 
 	case errors.As(err, &activationErr):
 		// 403 rather than 409: this is not a race the attendee can retry out

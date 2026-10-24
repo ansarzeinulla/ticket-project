@@ -347,6 +347,25 @@ func TestOneShotCheckoutStillLeavesNoReservation(t *testing.T) {
 	}
 }
 
+// TestDeclinedPaymentLeavesNoReservation: a refused card must not hold stock.
+func TestDeclinedPaymentLeavesNoReservation(t *testing.T) {
+	c := newClient(t)
+	organizer := c.register("declinehold")
+	eventID, _, ticketTypeID := c.sellableEvent(organizer.Token, "Decline Fest", "5000", 5)
+
+	requireStatus(t, c.buy(eventID, ticketTypeID, 2, "Unlucky",
+		"buyer@decline.simulator.biletflow.kz"), http.StatusPaymentRequired)
+
+	if got := c.reservedFor(ticketTypeID); got != 0 {
+		t.Errorf("quantity_reserved = %d after a declined payment, want 0", got)
+	}
+	if sold, _ := c.soldFor(ticketTypeID); sold != 0 {
+		t.Errorf("quantity_sold = %d after a declined payment, want 0", sold)
+	}
+}
+
+// --- calendar export (SRS 4.11) ----------------------------------------------
+
 // TestCalendarExportServesAnICSFile covers the endpoint end to end.
 func TestCalendarExportServesAnICSFile(t *testing.T) {
 	c := newClient(t)

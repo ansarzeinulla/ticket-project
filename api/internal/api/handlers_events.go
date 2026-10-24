@@ -479,6 +479,68 @@ func (s *Server) handleUpdateEvent(w http.ResponseWriter, r *http.Request) {
 		updated.ID.String(), "Updated event "+updated.Title)
 
 	httpx.WriteJSON(w, http.StatusOK, eventResponse{Event: updated})
+
+	// SRS 4.10: ticket holders are told when something they planned around
+	// moves. Only a published event has anybody to tell, and only changes to
+	// when or where it happens are worth an email - a reworded description is
+	// not something somebody needs to rearrange their evening for.
+	if event.Status == store.EventStatusPublished {
+		s.sendEventUpdate(updated, materialChanges(event, updated))
+	}
+}
+
+// materialChanges describes the differences a ticket holder would want to know
+// about, already phrased as before/after lines.
+//
+// It deliberately ignores everything else on the event. Deciding what counts
+// as material is a product judgement, not a diff, so it lives here rather than
+// in the email template.
+func materialChanges(before, after store.Event) []string {
+	var changes []string
+
+	if !before.StartsAt.Equal(after.StartsAt) {
+		changes = append(changes, "Starts: "+localTime(before, before.StartsAt)+
+			"  ->  "+localTime(after, after.StartsAt))
+	}
+	if !before.EndsAt.Equal(after.EndsAt) {
+		changes = append(changes, "Ends: "+localTime(before, before.EndsAt)+
+			"  ->  "+localTime(after, after.EndsAt))
+	}
+	if before.Timezone != after.Timezone {
+		changes = append(changes, "Time zone: "+before.Timezone+"  ->  "+after.Timezone)
+	}
+	if changed := stringChange("Venue", before.VenueName, after.VenueName); changed != "" {
+		changes = append(changes, changed)
+	}
+	if changed := stringChange("Address", before.VenueAddress, after.VenueAddress); changed != "" {
+		changes = append(changes, changed)
+	}
+	if before.Title != after.Title {
+		changes = append(changes, "Name: "+before.Title+"  ->  "+after.Title)
+	}
+	return changes
+}
+
+// stringChange renders an optional field's change, treating absent and empty
+// as the same thing so clearing a blank field is not reported as news.
+func stringChange(label string, before, after *string) string {
+	b, a := "", ""
+	if before != nil {
+		b = *before
+	}
+	if after != nil {
+		a = *after
+	}
+	if b == a {
+		return ""
+	}
+	if b == "" {
+		return label + ": " + a
+	}
+	if a == "" {
+		return label + ": " + b + "  ->  (removed)"
+	}
+	return label + ": " + b + "  ->  " + a
 }
 
 func (s *Server) handleDeleteEvent(w http.ResponseWriter, r *http.Request) {
@@ -606,6 +668,10 @@ func (s *Server) handleCancelEvent(w http.ResponseWriter, r *http.Request) {
 		cancelled.ID.String(), "Cancelled event "+cancelled.Title)
 
 	httpx.WriteJSON(w, http.StatusOK, eventResponse{Event: cancelled})
+
+	// SRS 4.10: everybody holding a ticket is told, after the cancellation has
+	// committed and the response has gone out.
+	s.sendEventCancelled(cancelled)
 }
 
 // --- shared helpers ----------------------------------------------------------
