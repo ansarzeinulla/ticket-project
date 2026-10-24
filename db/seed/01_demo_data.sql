@@ -5,9 +5,11 @@
 -- Re-runnable: it deletes its own rows first, so it never duplicates.
 --
 -- Contents: 2 organizers with profiles, 2 attendees, 1 door scanner assigned to
---           both events, 1 published free event and 1 published paid event
---           whose paid sales are activated, with one order on each. The free
---           ticket has already been used at the door.
+--           both events, 1 support agent who is also the platform
+--           administrator, 1 published free event and 1 published paid event
+--           whose paid sales are activated, with one order on each and a
+--           support case on the paid one. The free ticket has already been used
+--           at the door.
 --
 -- All demo rows live in the d0000000-... UUID space.
 -- =============================================================================
@@ -18,6 +20,7 @@ BEGIN;
 -- Clear a previous load. Children go first; order_items, attendees and
 -- payments follow their orders through ON DELETE CASCADE.
 -- -----------------------------------------------------------------------------
+DELETE FROM support_cases WHERE id::text LIKE 'd0000000%';
 DELETE FROM tickets      WHERE id::text LIKE 'd0000000%';
 DELETE FROM orders       WHERE id::text LIKE 'd0000000%';
 DELETE FROM paid_sales_activations WHERE event_id::text LIKE 'd0000000%';
@@ -37,7 +40,8 @@ INSERT INTO users (id, email, password_hash, full_name, phone, locale, status, e
     ('d0000000-0000-4000-8000-000000000002', 'timur@biletflow.kz', '$2a$12$rFCQOCmARbTQxdRMSB7wde/xelwF29B8BnCrEk5tyV3fsUvI8NI06', 'Timur Bekov',     '+7 701 222 22 22', 'ru', 'active', now() - interval '60 days'),
     ('d0000000-0000-4000-8000-000000000003', 'nurlan@example.kz',  '$2a$12$rFCQOCmARbTQxdRMSB7wde/xelwF29B8BnCrEk5tyV3fsUvI8NI06', 'Nurlan Sagyndyk', '+7 705 333 33 33', 'kk', 'active', now() - interval '30 days'),
     ('d0000000-0000-4000-8000-000000000004', 'aigerim@example.kz', '$2a$12$rFCQOCmARbTQxdRMSB7wde/xelwF29B8BnCrEk5tyV3fsUvI8NI06', 'Aigerim Zhaksy',  '+7 705 444 44 44', 'ru', 'active', now() - interval '25 days'),
-    ('d0000000-0000-4000-8000-000000000006', 'scanner@biletflow.kz', '$2a$12$rFCQOCmARbTQxdRMSB7wde/xelwF29B8BnCrEk5tyV3fsUvI8NI06', 'Askar Kassym', '+7 707 666 66 66', 'kk', 'active', now() - interval '15 days');
+    ('d0000000-0000-4000-8000-000000000006', 'scanner@biletflow.kz', '$2a$12$rFCQOCmARbTQxdRMSB7wde/xelwF29B8BnCrEk5tyV3fsUvI8NI06', 'Askar Kassym', '+7 707 666 66 66', 'kk', 'active', now() - interval '15 days'),
+    ('d0000000-0000-4000-8000-000000000007', 'support@biletflow.kz', '$2a$12$rFCQOCmARbTQxdRMSB7wde/xelwF29B8BnCrEk5tyV3fsUvI8NI06', 'Sofia Ivanova', '+7 707 777 77 77', 'ru', 'active', now() - interval '80 days');
 
 INSERT INTO user_roles (user_id, role) VALUES
     ('d0000000-0000-4000-8000-000000000001', 'organizer'),
@@ -45,7 +49,9 @@ INSERT INTO user_roles (user_id, role) VALUES
     ('d0000000-0000-4000-8000-000000000002', 'organizer'),
     ('d0000000-0000-4000-8000-000000000003', 'attendee'),
     ('d0000000-0000-4000-8000-000000000004', 'attendee'),
-    ('d0000000-0000-4000-8000-000000000006', 'event_admin');
+    ('d0000000-0000-4000-8000-000000000006', 'event_admin'),
+    ('d0000000-0000-4000-8000-000000000007', 'support_staff'),
+    ('d0000000-0000-4000-8000-000000000007', 'platform_admin');
 
 INSERT INTO organizer_profiles (id, user_id, display_name, legal_name, contact_email, description, identity_verified_at) VALUES
     ('d0000000-0000-4000-8000-000000000101', 'd0000000-0000-4000-8000-000000000001',
@@ -200,5 +206,24 @@ INSERT INTO payments (id, purpose, order_id, payer_user_id, amount_kzt, status, 
     ('d0000000-0000-4000-8000-000000000741', 'ticket_order',
      'd0000000-0000-4000-8000-000000000702', 'd0000000-0000-4000-8000-000000000004',
      14000, 'succeeded', 'simulated', 'sim_BF-2026-000002', true, now() - interval '4 days');
+
+-- -----------------------------------------------------------------------------
+-- 4. Support case (SRS 4.13)
+-- -----------------------------------------------------------------------------
+INSERT INTO support_cases (id, case_number, kind, category, status, subject, requester_user_id,
+                           assigned_to_user_id, event_id, order_id, ticket_id, last_message_at) VALUES
+    ('d0000000-0000-4000-8000-000000000a01', 'SC-2026-0001', 'attendee', 'ticket_delivery',
+     'in_progress', 'My ticket email never arrived',
+     'd0000000-0000-4000-8000-000000000004', 'd0000000-0000-4000-8000-000000000007',
+     'd0000000-0000-4000-8000-000000000302', 'd0000000-0000-4000-8000-000000000702',
+     'd0000000-0000-4000-8000-000000000732', now() - interval '2 days');
+
+INSERT INTO support_messages (support_case_id, sender_user_id, body, is_internal_note, created_at) VALUES
+    ('d0000000-0000-4000-8000-000000000a01', 'd0000000-0000-4000-8000-000000000004',
+     'Hello, I paid for two tickets but never received the ticket email.', false, now() - interval '3 days'),
+    ('d0000000-0000-4000-8000-000000000a01', 'd0000000-0000-4000-8000-000000000007',
+     'Thank you, we have re-sent both tickets. Please also check your spam folder.', false, now() - interval '2 days'),
+    ('d0000000-0000-4000-8000-000000000a01', 'd0000000-0000-4000-8000-000000000007',
+     'Delivery bounced once on the first attempt; retried successfully.', true, now() - interval '2 days');
 
 COMMIT;
