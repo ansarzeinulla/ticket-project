@@ -3,9 +3,13 @@
 /**
  * Holds the signed-in user for the whole app.
  *
- * The token lives in a cookie (see session.ts). On mount the provider reads it
- * and asks the API who it belongs to: a cookie can outlive the token inside
- * it, and only the API can say whether it is still good.
+ * The browser cannot see its own session any more: the token lives in an
+ * httpOnly cookie (SRS 7), so there is nothing to read during render. The
+ * provider therefore starts in "loading" and asks the server who is signed in.
+ *
+ * That single question is also the validity check. proxy.ts can see that a
+ * cookie exists; only the API can say whether the token inside it is still
+ * good, or whether the account has since been suspended.
  */
 
 import {
@@ -19,8 +23,7 @@ import {
 } from "react";
 
 import { ApiError, api } from "@/lib/api";
-import { clearToken, getToken, setToken } from "@/lib/session";
-import type { AuthResponse, User } from "@/lib/types";
+import type { User } from "@/lib/types";
 
 type AuthStatus = "loading" | "authenticated" | "unauthenticated";
 
@@ -28,83 +31,91 @@ interface AuthContextValue {
   user: User | null;
   status: AuthStatus;
   login: (email: string, password: string) => Promise<User>;
-  register: (input: { email: string; password: string; full_name?: string }) => Promise<User>;
+  register: (input: {
+    email: string;
+    password: string;
+    full_name?: string;
+  }) => Promise<User>;
   logout: () => void;
   refresh: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+/** Set once the session is settled, either by asking or by an explicit action. */
 interface Session {
   status: Exclude<AuthStatus, "loading">;
   user: User | null;
 }
 
-const signedOut: Session = { status: "unauthenticated", user: null };
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
 
+  // Ask the server who is signed in.
+  //
+  // This runs once on mount and is the only way the browser learns about its
+  // own session. Every setState happens after an await, so the effect never
+  // triggers a cascading render.
   useEffect(() => {
     const controller = new AbortController();
 
-    // Async so every setState lands after the effect has returned.
-    void (async () => {
-      const token = getToken();
-      if (!token) {
-        setSession(signedOut);
-        return;
-      }
-      try {
-        const me = await api.me(token, controller.signal);
-        setSession({ status: "authenticated", user: me });
-      } catch (error) {
+    api
+      .me(null, controller.signal)
+      .then((me) => setSession({ status: "authenticated", user: me }))
+      .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
-        // A rejected token is stale: drop it so the app stops pretending.
-        if (error instanceof ApiError && error.status === 401) clearToken();
-        setSession(signedOut);
-      }
-    })();
+
+        // A network blip should not sign the user out - but with no token to
+        // hold on to, the honest thing is to report signed-out and let the
+        // next successful call correct it.
+        if (error instanceof ApiError && error.isNetworkError) {
+          setSession({ status: "unauthenticated", user: null });
+          return;
+        }
+        setSession({ status: "unauthenticated", user: null });
+      });
 
     return () => controller.abort();
   }, []);
 
-  const signIn = useCallback((auth: AuthResponse) => {
-    setToken(auth.access_token, auth.expires_at);
-    setSession({ status: "authenticated", user: auth.user });
-    return auth.user;
+  const status: AuthStatus = session ? session.status : "loading";
+  const user = session?.user ?? null;
+
+  const login = useCallback(async (email: string, password: string) => {
+    // The route handler sets the cookie; only the user comes back.
+    const me = await api.login({ email, password });
+    setSession({ status: "authenticated", user: me });
+    return me;
   }, []);
 
-  const login = useCallback(
-    async (email: string, password: string) => signIn(await api.login({ email, password })),
-    [signIn],
-  );
-
   const register = useCallback(
-    async (input: { email: string; password: string; full_name?: string }) =>
-      signIn(await api.register(input)),
-    [signIn],
+    async (input: { email: string; password: string; full_name?: string }) => {
+      const me = await api.register(input);
+      setSession({ status: "authenticated", user: me });
+      return me;
+    },
+    [],
   );
 
   const logout = useCallback(() => {
-    clearToken();
-    setSession(signedOut);
+    // Optimistic locally, authoritative on the server: the cookie is httpOnly,
+    // so only the route handler can actually remove it.
+    setSession({ status: "unauthenticated", user: null });
+    void api.logout().catch(() => {
+      // Nothing useful to do if the sign-out request fails; the cookie expires
+      // on its own, and the UI already reflects the intent.
+    });
   }, []);
 
   /** Re-read the account, e.g. after creating an event grants a new role. */
   const refresh = useCallback(async () => {
-    const token = getToken();
-    if (!token) return;
     try {
-      const me = await api.me(token);
+      const me = await api.me();
       setSession({ status: "authenticated", user: me });
     } catch {
       // Leave the current session alone; the next API call will surface it.
     }
   }, []);
-
-  const status: AuthStatus = session ? session.status : "loading";
-  const user = session?.user ?? null;
 
   const value = useMemo<AuthContextValue>(
     () => ({ user, status, login, register, logout, refresh }),
