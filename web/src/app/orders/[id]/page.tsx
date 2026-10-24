@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { OrderSupport } from "@/components/order-support";
 import { TicketCard } from "@/components/ticket-card";
 import { ApiError, api } from "@/lib/api";
 import { formatKZT } from "@/lib/money";
@@ -106,6 +107,8 @@ export default async function OrderConfirmationPage({
             ))}
           </ul>
         </section>
+
+        <OrderSupport orderID={order.id} buyerEmail={order.buyer_email} />
 
         <p className="mt-8 rounded-lg border border-warning/30 bg-warning-soft px-3 py-2 text-xs text-warning">
           This was a simulated payment. No card was charged and no money moved.
