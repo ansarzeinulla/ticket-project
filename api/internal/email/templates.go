@@ -119,6 +119,51 @@ func RefundCompleted(d RefundDetails) Message {
 	}
 }
 
+// CancellationDetails is what a free-registration cancellation needs. It
+// deliberately carries no amount: a free registration has nothing to refund,
+// and printing "0.00 KZT refunded" would invite a question that has no answer.
+type CancellationDetails struct {
+	BuyerName   string
+	BuyerEmail  string
+	OrderNumber string
+	EventTitle  string
+	TicketCount int
+	Reason      string
+}
+
+// RegistrationCancelled builds the message sent when an organizer cancels a
+// free registration (SRS 4.9, and SRS 4.10's notification list).
+func RegistrationCancelled(d CancellationDetails) Message {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "Hi %s,\n\n", firstName(d.BuyerName))
+	fmt.Fprintf(&b, "Your registration %s for %s has been cancelled by the organizer.\n\n",
+		d.OrderNumber, d.EventTitle)
+
+	noun := "tickets"
+	if d.TicketCount == 1 {
+		noun = "ticket"
+	}
+	fmt.Fprintf(&b, "  Cancelled: %d %s, now void\n", d.TicketCount, noun)
+	if d.Reason != "" {
+		fmt.Fprintf(&b, "  Reason: %s\n", d.Reason)
+	}
+	b.WriteString("\n")
+
+	b.WriteString("The QR code on this registration will no longer be admitted at the\n")
+	b.WriteString("entrance. Nothing was charged, so there is no refund to wait for.\n\n")
+	b.WriteString("If you think this was a mistake, reply to the organizer through the\n")
+	b.WriteString("support link on your order page.\n\n")
+	b.WriteString("- BiletFlow\n")
+
+	return Message{
+		Type:    TypeRegistrationCancelled,
+		To:      d.BuyerEmail,
+		Subject: "Your registration for " + d.EventTitle + " was cancelled",
+		Body:    b.String(),
+	}
+}
+
 // firstName keeps a greeting from reading like a database row. An empty or
 // single-word name degrades gracefully rather than producing "Hi ,".
 func firstName(full string) string {
