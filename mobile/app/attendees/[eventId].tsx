@@ -104,7 +104,7 @@ export default function AttendeeSearchScreen() {
       if (Platform.OS !== "web") Vibration.vibrate(40);
       setConfirmation({
         id: attendee.ticket_id,
-        text: `Check-in undone: ${attendee.full_name}`,
+        text: `Check-in undone: ${attendee.attendee_name}`,
       });
     } catch (cause) {
       setConfirmation({
@@ -198,14 +198,12 @@ export default function AttendeeSearchScreen() {
           renderItem={({ item }) => {
             const busy = admitting === item.ticket_id;
             const note = confirmation?.id === item.ticket_id ? confirmation.text : null;
-            // The gate admits valid tickets only; anything else would be refused.
-            const admissible = item.status === "valid";
 
             return (
               <View style={styles.card} testID={`attendee-${item.ticket_id}`}>
                 <View style={styles.cardHeader}>
                   <Text style={styles.name} numberOfLines={1}>
-                    {item.full_name}
+                    {item.attendee_name}
                   </Text>
                   <View
                     style={[
@@ -218,7 +216,7 @@ export default function AttendeeSearchScreen() {
                 </View>
 
                 <Text style={styles.muted} numberOfLines={1}>
-                  {item.email}
+                  {item.attendee_email}
                 </Text>
                 <Text style={styles.muted}>
                   {item.ticket_type_name} · {item.ticket_code}
@@ -251,20 +249,20 @@ export default function AttendeeSearchScreen() {
                   </Pressable>
                 ) : (
                   <Pressable
-                    disabled={!admissible || busy}
+                    disabled={!item.admissible || busy}
                     onPress={() => void admit(item)}
                     testID={`admit-${item.ticket_id}`}
                     style={({ pressed }) => [
                       styles.button,
-                      !admissible && styles.buttonDisabled,
-                      pressed && admissible && styles.buttonPressed,
+                      !item.admissible && styles.buttonDisabled,
+                      pressed && item.admissible && styles.buttonPressed,
                     ]}
                   >
                     {busy ? (
                       <ActivityIndicator color="#fff" />
                     ) : (
                       <Text style={styles.buttonText}>
-                        {admissible ? "Check in" : `Ticket ${item.status}`}
+                        {item.admissible ? "Check in" : `Ticket ${item.status}`}
                       </Text>
                     )}
                   </Pressable>

@@ -66,9 +66,12 @@ export type ScanErrorCode =
 export interface AttendeeTicket {
   ticket_id: string;
   ticket_code: string;
-  full_name: string;
-  email: string;
+  attendee_name: string;
+  attendee_email: string;
   ticket_type_name: string;
   status: "valid" | "checked_in" | "cancelled" | "refunded";
   order_number: string;
+  checked_in_at?: string;
+  /** Mirrors the gate's rule, so a row can be disabled rather than refused. */
+  admissible: boolean;
 }
