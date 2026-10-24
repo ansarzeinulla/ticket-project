@@ -8,6 +8,11 @@ import (
 // Notification types, mirrored into notifications.type.
 const (
 	TypeOrderConfirmation = "order.confirmation"
+	TypeRefundCompleted   = "refund.completed"
+	// TypeRegistrationCancelled is the free-registration counterpart of
+	// TypeRefundCompleted: no money moves, but the ticket stops working, and
+	// the attendee has to be told before they travel to the venue (SRS 4.9).
+	TypeRegistrationCancelled = "registration.cancelled"
 )
 
 // TicketLine is one ticket on a confirmation, with the link that downloads it.
@@ -76,6 +81,44 @@ func OrderConfirmation(d OrderDetails) Message {
 	}
 }
 
+// RefundDetails is what a refund notification needs.
+type RefundDetails struct {
+	BuyerName   string
+	BuyerEmail  string
+	OrderNumber string
+	EventTitle  string
+	AmountKZT   string
+	TicketCount int
+	Reason      string
+}
+
+// RefundCompleted builds the message sent when an organizer refunds an order
+// (SRS 4.10, "refund completion").
+func RefundCompleted(d RefundDetails) Message {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "Hi %s,\n\n", firstName(d.BuyerName))
+	fmt.Fprintf(&b, "Your order %s for %s has been refunded.\n\n", d.OrderNumber, d.EventTitle)
+
+	fmt.Fprintf(&b, "  Refunded: %s KZT (simulated)\n", d.AmountKZT)
+	fmt.Fprintf(&b, "  Tickets:  %d, now void\n", d.TicketCount)
+	if d.Reason != "" {
+		fmt.Fprintf(&b, "  Reason:   %s\n", d.Reason)
+	}
+	b.WriteString("\n")
+
+	b.WriteString("The QR codes on these tickets will no longer be admitted at the\n")
+	b.WriteString("entrance. There is nothing else you need to do.\n\n")
+	b.WriteString("- BiletFlow\n")
+
+	return Message{
+		Type:    TypeRefundCompleted,
+		To:      d.BuyerEmail,
+		Subject: "Refund for " + d.EventTitle,
+		Body:    b.String(),
+	}
+}
+
 // firstName keeps a greeting from reading like a database row. An empty or
 // single-word name degrades gracefully rather than producing "Hi ,".
 func firstName(full string) string {
@@ -93,10 +136,22 @@ func plural(n int, one, many string) string {
 	return fmt.Sprintf("Your %d %s", n, many)
 }
 
-// Notification types for account emails (SRS 4.1).
+// Notification types added in Phase 12 (SRS 4.1, 4.10).
 const (
 	TypeEmailVerification = "account.email_verification"
 	TypePasswordReset     = "account.password_reset"
+	TypeEventCancelled    = "event.cancelled"
+	TypeSupportMessage    = "support.new_message"
+)
+
+// The remaining notification triggers SRS 4.10 lists. Six of the nine existed;
+// these are the rest.
+const (
+	TypePaymentFailed        = "payment.failed"
+	TypeEventUpdated         = "event.updated"
+	TypePayoutStatus         = "payout.status"
+	TypeSupportAssigned      = "support.case_assigned"
+	TypeSupportStatusChanged = "support.status_changed"
 )
 
 // AccountTokenDetails carries a single-use token to its owner.

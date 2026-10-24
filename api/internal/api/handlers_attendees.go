@@ -8,29 +8,10 @@ import (
 	"github.com/biletflow/api/internal/store"
 )
 
-type eventOrdersResponse struct {
-	Orders []store.EventOrder `json:"orders"`
-}
-
 type guestListResponse struct {
 	Attendees []store.Guest `json:"attendees"`
 	Total     int           `json:"total"`
 	Query     string        `json:"query"`
-}
-
-// handleListEventOrders is the organizer's view of who bought what.
-func (s *Server) handleListEventOrders(w http.ResponseWriter, r *http.Request) {
-	event, ok := s.loadOwnedEvent(w, r)
-	if !ok {
-		return
-	}
-
-	orders, err := s.guests.ListEventOrders(r.Context(), event.ID)
-	if err != nil {
-		httpx.WriteInternalError(w, r, err)
-		return
-	}
-	httpx.WriteJSON(w, http.StatusOK, eventOrdersResponse{Orders: orders})
 }
 
 // handleListAttendees lists the people holding tickets, searchable by name,

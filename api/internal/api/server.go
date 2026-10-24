@@ -37,6 +37,7 @@ type Server struct {
 	audit         *store.AuditStore
 	staff         *store.StaffStore
 	checkIns      *store.CheckInStore
+	refunds       *store.RefundStore
 
 	hasher *auth.Hasher
 	tokens *auth.TokenService
@@ -71,6 +72,7 @@ func NewWithSender(cfg config.Config, pool *pgxpool.Pool, sender email.Sender) *
 		audit:         store.NewAuditStore(pool),
 		staff:         store.NewStaffStore(pool),
 		checkIns:      store.NewCheckInStore(pool),
+		refunds:       store.NewRefundStore(pool),
 		hasher:        auth.NewHasher(cfg.BcryptCost),
 		tokens:        auth.NewTokenService(cfg.JWTSecret, cfg.JWTIssuer, cfg.AccessTokenTTL),
 		now:           time.Now,
@@ -198,8 +200,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/tickets/{id}/pdf", s.handleTicketPDF)
 	mux.HandleFunc("GET /api/v1/tickets/{id}/qr.png", s.handleTicketQR)
 
-	// --- who is coming (organizer; the attendee list also serves door staff) --
+	// --- refunds (SRS 4.9) --------------------------------------------------
+	// Addressed by order, authorised by the order's event.
+	mux.HandleFunc("POST /api/v1/orders/{id}/refund", s.requireAuth(s.handleRefundOrder))
 	mux.HandleFunc("GET /api/v1/events/{id}/orders", s.requireAuth(s.handleListEventOrders))
+
+	// --- who is coming (organizer; the attendee list also serves door staff) --
 	mux.HandleFunc("GET /api/v1/events/{id}/attendees", s.requireAuth(s.handleListAttendees))
 
 	// --- check-in (the scanner app) -----------------------------------------
