@@ -703,14 +703,3 @@ export interface Hold {
   estimated_processing_fee_kzt: Money;
   estimated_total_kzt: Money;
 }
-
-/** One issued ticket with the person it was issued to. */
-export interface Guest {
-  ticket_id: string;
-  ticket_code: string;
-  full_name: string;
-  email: string;
-  ticket_type_name: string;
-  status: string;
-  order_number: string;
-}

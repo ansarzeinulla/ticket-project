@@ -225,14 +225,3 @@ func TestSuspendPaidSalesNeedsAnActivation(t *testing.T) {
 	requireStatus(t, c.post("/api/v1/admin/events/"+uuid.NewString()+"/paid-sales/suspend",
 		admin.Token, nil), http.StatusNotFound)
 }
-
-// makePlatformAdmin grants the platform_admin role directly, the way an
-// operator would: there is deliberately no self-service route to it.
-func (c *client) makePlatformAdmin(userID uuid.UUID) {
-	c.t.Helper()
-	if _, err := c.pool.Exec(c.t.Context(),
-		`INSERT INTO user_roles (user_id, role) VALUES ($1, 'platform_admin')
-		 ON CONFLICT DO NOTHING`, userID); err != nil {
-		c.t.Fatalf("grant platform_admin: %v", err)
-	}
-}

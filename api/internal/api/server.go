@@ -18,68 +18,77 @@ import (
 
 // Server holds the dependencies shared by every handler.
 type Server struct {
-	cfg           config.Config
-	pool          *pgxpool.Pool
-	users         *store.UserStore
-	accountTokens *store.TokenStore
-	mailer        *email.Mailer
-
+	cfg         config.Config
+	pool        *pgxpool.Pool
+	users       *store.UserStore
 	events      *store.EventStore
 	ticketTypes *store.TicketTypeStore
-	checkout    *store.CheckoutStore
-	seating     *store.SeatingStore
-	activations *store.ActivationStore
 	tickets     *store.TicketStore
+	checkIns    *store.CheckInStore
+	staff       *store.StaffStore
+	support     *store.SupportStore
+	checkout    *store.CheckoutStore
+	audit       *store.AuditStore
 
-	notifications *store.NotificationStore
-	guests        *store.GuestStore
-	profiles      *store.ProfileStore
-	audit         *store.AuditStore
-	staff         *store.StaffStore
-	checkIns      *store.CheckInStore
+	// Phase 10: refunds, paid-sales activation and notifications.
 	refunds       *store.RefundStore
-	moderation    *store.ModerationStore
+	activations   *store.ActivationStore
+	notifications *store.NotificationStore
+	// Phase 13: the moderation queue and platform settings (SRS 4.12).
+	moderation *store.ModerationStore
+	// SRS 4.1: organizer profiles and self-service password change.
+	profiles *store.ProfileStore
+	mailer   *email.Mailer
+
+	// Phase 12: account tokens, the admin portal and uploads.
+	seating       *store.SeatingStore
+	accountTokens *store.TokenStore
 	admin         *store.AdminStore
+	attendees     *store.AttendeeStore
 
 	hasher *auth.Hasher
 	tokens *auth.TokenService
 	now    func() time.Time
 }
 
-// New builds a server that prints account emails to stdout.
+// New builds a Server from a live connection pool. Notifications go to the
+// console; NewWithSender swaps that for a test double.
 func New(cfg config.Config, pool *pgxpool.Pool) *Server {
 	return NewWithSender(cfg, pool, email.NewConsoleSender(nil))
 }
 
-// NewWithSender builds a server with an explicit email sender, so tests can
-// capture messages instead of printing them.
+// NewWithSender builds a Server with an explicit notification transport.
 func NewWithSender(cfg config.Config, pool *pgxpool.Pool, sender email.Sender) *Server {
 	s := &Server{
-		cfg:           cfg,
-		pool:          pool,
-		users:         store.NewUserStore(pool),
-		accountTokens: store.NewTokenStore(pool),
-		events:        store.NewEventStore(pool),
-		ticketTypes:   store.NewTicketTypeStore(pool),
+		cfg:         cfg,
+		pool:        pool,
+		users:       store.NewUserStore(pool),
+		events:      store.NewEventStore(pool),
+		ticketTypes: store.NewTicketTypeStore(pool),
+		tickets:     store.NewTicketStore(pool),
+		checkIns:    store.NewCheckInStore(pool),
+		staff:       store.NewStaffStore(pool),
+		support:     store.NewSupportStore(pool),
 		checkout: store.NewCheckoutStoreWithFees(pool, store.Fees{
 			Percent:  cfg.ProcessingFeePercent,
 			FixedKZT: cfg.ProcessingFeeFixedKZT,
 		}),
-		seating:       store.NewSeatingStore(pool),
-		activations:   store.NewActivationStore(pool),
-		tickets:       store.NewTicketStore(pool),
-		notifications: store.NewNotificationStore(pool),
-		guests:        store.NewGuestStore(pool),
-		profiles:      store.NewProfileStore(pool),
-		audit:         store.NewAuditStore(pool),
-		staff:         store.NewStaffStore(pool),
-		checkIns:      store.NewCheckInStore(pool),
+		audit: store.NewAuditStore(pool),
+
 		refunds:       store.NewRefundStore(pool),
+		activations:   store.NewActivationStore(pool),
+		notifications: store.NewNotificationStore(pool),
 		moderation:    store.NewModerationStore(pool),
+		profiles:      store.NewProfileStore(pool),
+
+		seating:       store.NewSeatingStore(pool),
+		accountTokens: store.NewTokenStore(pool),
 		admin:         store.NewAdminStore(pool),
-		hasher:        auth.NewHasher(cfg.BcryptCost),
-		tokens:        auth.NewTokenService(cfg.JWTSecret, cfg.JWTIssuer, cfg.AccessTokenTTL),
-		now:           time.Now,
+		attendees:     store.NewAttendeeStore(pool),
+
+		hasher: auth.NewHasher(cfg.BcryptCost),
+		tokens: auth.NewTokenService(cfg.JWTSecret, cfg.JWTIssuer, cfg.AccessTokenTTL),
+		now:    time.Now,
 	}
 
 	// The mailer is built last: its completion callback needs the Server that
@@ -106,8 +115,8 @@ func (s *Server) StartHoldSweeper(ctx context.Context) {
 	go sweeper.Run(ctx)
 }
 
-// Mailer exposes the email dispatcher so main can drain it on shutdown and
-// tests can wait for an asynchronous send to land.
+// Mailer exposes the notification dispatcher so main can drain it on shutdown
+// and tests can wait for an asynchronous send to land.
 func (s *Server) Mailer() *email.Mailer { return s.mailer }
 
 // Tokens exposes the token service so tests can mint tokens directly.
@@ -126,18 +135,20 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/auth/login", s.handleLogin)
 	mux.HandleFunc("GET /api/v1/auth/me", s.requireAuth(s.handleMe))
 
-	// --- account recovery and verification (SRS 4.1) --------------------------
+	// --- account recovery and verification (SRS 4.1) ------------------------
+	// All public: a password-reset link is followed from an inbox, where
+	// nobody is signed in. The token is the credential.
 	mux.HandleFunc("POST /api/v1/auth/password-reset/request", s.handleRequestPasswordReset)
 	mux.HandleFunc("POST /api/v1/auth/password-reset", s.handleResetPassword)
 	mux.HandleFunc("POST /api/v1/auth/verify-email", s.handleVerifyEmail)
-	mux.HandleFunc("POST /api/v1/auth/verify-email/request",
-		s.requireAuth(s.handleRequestEmailVerification))
-
 	// SRS 4.1: "Organizers shall have a profile containing contact and payout
 	// information", and password management for a signed-in account.
 	mux.HandleFunc("GET /api/v1/auth/profile", s.requireAuth(s.handleGetProfile))
 	mux.HandleFunc("PATCH /api/v1/auth/profile", s.requireAuth(s.handleUpdateProfile))
 	mux.HandleFunc("POST /api/v1/auth/password", s.requireAuth(s.handleChangePassword))
+
+	mux.HandleFunc("POST /api/v1/auth/verify-email/request",
+		s.requireAuth(s.handleRequestEmailVerification))
 
 	// --- events -------------------------------------------------------------
 	// The literal "/events/mine" pattern is more specific than "/events/{id}",
@@ -162,19 +173,12 @@ func (s *Server) Handler() http.Handler {
 	// Addressed by slug, because that is what appears in a shareable link.
 	mux.HandleFunc("GET /api/v1/public/events/{slug}", s.handleGetPublicEvent)
 
-	// --- uploads (SRS 4.2) --------------------------------------------------
-	// Uploading needs an account; reading does not, because a banner is shown
-	// on a public event page to people who are not signed in.
-	mux.HandleFunc("POST /api/v1/uploads/images", s.requireAuth(s.handleUploadImage))
-	mux.Handle("GET "+uploadURLPrefix+"{file}", s.uploadsHandler())
-
 	// --- calendar export (SRS 4.11) -----------------------------------------
 	// Addressed by id or slug, because the dashboard knows one and the public
 	// page knows the other. Public: a calendar file carries the same
 	// information the event page already shows.
 	mux.HandleFunc("GET /api/v1/events/{id}/calendar.ics", s.optionalAuth(s.handleEventCalendar))
 
-	// --- checkout -----------------------------------------------------------
 	// Checkout takes optionalAuth: guests may buy, and a signed-in buyer gets
 	// the order linked to their account.
 	mux.HandleFunc("POST /api/v1/events/{id}/checkout", s.optionalAuth(s.handleCheckout))
@@ -193,6 +197,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/v1/orders/{id}/hold", s.optionalAuth(s.handleReleaseHold))
 	mux.HandleFunc("POST /api/v1/orders/{id}/confirm", s.optionalAuth(s.handleConfirmHold))
 
+	// --- refunds (SRS 4.9) --------------------------------------------------
+	// Addressed by order, authorised by the order's event.
+	mux.HandleFunc("POST /api/v1/orders/{id}/refund", s.requireAuth(s.handleRefundOrder))
+	// SRS 4.9: a free registration is cancelled rather than refunded - there is
+	// no money to reverse, and refunds_amount_chk requires a positive amount.
+	mux.HandleFunc("POST /api/v1/orders/{id}/cancel", s.requireAuth(s.handleCancelOrder))
+	mux.HandleFunc("GET /api/v1/events/{id}/orders", s.requireAuth(s.handleListEventOrders))
+
 	// --- paid-sales activation (SRS 4.5) ------------------------------------
 	mux.HandleFunc("GET /api/v1/events/{id}/activation", s.requireAuth(s.handleGetActivation))
 	mux.HandleFunc("POST /api/v1/events/{id}/activation", s.requireAuth(s.handleAdvanceActivation))
@@ -204,28 +216,28 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/tickets/{id}/pdf", s.handleTicketPDF)
 	mux.HandleFunc("GET /api/v1/tickets/{id}/qr.png", s.handleTicketQR)
 
-	// --- refunds (SRS 4.9) --------------------------------------------------
-	// Addressed by order, authorised by the order's event.
-	mux.HandleFunc("POST /api/v1/orders/{id}/refund", s.requireAuth(s.handleRefundOrder))
-	// SRS 4.9: a free registration is cancelled rather than refunded - there is
-	// no money to reverse, and refunds_amount_chk requires a positive amount.
-	mux.HandleFunc("POST /api/v1/orders/{id}/cancel", s.requireAuth(s.handleCancelOrder))
-	mux.HandleFunc("GET /api/v1/events/{id}/orders", s.requireAuth(s.handleListEventOrders))
-
-	// --- who is coming (organizer; the attendee list also serves door staff) --
-	mux.HandleFunc("GET /api/v1/events/{id}/attendees", s.requireAuth(s.handleListAttendees))
-
 	// --- check-in (the scanner app) -----------------------------------------
 	// "/events/scannable" is a literal segment, so ServeMux prefers it over
 	// "/events/{id}".
 	mux.HandleFunc("GET /api/v1/events/scannable", s.requireAuth(s.handleListScannableEvents))
 	mux.HandleFunc("POST /api/v1/events/{id}/check-in", s.requireAuth(s.handleCheckIn))
-	// SRS 4.8: staff can find somebody by name when a QR will not scan. The
-	// search itself is GET /events/{id}/attendees, shared with the dashboard.
+	// SRS 4.8: staff can find somebody by name when a QR will not scan.
+	mux.HandleFunc("GET /api/v1/events/{id}/attendees", s.requireAuth(s.handleSearchAttendees))
 	mux.HandleFunc("POST /api/v1/events/{id}/check-in/manual",
 		s.requireAuth(s.handleManualCheckIn))
 	mux.HandleFunc("GET /api/v1/events/{id}/check-in/stats", s.requireAuth(s.handleCheckInStats))
 	mux.HandleFunc("POST /api/v1/tickets/{id}/check-in/reverse", s.requireAuth(s.handleReverseCheckIn))
+
+	// --- support cases (SRS 4.13) -------------------------------------------
+	mux.HandleFunc("GET /api/v1/support/categories", s.handleSupportCategories)
+	mux.HandleFunc("GET /api/v1/support/cases", s.requireAuth(s.handleListMyCases))
+	mux.HandleFunc("POST /api/v1/support/cases", s.requireAuth(s.handleOpenCase))
+	mux.HandleFunc("GET /api/v1/support/cases/{id}", s.requireAuth(s.handleGetCase))
+	mux.HandleFunc("POST /api/v1/support/cases/{id}/messages", s.requireAuth(s.handlePostCaseMessage))
+	mux.HandleFunc("PATCH /api/v1/support/cases/{id}", s.requireAuth(s.handleSetCaseStatus))
+	// SRS 4.13: "Authorized staff shall be able to assign a case."
+	mux.HandleFunc("POST /api/v1/support/cases/{id}/assign", s.requireAuth(s.handleAssignCase))
+	mux.HandleFunc("GET /api/v1/events/{id}/support/cases", s.requireAuth(s.handleListEventCases))
 
 	// --- platform moderation (SRS 4.12) -------------------------------------
 	mux.HandleFunc("POST /api/v1/admin/events/{id}/suspend",
@@ -263,13 +275,21 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/admin/reports/events.csv",
 		s.requirePlatformAdmin(s.handleAdminReport))
 
+	// --- uploads (SRS 4.2) --------------------------------------------------
+	// Uploading needs an account; reading does not, because a banner is shown
+	// on a public event page to people who are not signed in.
+	mux.HandleFunc("POST /api/v1/uploads/images", s.requireAuth(s.handleUploadImage))
+	mux.Handle("GET "+uploadURLPrefix+"{file}", s.uploadsHandler())
+
 	// --- event staff --------------------------------------------------------
 	mux.HandleFunc("GET /api/v1/events/{id}/staff", s.requireAuth(s.handleListStaff))
 	mux.HandleFunc("POST /api/v1/events/{id}/staff", s.requireAuth(s.handleAssignStaff))
 	mux.HandleFunc("DELETE /api/v1/events/{id}/staff/{assignmentId}", s.requireAuth(s.handleRevokeStaff))
 
-	// No catch-all route: it would shadow ServeMux's own 405 handling.
-	// jsonRouterErrors turns the stdlib's plain-text 404/405 into the envelope.
+	// No catch-all route is registered: one would shadow ServeMux's own 405
+	// handling and turn every wrong-method request into a 404. jsonRouterErrors
+	// converts the stdlib's plain-text 404/405 replies into the JSON envelope
+	// used everywhere else, keeping the Allow header intact.
 	return recoverPanics(requestID(logRequests(withCORS(jsonRouterErrors(mux)))))
 }
 
@@ -279,13 +299,13 @@ type healthResponse struct {
 	Time     string `json:"time"`
 }
 
-// handleHealth reports whether the API and its database are up.
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	body := healthResponse{
 		Status:   "ok",
 		Database: "up",
 		Time:     s.now().UTC().Format(time.RFC3339),
 	}
+
 	if err := s.pool.Ping(r.Context()); err != nil {
 		body.Status = "degraded"
 		body.Database = "down"

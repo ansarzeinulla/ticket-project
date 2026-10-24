@@ -333,6 +333,77 @@ func PayoutStatus(d PayoutStatusDetails) Message {
 	}
 }
 
+// SupportCaseDetails carries an assignment or a status change.
+type SupportCaseDetails struct {
+	RecipientName  string
+	RecipientEmail string
+	CaseNumber     string
+	Subject        string
+	// AssigneeName is set for an assignment, Status for a status change.
+	AssigneeName string
+	Status       string
+	CaseURL      string
+}
+
+// SupportCaseAssigned tells the requester who picked their case up
+// (SRS 4.13: "support-case assignment").
+func SupportCaseAssigned(d SupportCaseDetails) Message {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "Hi %s,\n\n", firstName(d.RecipientName))
+	fmt.Fprintf(&b, "%s is now with %s.\n\n", d.CaseNumber, d.AssigneeName)
+	fmt.Fprintf(&b, "  Subject: %s\n\n", d.Subject)
+	if d.CaseURL != "" {
+		fmt.Fprintf(&b, "Read the conversation: %s\n\n", d.CaseURL)
+	}
+	b.WriteString("- BiletFlow\n")
+
+	return Message{
+		Type:    TypeSupportAssigned,
+		To:      d.RecipientEmail,
+		Subject: d.CaseNumber + " assigned to " + d.AssigneeName,
+		Body:    b.String(),
+	}
+}
+
+// SupportCaseStatusChanged tells the requester their case moved
+// (SRS 4.13: "support-case status changes").
+func SupportCaseStatusChanged(d SupportCaseDetails) Message {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "Hi %s,\n\n", firstName(d.RecipientName))
+	fmt.Fprintf(&b, "%s is now %s.\n\n", d.CaseNumber, readableStatus(d.Status))
+	fmt.Fprintf(&b, "  Subject: %s\n\n", d.Subject)
+
+	if d.Status == "waiting_for_customer" {
+		b.WriteString("Support is waiting on a reply from you before they can go further.\n\n")
+	}
+	if d.CaseURL != "" {
+		fmt.Fprintf(&b, "Read the conversation: %s\n\n", d.CaseURL)
+	}
+	b.WriteString("- BiletFlow\n")
+
+	return Message{
+		Type:    TypeSupportStatusChanged,
+		To:      d.RecipientEmail,
+		Subject: d.CaseNumber + " is now " + readableStatus(d.Status),
+		Body:    b.String(),
+	}
+}
+
+// readableStatus turns an enum label into something an attendee reads without
+// wondering what an underscore means.
+func readableStatus(status string) string {
+	switch status {
+	case "in_progress":
+		return "in progress"
+	case "waiting_for_customer":
+		return "waiting for your reply"
+	default:
+		return status
+	}
+}
+
 // AccountTokenDetails carries a single-use token to its owner.
 type AccountTokenDetails struct {
 	FullName string
@@ -428,6 +499,44 @@ func EventCancelled(d EventCancelledDetails) Message {
 		Type:    TypeEventCancelled,
 		To:      d.Email,
 		Subject: d.EventTitle + " has been cancelled",
+		Body:    b.String(),
+	}
+}
+
+// SupportMessageDetails is what a new-message notice needs.
+type SupportMessageDetails struct {
+	RecipientName  string
+	Email          string
+	EventTitle     string
+	CaseSubject    string
+	SenderName     string
+	MessagePreview string
+	CaseURL        string
+}
+
+// NewSupportMessage tells the other side of a conversation that a reply has
+// arrived (SRS 4.10, 4.13).
+func NewSupportMessage(d SupportMessageDetails) Message {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "Hi %s,\n\n", firstName(d.RecipientName))
+	fmt.Fprintf(&b, "%s replied about %s.\n\n", d.SenderName, d.EventTitle)
+
+	fmt.Fprintf(&b, "  Case: %s\n\n", d.CaseSubject)
+	for _, line := range strings.Split(strings.TrimSpace(d.MessagePreview), "\n") {
+		fmt.Fprintf(&b, "  > %s\n", line)
+	}
+	b.WriteString("\n")
+
+	if d.CaseURL != "" {
+		fmt.Fprintf(&b, "Reply here: %s\n\n", d.CaseURL)
+	}
+	b.WriteString("- BiletFlow\n")
+
+	return Message{
+		Type:    TypeSupportMessage,
+		To:      d.Email,
+		Subject: "New message about " + d.EventTitle,
 		Body:    b.String(),
 	}
 }

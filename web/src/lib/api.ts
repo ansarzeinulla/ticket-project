@@ -18,7 +18,6 @@ import type {
   CreateTicketTypeInput,
   EventListResponse,
   EventOrder,
-  Guest,
   EventResponse,
   ApiErrorBody,
   OpenCaseInput,
@@ -748,14 +747,6 @@ export const api = {
     return response.blob();
   },
 
-  /** GET /events/{id}/attendees - every issued ticket, optionally searched. */
-  async eventGuests(eventID: string, query: string, signal?: AbortSignal): Promise<Guest[]> {
-    const suffix = query ? `?q=${encodeURIComponent(query)}` : "";
-    const data = await request<{ attendees: Guest[] }>(`/events/${eventID}/attendees${suffix}`, {
-      signal,
-    });
-    return data.attendees;
-  },
   /** POST /uploads/images - multipart, for an event banner (SRS 4.2). */
   async uploadImage(file: File): Promise<UploadedImage> {
     const form = new FormData();
