@@ -10,8 +10,8 @@ import (
 
 // CodePaidSalesNotActive is returned when a paid ticket is bought before the
 // organizer has activated paid sales (SRS 4.5). CodePaidSalesSuspended is the
-// narrower case of an already-active event whose paid sales were stopped: the
-// UI says "suspended", not "not yet on sale".
+// narrower case where a platform admin has stopped an already-active event's
+// paid sales (SRS 4.12): the UI says "suspended", not "not yet on sale".
 const (
 	CodePaidSalesNotActive = "paid_sales_not_active"
 	CodePaidSalesSuspended = "paid_sales_suspended"
@@ -53,6 +53,7 @@ func (s *Server) handleGetActivation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	httpx.WriteJSON(w, http.StatusOK, activationResponse{Activation: activation})
+
 }
 
 // handleAdvanceActivation completes checklist steps and, once every step is
@@ -90,6 +91,56 @@ func (s *Server) handleAdvanceActivation(w http.ResponseWriter, r *http.Request)
 	if errors.Is(err, store.ErrPaidSalesSuspended) {
 		httpx.WriteError(w, http.StatusForbidden, CodePaidSalesNotActive,
 			"Paid sales for this event have been suspended by BiletFlow.")
+		return
+	}
+	if err != nil {
+		httpx.WriteInternalError(w, r, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, activationResponse{Activation: activation})
+}
+
+type suspendPaidSalesRequest struct {
+	Reason string `json:"reason"`
+}
+
+// handleSuspendPaidSales stops an event taking money without stopping free
+// registration (SRS 4.5: platform administrators shall be able to suspend paid
+// sales when fraud or policy violations are suspected).
+func (s *Server) handleSuspendPaidSales(w http.ResponseWriter, r *http.Request) {
+	s.setPaidSalesSuspended(w, r, true)
+}
+
+// handleUnsuspendPaidSales lifts that suspension.
+func (s *Server) handleUnsuspendPaidSales(w http.ResponseWriter, r *http.Request) {
+	s.setPaidSalesSuspended(w, r, false)
+}
+
+func (s *Server) setPaidSalesSuspended(w http.ResponseWriter, r *http.Request, suspended bool) {
+	event, ok := s.loadEvent(w, r)
+	if !ok {
+		return
+	}
+
+	var req suspendPaidSalesRequest
+	if r.ContentLength > 0 {
+		if err := httpx.DecodeJSON(w, r, &req); err != nil {
+			httpx.WriteError(w, http.StatusBadRequest, httpx.CodeInvalidJSON, err.Error())
+			return
+		}
+	}
+	if runeLen(req.Reason) > maxReasonLength {
+		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeValidationFailed,
+			"The reason is too long.")
+		return
+	}
+
+	activation, err := s.activations.SetSuspended(
+		r.Context(), event.ID, mustUserID(r.Context()), suspended, req.Reason)
+	if errors.Is(err, store.ErrNotFound) {
+		httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound,
+			"This event has never started paid-sales activation.")
 		return
 	}
 	if err != nil {

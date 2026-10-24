@@ -49,6 +49,9 @@ const (
 	EventStatusUnpublished = "unpublished"
 	EventStatusCancelled   = "cancelled"
 	EventStatusCompleted   = "completed"
+	// EventStatusSuspended is set only by a platform administrator (SRS 4.12).
+	// The organizer cannot set or clear it.
+	EventStatusSuspended = "suspended"
 )
 
 // Values of the event_visibility and seating_mode enums.
@@ -394,6 +397,22 @@ func (s *EventStore) Cancel(ctx context.Context, id uuid.UUID) (Event, error) {
 		   SET status = 'cancelled', cancelled_at = COALESCE(cancelled_at, now())
 		 WHERE id = $1
 		RETURNING `+eventColumns, id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Event{}, ErrNotFound
+	}
+	if err != nil {
+		return Event{}, mapError(err)
+	}
+	return event, nil
+}
+
+// SetStatus moves an event to an arbitrary status. Used by platform moderation;
+// organizer-facing transitions go through Publish, Unpublish and Cancel, which
+// also maintain their timestamps.
+func (s *EventStore) SetStatus(ctx context.Context, id uuid.UUID, status string) (Event, error) {
+	event, err := scanEvent(s.pool.QueryRow(ctx, `
+		UPDATE events SET status = $2::event_status WHERE id = $1
+		RETURNING `+eventColumns, id, status))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Event{}, ErrNotFound
 	}

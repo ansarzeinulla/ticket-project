@@ -33,9 +33,9 @@ type checkoutRequest struct {
 	BuyerPhone *string               `json:"buyer_phone"`
 	Items      []checkoutItemRequest `json:"items"`
 
-	// SeatIDs buys specific seats, for an assigned-seating event (SRS 4.3.1).
-	// When present the tiers are derived from the seats, so `items` is not
-	// needed.
+	// SeatIDs buys specific seats in one step, for an assigned-seating event
+	// (SRS 4.3.1). When present the tiers are derived from the seats, so
+	// `items` is not needed.
 	SeatIDs []string `json:"seat_ids"`
 }
 
@@ -155,9 +155,9 @@ func (s *Server) writeCheckoutError(w http.ResponseWriter, r *http.Request, err 
 		inventoryErr  *store.InsufficientInventoryError
 		notOnSaleErr  *store.NotOnSaleError
 		maxErr        *store.ExceedsMaxPerOrderError
-		seatGone      *store.SeatUnavailableError
-		seatTaken     *store.SeatTakenError
 		activationErr *store.PaidSalesNotActiveError
+		seatTaken     *store.SeatTakenError
+		seatGone      *store.SeatUnavailableError
 	)
 
 	switch {
@@ -172,6 +172,10 @@ func (s *Server) writeCheckoutError(w http.ResponseWriter, r *http.Request, err 
 		httpx.WriteError(w, http.StatusConflict, CodeHoldNotPending,
 			"This basket is no longer open - it may already have been paid for or cancelled.")
 
+	case errors.As(err, &seatGone):
+		httpx.WriteError(w, http.StatusConflict, CodeSeatUnavailable,
+			"One of those seats is no longer available. Refresh the map and choose again.")
+
 	case errors.As(err, &seatTaken):
 		httpx.WriteError(w, http.StatusConflict, CodeSeatTaken,
 			"Somebody just took that seat. Choose another.")
@@ -179,16 +183,15 @@ func (s *Server) writeCheckoutError(w http.ResponseWriter, r *http.Request, err 
 	case errors.As(err, &activationErr):
 		// 403 rather than 409: this is not a race the attendee can retry out
 		// of, it is the event not being cleared to take money yet (SRS 4.5).
+		// A platform suspension is reported with its own code so the UI can
+		// distinguish "the admin stopped this" from "the organizer has not
+		// finished setup" (SRS 4.12, PAID-SUSP-02).
 		code := CodePaidSalesNotActive
 		if activationErr.Status == store.ActivationSuspended {
 			code = CodePaidSalesSuspended
 		}
 		httpx.WriteError(w, http.StatusForbidden, code,
 			capitalise(activationErr.Error())+".")
-
-	case errors.As(err, &seatGone):
-		httpx.WriteError(w, http.StatusConflict, CodeSeatUnavailable,
-			"One of those seats is no longer available. Refresh the map and choose again.")
 
 	case errors.As(err, &inventoryErr):
 		var body checkoutErrorBody
@@ -252,10 +255,21 @@ func capitalise(s string) string {
 
 // eventIsOpenForSales applies the gates that decide whether an event may take
 // an order at all, writing the refusal itself when it may not.
+//
+// Shared by the one-shot checkout and the cart hold: an event that cannot sell
+// must not be reservable either, or a suspended event would still be taking
+// stock off the shelf.
 func (s *Server) eventIsOpenForSales(
 	w http.ResponseWriter, r *http.Request, event store.Event,
 ) bool {
 	switch {
+	case event.Status == store.EventStatusSuspended:
+		// SRS 4.12: a suspended event stops selling immediately. Checked before
+		// any inventory is touched, so a suspension takes effect on the very
+		// next request rather than after whatever is in flight.
+		httpx.WriteError(w, http.StatusForbidden, CodeEventSuspended,
+			"Ticket sales for this event have been suspended by BiletFlow pending review.")
+		return false
 	case event.Status == store.EventStatusCancelled:
 		httpx.WriteError(w, http.StatusConflict, CodeSalesClosed,
 			"This event has been cancelled and is no longer selling tickets.")
@@ -263,6 +277,22 @@ func (s *Server) eventIsOpenForSales(
 	case event.Status != store.EventStatusPublished:
 		httpx.WriteError(w, http.StatusConflict, CodeSalesClosed,
 			"This event is not on sale.")
+		return false
+	}
+
+	// SRS 4.12: suspending a user has to stop their events taking money, not
+	// merely block their own login. Checked here, alongside the event's own
+	// status and before any inventory is touched, so a suspension takes effect
+	// on the very next request. Tickets already sold stay valid - stranding
+	// paying attendees is not the remedy for an organizer's misconduct.
+	organizer, err := s.users.GetByID(r.Context(), event.OrganizerID)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		httpx.WriteInternalError(w, r, err)
+		return false
+	}
+	if organizer.Status == store.StatusSuspended {
+		httpx.WriteError(w, http.StatusForbidden, CodeOrganizerSuspended,
+			"Ticket sales for this event are paused while BiletFlow reviews the organizer's account.")
 		return false
 	}
 
