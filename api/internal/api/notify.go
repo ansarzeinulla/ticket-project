@@ -75,6 +75,30 @@ func (s *Server) sendRefundConfirmation(result store.RefundResult, reason string
 	})
 }
 
+// sendCancellationConfirmation tells the attendee their free place is gone
+// (SRS 4.9, and SRS 4.10's notification list).
+//
+// Deliberately not sendRefundConfirmation with a zero amount: an email saying
+// "0.00 KZT has been refunded" raises a question that has no answer.
+func (s *Server) sendCancellationConfirmation(result store.CancelResult, reason string) {
+	msg := email.RegistrationCancelled(email.CancellationDetails{
+		BuyerName:   result.BuyerName,
+		BuyerEmail:  result.BuyerEmail,
+		OrderNumber: result.Order.OrderNumber,
+		EventTitle:  result.EventTitle,
+		TicketCount: result.CancelledTickets,
+		Reason:      reason,
+	})
+
+	eventID := result.Order.EventID
+	s.dispatch(msg, store.NotificationParams{
+		UserID:         result.Order.BuyerUserID,
+		RecipientEmail: result.BuyerEmail,
+		EventID:        &eventID,
+		OrderID:        &result.Order.ID,
+	})
+}
+
 // dispatch records the message in the outbox and hands it to the mailer.
 //
 // The row is written synchronously so a test - or an operator - can see that a

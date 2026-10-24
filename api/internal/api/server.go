@@ -203,6 +203,9 @@ func (s *Server) Handler() http.Handler {
 	// --- refunds (SRS 4.9) --------------------------------------------------
 	// Addressed by order, authorised by the order's event.
 	mux.HandleFunc("POST /api/v1/orders/{id}/refund", s.requireAuth(s.handleRefundOrder))
+	// SRS 4.9: a free registration is cancelled rather than refunded - there is
+	// no money to reverse, and refunds_amount_chk requires a positive amount.
+	mux.HandleFunc("POST /api/v1/orders/{id}/cancel", s.requireAuth(s.handleCancelOrder))
 	mux.HandleFunc("GET /api/v1/events/{id}/orders", s.requireAuth(s.handleListEventOrders))
 
 	// --- who is coming (organizer; the attendee list also serves door staff) --
