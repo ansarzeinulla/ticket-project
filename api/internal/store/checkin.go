@@ -146,7 +146,7 @@ func (e *WrongEventError) Error() string {
 	return fmt.Sprintf("this ticket is for %q, not the event being scanned", e.EventTitle)
 }
 
-// TicketNotAdmissibleError reports a cancelled ticket.
+// TicketNotAdmissibleError reports a cancelled or refunded ticket.
 type TicketNotAdmissibleError struct {
 	TicketID     uuid.UUID
 	Status       string
@@ -258,7 +258,8 @@ func (s *CheckInStore) admit(
 		return CheckInResult{}, &WrongEventError{TicketID: ticketID, EventTitle: eventTitle}
 	}
 
-	if status == "cancelled" {
+	switch status {
+	case "cancelled", "refunded":
 		return CheckInResult{}, &TicketNotAdmissibleError{
 			TicketID: ticketID, Status: status, AttendeeName: attendeeName,
 		}

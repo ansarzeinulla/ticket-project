@@ -295,6 +295,34 @@ func TestCheckInRejectsTicketFromAnotherEvent(t *testing.T) {
 	}
 }
 
+func TestCheckInRejectsRefundedTicket(t *testing.T) {
+	c := newClient(t)
+	organizer := c.register("refundedGate")
+
+	ticketID, qrToken := c.buyOneTicket(organizer.Token, "Refunded Gate Event")
+
+	var eventID uuid.UUID
+	if err := c.pool.QueryRow(t.Context(),
+		`SELECT event_id FROM tickets WHERE id = $1`, uuid.MustParse(ticketID)).Scan(&eventID); err != nil {
+		t.Fatalf("read event id: %v", err)
+	}
+	if _, err := c.pool.Exec(t.Context(),
+		`UPDATE tickets SET status = 'refunded' WHERE id = $1`, uuid.MustParse(ticketID)); err != nil {
+		t.Fatalf("refund the ticket: %v", err)
+	}
+
+	res := c.scan(organizer.Token, eventID, qrToken)
+	if res.Status != http.StatusConflict {
+		t.Fatalf("status = %d, want 409; body = %s", res.Status, res.Raw)
+	}
+	if res.errorCode() != CodeTicketNotValid {
+		t.Errorf("code = %q, want %q", res.errorCode(), CodeTicketNotValid)
+	}
+	if got := c.activeCheckIns(ticketID); got != 0 {
+		t.Errorf("%d check-ins recorded for a refunded ticket, want 0", got)
+	}
+}
+
 // SRS 4.8: staff see and act on their assigned events only.
 func TestCheckInAuthorization(t *testing.T) {
 	c := newClient(t)
