@@ -295,6 +295,34 @@ func TestCheckInRejectsTicketFromAnotherEvent(t *testing.T) {
 	}
 }
 
+func TestCheckInRejectsRefundedTicket(t *testing.T) {
+	c := newClient(t)
+	organizer := c.register("refundedGate")
+
+	ticketID, qrToken := c.buyOneTicket(organizer.Token, "Refunded Gate Event")
+
+	var eventID uuid.UUID
+	if err := c.pool.QueryRow(t.Context(),
+		`SELECT event_id FROM tickets WHERE id = $1`, uuid.MustParse(ticketID)).Scan(&eventID); err != nil {
+		t.Fatalf("read event id: %v", err)
+	}
+	if _, err := c.pool.Exec(t.Context(),
+		`UPDATE tickets SET status = 'refunded' WHERE id = $1`, uuid.MustParse(ticketID)); err != nil {
+		t.Fatalf("refund the ticket: %v", err)
+	}
+
+	res := c.scan(organizer.Token, eventID, qrToken)
+	if res.Status != http.StatusConflict {
+		t.Fatalf("status = %d, want 409; body = %s", res.Status, res.Raw)
+	}
+	if res.errorCode() != CodeTicketNotValid {
+		t.Errorf("code = %q, want %q", res.errorCode(), CodeTicketNotValid)
+	}
+	if got := c.activeCheckIns(ticketID); got != 0 {
+		t.Errorf("%d check-ins recorded for a refunded ticket, want 0", got)
+	}
+}
+
 // SRS 4.8: staff see and act on their assigned events only.
 func TestCheckInAuthorization(t *testing.T) {
 	c := newClient(t)
@@ -519,7 +547,7 @@ func TestManualCheckInFindsAttendeeByName(t *testing.T) {
 		t.Fatalf("matches for \"aigerim\" = %d, want 1", len(attendees))
 	}
 	match := attendees[0].(map[string]any)
-	if match["full_name"] != "Aigerim Serikova" || match["status"] != "valid" {
+	if match["attendee_name"] != "Aigerim Serikova" || match["status"] != "valid" {
 		t.Errorf("match = %v, want Aigerim Serikova with a valid ticket", match)
 	}
 	// The search must not hand out an admission credential.
@@ -554,4 +582,41 @@ func TestManualCheckInFindsAttendeeByName(t *testing.T) {
 	requireErrorCode(t, manual(scanner.Token, "not-a-uuid"),
 		http.StatusUnprocessableEntity, "validation_failed")
 	requireErrorCode(t, manual(stranger.Token, ticketID), http.StatusForbidden, "forbidden")
+}
+
+// A refund voids the ticket but not the history: whoever walked in is still on
+// record as having walked in (SRS 4.8, 4.9). Only the ticket's own status and
+// checked_in_at change, so a later dispute can still be answered.
+func TestRefundAfterCheckInKeepsTheRecord(t *testing.T) {
+	c := newClient(t)
+	organizer := c.register("refundKeepsRecord")
+
+	ticketID, qrToken := c.buyOneTicket(organizer.Token, "Record Survives Refund")
+	var eventID, orderID uuid.UUID
+	if err := c.pool.QueryRow(t.Context(),
+		`SELECT event_id, order_id FROM tickets WHERE id = $1`, uuid.MustParse(ticketID)).
+		Scan(&eventID, &orderID); err != nil {
+		t.Fatalf("read the ticket: %v", err)
+	}
+
+	requireStatus(t, c.scan(organizer.Token, eventID, qrToken), http.StatusOK)
+	requireStatus(t, c.post("/api/v1/orders/"+orderID.String()+"/refund", organizer.Token,
+		map[string]any{"reason": "left early"}), http.StatusOK)
+
+	if got := c.ticketStatus(ticketID); got != "refunded" {
+		t.Errorf("ticket status = %q after the refund, want refunded", got)
+	}
+
+	var records int
+	if err := c.pool.QueryRow(t.Context(),
+		`SELECT count(*) FROM check_in_records WHERE ticket_id = $1`,
+		uuid.MustParse(ticketID)).Scan(&records); err != nil {
+		t.Fatalf("count check-in records: %v", err)
+	}
+	if records != 1 {
+		t.Errorf("%d check-in records after the refund, want the original one kept", records)
+	}
+
+	requireErrorCode(t, c.scan(organizer.Token, eventID, qrToken),
+		http.StatusConflict, CodeTicketNotValid)
 }

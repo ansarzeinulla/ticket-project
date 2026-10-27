@@ -49,6 +49,9 @@ const (
 	EventStatusUnpublished = "unpublished"
 	EventStatusCancelled   = "cancelled"
 	EventStatusCompleted   = "completed"
+	// EventStatusSuspended is set only by a platform administrator (SRS 4.12).
+	// The organizer cannot set or clear it.
+	EventStatusSuspended = "suspended"
 )
 
 // Values of the event_visibility and seating_mode enums.
@@ -403,6 +406,22 @@ func (s *EventStore) Cancel(ctx context.Context, id uuid.UUID) (Event, error) {
 	return event, nil
 }
 
+// SetStatus moves an event to an arbitrary status. Used by platform moderation;
+// organizer-facing transitions go through Publish, Unpublish and Cancel, which
+// also maintain their timestamps.
+func (s *EventStore) SetStatus(ctx context.Context, id uuid.UUID, status string) (Event, error) {
+	event, err := scanEvent(s.pool.QueryRow(ctx, `
+		UPDATE events SET status = $2::event_status WHERE id = $1
+		RETURNING `+eventColumns, id, status))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Event{}, ErrNotFound
+	}
+	if err != nil {
+		return Event{}, mapError(err)
+	}
+	return event, nil
+}
+
 // Delete removes an event permanently.
 func (s *EventStore) Delete(ctx context.Context, id uuid.UUID) error {
 	tag, err := s.pool.Exec(ctx, `DELETE FROM events WHERE id = $1`, id)
@@ -422,4 +441,45 @@ func (s *EventStore) HasOrders(ctx context.Context, id uuid.UUID) (bool, error) 
 	err := s.pool.QueryRow(ctx,
 		`SELECT EXISTS (SELECT 1 FROM orders WHERE event_id = $1)`, id).Scan(&exists)
 	return exists, mapError(err)
+}
+
+// AffectedTicketHolder is one order that a cancellation invalidates.
+type AffectedTicketHolder struct {
+	UserID      *uuid.UUID
+	OrderID     uuid.UUID
+	OrderNumber string
+	BuyerName   string
+	BuyerEmail  string
+	TicketCount int
+}
+
+// TicketHolders lists the people holding live tickets for an event, one entry
+// per order, so a cancellation can tell each of them once (SRS 4.10).
+func (s *EventStore) TicketHolders(
+	ctx context.Context, eventID uuid.UUID,
+) ([]AffectedTicketHolder, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT o.buyer_user_id, o.id, o.order_number, o.buyer_name, o.buyer_email::text,
+		       count(t.id)
+		  FROM orders o
+		  JOIN tickets t ON t.order_id = o.id
+		 WHERE o.event_id = $1
+		   AND t.status IN ('valid', 'checked_in')
+		 GROUP BY o.id
+		 ORDER BY o.created_at`, eventID)
+	if err != nil {
+		return nil, mapError(err)
+	}
+	defer rows.Close()
+
+	out := []AffectedTicketHolder{}
+	for rows.Next() {
+		var h AffectedTicketHolder
+		if err := rows.Scan(&h.UserID, &h.OrderID, &h.OrderNumber,
+			&h.BuyerName, &h.BuyerEmail, &h.TicketCount); err != nil {
+			return nil, err
+		}
+		out = append(out, h)
+	}
+	return out, rows.Err()
 }

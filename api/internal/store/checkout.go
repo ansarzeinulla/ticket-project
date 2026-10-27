@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -594,4 +595,25 @@ func newCode(prefix, separator string, length int) (string, error) {
 	}
 	encoded := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(buf)
 	return prefix + separator + encoded[:length], nil
+}
+
+// DeclineSimulationDomain is the reserved address suffix that makes the
+// simulated payment provider decline (SRS 4.6: payments are "a clearly
+// labelled internal simulation").
+//
+// It is a domain nobody can own, so a real attendee cannot trip it by typing
+// their own address.
+const DeclineSimulationDomain = "@decline.simulator.biletflow.kz"
+
+// PaymentDeclinedError reports a simulated payment the provider refused.
+type PaymentDeclinedError struct {
+	Reason string
+}
+
+func (e *PaymentDeclinedError) Error() string {
+	return "payment declined: " + e.Reason
+}
+
+func isDeclineSimulation(email string) bool {
+	return strings.HasSuffix(strings.ToLower(strings.TrimSpace(email)), DeclineSimulationDomain)
 }

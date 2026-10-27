@@ -5,7 +5,6 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { Toast } from "@/components/ui/toast";
 import { ApiError, api } from "@/lib/api";
 import { formatInTimezone } from "@/lib/datetime";
 import type { BiletEvent } from "@/lib/types";
@@ -20,7 +19,6 @@ export function EventCard({
   const [busy, setBusy] = useState<null | "publish" | "unpublish" | "cancel">(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
 
   async function run(action: "publish" | "unpublish" | "cancel") {
     setBusy(action);
@@ -34,13 +32,6 @@ export function EventCard({
             : await api.cancelEvent(event.id);
       onChanged(updated);
       setConfirmingCancel(false);
-      setNotice(
-        action === "publish"
-          ? "Event published."
-          : action === "unpublish"
-            ? "Event unpublished."
-            : "Event cancelled.",
-      );
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : "The action failed.");
     } finally {
@@ -124,16 +115,17 @@ export function EventCard({
       </div>
 
       {/*
-        Cancelling is final, so it does not fire on a single click. Unpublishing is the reversible action, and it is
+        Cancelling is final and emails every ticket holder, so it does not fire
+        on a single click. Unpublishing is the reversible action, and it is
         offered right here so the destructive one is never the only way to take
         a page down.
       */}
       {confirmingCancel && (
         <div className="mt-4 space-y-2 rounded-lg border border-danger/30 bg-danger-soft/40 p-3">
           <p className="text-sm">
-            Cancelling <strong>{event.title}</strong> is final. Tickets stop working and
-            the event cannot be published again. To take the page down temporarily, use
-            Unpublish instead.
+            Cancelling <strong>{event.title}</strong> is final. Every ticket holder is
+            emailed, their tickets stop working, and the event cannot be published
+            again. To take the page down temporarily, use Unpublish instead.
           </p>
           <div className="flex gap-2">
             <Button
@@ -176,8 +168,6 @@ export function EventCard({
           {error}
         </p>
       )}
-
-      {notice && <Toast message={notice} onDismiss={() => setNotice(null)} />}
     </li>
   );
 }

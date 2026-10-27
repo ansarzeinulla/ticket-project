@@ -111,10 +111,25 @@ With the three terminals running, the project can be used end to end:
 5. **At the door.** Sign in to the scanner app as `scanner@biletflow.kz` (same
    password), choose the event and scan the ticket's QR - or type its code, or
    find the attendee by name. A second scan of the same ticket is refused.
+6. **Refunds.** On the event's dashboard page the organizer refunds an order:
+   the tickets stop scanning, the stock goes back on sale and the buyer is
+   emailed. A free registration is cancelled instead.
+7. **Support.** From the order page the attendee asks a question; it lands in
+   the event's **Support** inbox on the dashboard, and the answer comes back to
+   the order page.
+8. **Administration.** `support@biletflow.kz` is a platform administrator:
+   <http://localhost:3000/admin> searches users, events, orders and payments,
+   suspends an event or an account, works through reported events and changes
+   platform settings such as the activation fee.
 
 What each step must do, and what it must refuse, is written down in `1.md`
 (accounts), `2.md` (events and ticket types), `3.md` (checkout), `4.md`
-(ticket delivery) and `5.md` (check-in at the door).
+(ticket delivery), `5.md` (check-in at the door) and `6.md` (refunds and
+order management).
+
+The browser never holds the access token: sign-in goes through the web app's
+own `/api/auth/*` routes, the token lives in an httpOnly cookie, and every API
+call goes through `/api/proxy` (see `web/README.md`).
 
 ## Checks
 

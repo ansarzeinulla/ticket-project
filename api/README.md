@@ -6,7 +6,7 @@ week by week.
 
 ---
 
-## What exists today (week 5)
+## What exists today (week 6)
 
 Accounts and organizer profiles, events with ticket types, a public event page,
 banner uploads, assigned seating, and a checkout that reserves a basket for 15
@@ -16,6 +16,14 @@ has completed the activation checklist. Every ticket has a QR code and a
 printable A4 PDF, and every event an `.ics` calendar file. Emails - including
 the order confirmation - are recorded in the `notifications` table and printed
 to the API's console.
+
+Since week 6: an organizer refunds a paid order or cancels a free registration
+(everything in one transaction - order, payment, tickets, stock - and the buyer
+is emailed); refunded tickets are refused at the gate. Attendees open support
+cases from the order page and the organizer answers them. A platform
+administrator searches everything, suspends events, paid sales or accounts,
+reviews reported events and changes platform settings; a declined simulated
+payment answers `402 payment_failed` and issues nothing.
 
 ### Layout
 
@@ -105,7 +113,30 @@ make api-run   # the API on :8080
 | `GET` | `/api/v1/tickets/{id}/qr.png` | – | the admission QR on its own |
 | `GET` | `/api/v1/events/{id}/calendar.ics` | – | the event for a calendar app, by id or slug |
 | `GET` | `/api/v1/events/{id}/orders` | Bearer | the organizer's order list, newest first |
-| `GET` | `/api/v1/events/{id}/attendees` | Bearer | ticket holders, `q` searches name, email, code, order |
+| `GET` | `/api/v1/events/{id}/attendees` | Bearer | ticket holders, `q` searches name, email, code, order; organizer or door staff |
+| `GET` | `/api/v1/events/scannable` | Bearer | the events this account may scan |
+| `POST` | `/api/v1/events/{id}/check-in` | Bearer | scan a `TKT_` token; `409 already_checked_in`, `wrong_event`, `ticket_not_valid` |
+| `POST` | `/api/v1/events/{id}/check-in/manual` | Bearer | admit a ticket found by name |
+| `GET` | `/api/v1/events/{id}/check-in/stats` | Bearer | issued and checked-in counts |
+| `POST` | `/api/v1/tickets/{id}/check-in/reverse` | Bearer | undo a check-in |
+| `GET` / `POST` | `/api/v1/events/{id}/staff` | Bearer | door staff, assigned by email |
+| `DELETE` | `/api/v1/events/{id}/staff/{assignmentId}` | Bearer | revoke an assignment |
+| `POST` | `/api/v1/orders/{id}/refund` | Bearer | refund a paid order in full; the organizer or a platform admin |
+| `POST` | `/api/v1/orders/{id}/cancel` | Bearer | cancel a free registration |
+| `GET` / `POST` | `/api/v1/support/cases` | Bearer | the caller's cases / open one about an order |
+| `GET` | `/api/v1/support/cases/{id}` | Bearer | the thread; internal notes only for staff |
+| `POST` | `/api/v1/support/cases/{id}/messages` | Bearer | reply, or an internal note |
+| `PATCH` | `/api/v1/support/cases/{id}` | Bearer | change the status |
+| `POST` | `/api/v1/support/cases/{id}/assign` | Bearer | assign to a named person |
+| `GET` | `/api/v1/events/{id}/support/cases` | Bearer | the event's support inbox |
+| `POST` | `/api/v1/events/{id}/report` | Bearer | report an event to the platform |
+| `POST` | `/api/v1/admin/events/{id}/suspend` · `unsuspend` | admin | stop or restore an event's sales |
+| `POST` | `/api/v1/admin/events/{id}/paid-sales/suspend` · `unsuspend` | admin | stop only the money |
+| `POST` | `/api/v1/admin/users/{id}/suspend` · `unsuspend` | admin | block an account |
+| `GET` / `PATCH` | `/api/v1/admin/event-reports` | admin | the report queue |
+| `GET` / `PATCH` | `/api/v1/admin/settings` | admin | platform settings, e.g. the activation fee |
+| `GET` | `/api/v1/admin/search` | admin | users, events, orders and payments at once |
+| `GET` | `/api/v1/admin/reports/events.csv` | admin | the per-event report as CSV |
 
 Every request body must be JSON with `Content-Type: application/json`.
 

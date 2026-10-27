@@ -11,6 +11,9 @@ const links = [
   { href: "/events/new", label: "Create event" },
 ] as const;
 
+/** Shown only to platform administrators (SRS 2.1). */
+const adminLink = { href: "/admin", label: "Administration" } as const;
+
 export function SiteHeader() {
   const pathname = usePathname();
   const router = useRouter();
@@ -33,7 +36,7 @@ export function SiteHeader() {
         </Link>
 
         <nav className="flex items-center gap-1" aria-label="Main">
-          {links.map((link) => {
+          {[...links, ...(user?.roles.includes("platform_admin") ? [adminLink] : [])].map((link) => {
             const active = pathname === link.href;
             return (
               <Link

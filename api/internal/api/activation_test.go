@@ -3,6 +3,8 @@ package api
 import (
 	"net/http"
 	"testing"
+
+	"github.com/google/uuid"
 )
 
 // activationOf reads the activation object out of a response.
@@ -156,4 +158,70 @@ func TestActivationSetsPaidSalesEnabled(t *testing.T) {
 	if !enabled() {
 		t.Error("paid_sales_enabled is still false after activation")
 	}
+}
+
+// TestPlatformAdminCanSuspendPaidSales covers the last bullet of SRS 4.5.
+func TestPlatformAdminCanSuspendPaidSales(t *testing.T) {
+	c := newClient(t)
+	organizer := c.register("paidsuspend")
+	admin := c.register("paidsuspendadmin")
+	c.makePlatformAdmin(admin.ID)
+
+	eventID, _ := c.createEvent(organizer.Token, "Paid Suspension Fest")
+	freeID, _ := c.createTicketType(organizer.Token, eventID, ticketTypeBody("Free", "0", 10))
+	paidID, _ := c.createTicketType(organizer.Token, eventID, ticketTypeBody("Paid", "5000", 10))
+	c.activatePaidSales(organizer.Token, eventID)
+	requireStatus(t, c.post("/api/v1/events/"+eventID.String()+"/publish", organizer.Token, nil),
+		http.StatusOK)
+
+	requireStatus(t, c.buy(eventID, paidID, 1, "Before", "before@biletflow.test"),
+		http.StatusCreated)
+
+	suspendPath := "/api/v1/admin/events/" + eventID.String() + "/paid-sales/suspend"
+
+	// The organizer cannot suspend their own paid sales, and nor can a stranger.
+	requireStatus(t, c.post(suspendPath, organizer.Token, nil), http.StatusForbidden)
+	requireStatus(t, c.post(suspendPath, "", nil), http.StatusUnauthorized)
+
+	suspended := c.post(suspendPath, admin.Token, map[string]any{"reason": "Chargeback pattern"})
+	requireStatus(t, suspended, http.StatusOK)
+	if activationOf(t, suspended)["status"] != "suspended" {
+		t.Errorf("status = %v, want suspended", activationOf(t, suspended)["status"])
+	}
+
+	// Paid tickets stop; free registration carries on, which is the point of
+	// this being narrower than suspending the whole event. The code is
+	// specifically "suspended", distinct from a not-yet-activated event
+	// (PAID-SUSP-02).
+	requireErrorCode(t, c.buy(eventID, paidID, 1, "After", "after@biletflow.test"),
+		http.StatusForbidden, CodePaidSalesSuspended)
+	requireStatus(t, c.buy(eventID, freeID, 1, "Still Free", "stillfree@biletflow.test"),
+		http.StatusCreated)
+
+	// The organizer cannot re-activate their way out of a suspension.
+	requireStatus(t, c.post("/api/v1/events/"+eventID.String()+"/activation", organizer.Token,
+		map[string]any{"accept_terms": true}), http.StatusForbidden)
+
+	// Only the platform can lift it.
+	lifted := c.post("/api/v1/admin/events/"+eventID.String()+"/paid-sales/unsuspend", admin.Token, nil)
+	requireStatus(t, lifted, http.StatusOK)
+	if activationOf(t, lifted)["is_active"] != true {
+		t.Errorf("lifting the suspension did not restore an already-complete checklist: %s", lifted.Raw)
+	}
+	requireStatus(t, c.buy(eventID, paidID, 1, "Restored", "restored@biletflow.test"),
+		http.StatusCreated)
+}
+
+func TestSuspendPaidSalesNeedsAnActivation(t *testing.T) {
+	c := newClient(t)
+	admin := c.register("suspendnothing")
+	c.makePlatformAdmin(admin.ID)
+	organizer := c.register("suspendnothingorg")
+	eventID, _ := c.createEvent(organizer.Token, "Never Activated")
+
+	requireStatus(t, c.post("/api/v1/admin/events/"+eventID.String()+"/paid-sales/suspend",
+		admin.Token, nil), http.StatusNotFound)
+
+	requireStatus(t, c.post("/api/v1/admin/events/"+uuid.NewString()+"/paid-sales/suspend",
+		admin.Token, nil), http.StatusNotFound)
 }

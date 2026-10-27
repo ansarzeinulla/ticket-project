@@ -4,41 +4,26 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/google/uuid"
+
 	"github.com/biletflow/api/internal/httpx"
 	"github.com/biletflow/api/internal/store"
 )
 
-type eventOrdersResponse struct {
-	Orders []store.EventOrder `json:"orders"`
+type attendeeSearchResponse struct {
+	Attendees []store.AttendeeTicket `json:"attendees"`
+	Total     int                    `json:"total"`
+	Query     string                 `json:"query"`
 }
 
-type guestListResponse struct {
-	Attendees []store.Guest `json:"attendees"`
-	Total     int           `json:"total"`
-	Query     string        `json:"query"`
-}
-
-// handleListEventOrders is the organizer's view of who bought what.
-func (s *Server) handleListEventOrders(w http.ResponseWriter, r *http.Request) {
-	event, ok := s.loadOwnedEvent(w, r)
-	if !ok {
-		return
-	}
-
-	orders, err := s.guests.ListEventOrders(r.Context(), event.ID)
-	if err != nil {
-		httpx.WriteInternalError(w, r, err)
-		return
-	}
-	httpx.WriteJSON(w, http.StatusOK, eventOrdersResponse{Orders: orders})
-}
-
-// handleListAttendees lists the people holding tickets, searchable by name,
-// email, ticket code or order number. It is also the scanner app's manual
-// lookup (SRS 4.8), so it is authorised the way scanning is: the organizer or
-// somebody assigned to work this event's door. An attendee list must not be
-// readable by anyone who happens to know an event id.
-func (s *Server) handleListAttendees(w http.ResponseWriter, r *http.Request) {
+// handleSearchAttendees backs the scanner app's manual lookup (SRS 4.8).
+//
+// Authorised the same way scanning is: the organizer or somebody assigned to
+// work this event's door. An attendee list is exactly the kind of thing that
+// must not be readable by anyone who happens to know an event id.
+func (s *Server) handleSearchAttendees(w http.ResponseWriter, r *http.Request) {
+	// The same gate the scanner passes through: the event must exist and this
+	// account must be authorised to work its door.
 	eventID, ok := s.eventIDForScanning(w, r)
 	if !ok {
 		return
@@ -51,12 +36,62 @@ func (s *Server) handleListAttendees(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	guests, err := s.guests.ListGuests(r.Context(), eventID, query)
+	attendees, err := s.attendees.Search(r.Context(), eventID, query)
 	if err != nil {
 		httpx.WriteInternalError(w, r, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, guestListResponse{
-		Attendees: guests, Total: len(guests), Query: query,
+
+	httpx.WriteJSON(w, http.StatusOK, attendeeSearchResponse{
+		Attendees: attendees, Total: len(attendees), Query: query,
 	})
+}
+
+type manualCheckInRequest struct {
+	TicketID string `json:"ticket_id"`
+	Device   string `json:"device_label"`
+}
+
+// handleManualCheckIn admits a ticket found by search rather than by camera
+// (SRS 4.8).
+//
+// It is a separate route from the scanner's, because the two are addressed by
+// different things: a scan carries a QR token, this carries a ticket id that
+// only an authorised device could have obtained from the search above. What
+// happens in the database is identical.
+func (s *Server) handleManualCheckIn(w http.ResponseWriter, r *http.Request) {
+	eventID, ok := s.eventIDForScanning(w, r)
+	if !ok {
+		return
+	}
+
+	var req manualCheckInRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeInvalidJSON, err.Error())
+		return
+	}
+
+	ticketID, err := uuid.Parse(strings.TrimSpace(req.TicketID))
+	if err != nil {
+		errs := fieldErrors{}
+		errs.add("ticket_id", "A ticket id in UUID form is required.")
+		httpx.WriteValidationError(w, errs)
+		return
+	}
+
+	device := strings.TrimSpace(req.Device)
+	if device == "" {
+		// Recorded so the check-in history distinguishes a door scan from a
+		// name typed in by hand - the second is worth being able to audit.
+		device = "manual search"
+	}
+
+	result, err := s.checkIns.CheckInByTicketID(
+		r.Context(), eventID, ticketID, mustUserID(r.Context()), device)
+	if err != nil {
+		s.writeCheckInError(w, r, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, checkInResponse{Result: "valid", CheckIn: result})
 }
