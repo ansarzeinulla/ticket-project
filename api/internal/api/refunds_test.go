@@ -142,6 +142,47 @@ func TestRefundKeepsQuantitySoldEqualToLiveTickets(t *testing.T) {
 	}
 }
 
+// TestRefundShowsInAnalyticsAndTimeline ties Phase 10 back to Phase 9: the
+// dashboard has to tell the truth after a refund, not just before one.
+func TestRefundShowsInAnalyticsAndTimeline(t *testing.T) {
+	c := newClient(t)
+	organizer := c.register("refundanalytics")
+	eventID, _, ticketTypeID := c.sellableEvent(organizer.Token, "Refund Analytics", "5000", 10)
+
+	bought := c.buy(eventID, ticketTypeID, 2, "Buyer", "analytics@biletflow.test")
+	requireStatus(t, bought, http.StatusCreated)
+	requireStatus(t, c.post("/api/v1/orders/"+orderIDOf(t, bought)+"/refund", organizer.Token, nil),
+		http.StatusOK)
+
+	analytics := c.get("/api/v1/events/"+eventID.String()+"/analytics", organizer.Token)
+	requireStatus(t, analytics, http.StatusOK)
+	figures := analytics.Body["analytics"].(map[string]any)
+
+	// The tickets no longer count as sold - they admit nobody.
+	if figures["tickets_sold"] != float64(0) {
+		t.Errorf("tickets_sold = %v after refunding everything, want 0", figures["tickets_sold"])
+	}
+	// The revenue still counts: the sale happened, and a refund is a separate
+	// event rather than a rewrite of history.
+	if figures["gross_revenue_kzt"] != "10350.00" {
+		t.Errorf("gross_revenue_kzt = %v, want 10350.00 (a refund does not unmake the sale)",
+			figures["gross_revenue_kzt"])
+	}
+
+	timeline := c.get("/api/v1/events/"+eventID.String()+"/timeline", organizer.Token)
+	requireStatus(t, timeline, http.StatusOK)
+
+	found := false
+	for _, entry := range timeline.Body["entries"].([]any) {
+		if entry.(map[string]any)["action"] == "order.refunded" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("the refund is missing from the event history: %s", timeline.Raw)
+	}
+}
+
 func TestRefundNotifiesTheAttendee(t *testing.T) {
 	c := newClient(t)
 	organizer := c.register("refundmail")
