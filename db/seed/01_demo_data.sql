@@ -7,8 +7,8 @@
 -- Contents: 2 organizers with profiles, 2 attendees, 1 door scanner assigned to
 --           both events, 1 support agent who is also the platform
 --           administrator, 1 published free event and 1 published paid event
---           whose paid sales are activated, with one order on each and a
---           support case on the paid one. The free ticket has already been used
+--           whose paid sales are activated, with one order on each, a
+--           15% student campaign on the paid one and a support case. The free ticket has already been used
 --           at the door.
 --
 -- All demo rows live in the d0000000-... UUID space.
@@ -133,6 +133,18 @@ INSERT INTO paid_sales_activations (
 INSERT INTO staff_assignments (event_id, user_id, role, assigned_by) VALUES
     ('d0000000-0000-4000-8000-000000000301', 'd0000000-0000-4000-8000-000000000006', 'event_admin', 'd0000000-0000-4000-8000-000000000002'),
     ('d0000000-0000-4000-8000-000000000302', 'd0000000-0000-4000-8000-000000000006', 'event_admin', 'd0000000-0000-4000-8000-000000000001');
+
+-- Campaign and promo code (SRS 4.14): typed as STUDENT15 or scanned from a
+-- poster as CMP_STUDENT15ALMATYJAZZ.
+INSERT INTO campaigns (id, event_id, name, discount_type, discount_value, starts_at, ends_at,
+                       max_redemptions, redemption_count, status, qr_token, created_by) VALUES
+    ('d0000000-0000-4000-8000-000000000601', 'd0000000-0000-4000-8000-000000000302',
+     'Student Discount 15%', 'percentage', 15,
+     now() - interval '5 days', now() + interval '40 days',
+     100, 0, 'active', 'CMP_STUDENT15ALMATYJAZZ', 'd0000000-0000-4000-8000-000000000001');
+
+INSERT INTO promo_codes (id, campaign_id, code) VALUES
+    ('d0000000-0000-4000-8000-000000000602', 'd0000000-0000-4000-8000-000000000601', 'STUDENT15');
 
 -- -----------------------------------------------------------------------------
 -- 3. Orders and tickets
