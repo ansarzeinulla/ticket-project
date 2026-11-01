@@ -40,6 +40,11 @@ type Event struct {
 	DuplicatedFromEventID *uuid.UUID `json:"duplicated_from_event_id,omitempty"`
 	CreatedAt             time.Time  `json:"created_at"`
 	UpdatedAt             time.Time  `json:"updated_at"`
+
+	// Lifecycle is derived, not stored: Upcoming / Active / Completed /
+	// Cancelled is how SRS 4.16 asks the organizer's history to be grouped, and
+	// "completed" is simply an event whose end time has passed.
+	LifecycleStage string `json:"lifecycle"`
 }
 
 // Values of the event_status enum.
@@ -85,6 +90,9 @@ func scanEvent(row pgx.Row) (Event, error) {
 		&e.Timezone, &e.Status, &e.Visibility, &e.SeatingMode, &e.Capacity,
 		&e.RegistrationOpensAt, &e.RegistrationClosesAt, &e.PaidSalesEnabled, &e.RefundPolicy,
 		&e.PublishedAt, &e.CancelledAt, &e.DuplicatedFromEventID, &e.CreatedAt, &e.UpdatedAt)
+	if err == nil {
+		e.LifecycleStage = Lifecycle(e, time.Now())
+	}
 	return e, err
 }
 

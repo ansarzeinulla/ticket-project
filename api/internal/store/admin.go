@@ -377,28 +377,3 @@ func (s *AdminStore) Report(ctx context.Context) ([]ReportRow, error) {
 	}
 	return out, rows.Err()
 }
-
-// Lifecycle classifies an event the way the organizer's history view groups
-// them (SRS 4.16: Upcoming, Active, Completed, Cancelled).
-//
-// It is derived rather than stored: "completed" is simply an event whose end
-// time has passed, and nothing has to run to make that true.
-func Lifecycle(e Event, now time.Time) string {
-	switch e.Status {
-	case EventStatusCancelled:
-		return "cancelled"
-	case EventStatusSuspended:
-		return "suspended"
-	case EventStatusDraft, EventStatusUnpublished:
-		return "draft"
-	}
-
-	switch {
-	case e.Status == EventStatusCompleted, !now.Before(e.EndsAt):
-		return "completed"
-	case !now.Before(e.StartsAt):
-		return "active"
-	default:
-		return "upcoming"
-	}
-}

@@ -136,6 +136,9 @@ type confirmRequest struct {
 	BuyerName  string  `json:"buyer_name"`
 	BuyerEmail string  `json:"buyer_email"`
 	BuyerPhone *string `json:"buyer_phone"`
+
+	PromoCode     string `json:"promo_code"`
+	CampaignToken string `json:"campaign_token"`
 }
 
 // handleConfirmHold pays for a held basket and issues its tickets (SRS 4.6).
@@ -153,8 +156,7 @@ func (s *Server) handleConfirmHold(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The basket is read first: an expired or already-paid one is refused
-	// before the form is even looked at.
+	// The basket is read first so the promo can be resolved against its event.
 	held, err := s.checkout.GetHold(r.Context(), orderID)
 	if err != nil {
 		s.writeCheckoutError(w, r, err)
@@ -181,6 +183,12 @@ func (s *Server) handleConfirmHold(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	promo, ok := s.resolvePromoForBasket(w, r, held.EventID, held.Items,
+		req.PromoCode, req.CampaignToken)
+	if !ok {
+		return
+	}
+
 	if req.BuyerPhone != nil && blank(*req.BuyerPhone) {
 		req.BuyerPhone = nil
 	}
@@ -191,6 +199,7 @@ func (s *Server) handleConfirmHold(w http.ResponseWriter, r *http.Request) {
 		BuyerName:   req.BuyerName,
 		BuyerEmail:  buyerEmail,
 		BuyerPhone:  req.BuyerPhone,
+		Promo:       promo,
 	})
 	if err != nil {
 		s.writeCheckoutError(w, r, err)

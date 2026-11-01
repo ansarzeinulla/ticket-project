@@ -75,13 +75,22 @@ type Payment struct {
 	PaidAt      time.Time `json:"paid_at"`
 }
 
+// AppliedPromo describes the discount an order actually received.
+type AppliedPromo struct {
+	CampaignID   uuid.UUID `json:"campaign_id"`
+	CampaignName string    `json:"campaign_name"`
+	Code         string    `json:"code"`
+	DiscountKZT  string    `json:"discount_kzt"`
+}
+
 // CheckoutResult is everything the confirmation screen needs.
 type CheckoutResult struct {
-	Order    Order       `json:"order"`
-	Items    []OrderItem `json:"items"`
-	Attendee Attendee    `json:"attendee"`
-	Tickets  []Ticket    `json:"tickets"`
-	Payment  Payment     `json:"payment"`
+	Order    Order         `json:"order"`
+	Items    []OrderItem   `json:"items"`
+	Attendee Attendee      `json:"attendee"`
+	Tickets  []Ticket      `json:"tickets"`
+	Payment  Payment       `json:"payment"`
+	Promo    *AppliedPromo `json:"promo,omitempty"`
 }
 
 // CheckoutItem is one requested line.
@@ -101,6 +110,12 @@ type CheckoutParams struct {
 	// SeatIDs are the specific seats an assigned-seating purchase is for
 	// (SRS 4.3.1). Empty for general admission.
 	SeatIDs []uuid.UUID
+
+	// Promo is the campaign to apply, already resolved and validated by the
+	// caller. It is re-checked here under a row lock, because validation and
+	// purchase are separate moments and the last redemption may have gone in
+	// between them.
+	Promo *Campaign
 }
 
 // InsufficientInventoryError reports that a ticket type cannot cover the
@@ -254,6 +269,7 @@ func (s *CheckoutStore) Checkout(ctx context.Context, p CheckoutParams) (Checkou
 		BuyerName:   p.BuyerName,
 		BuyerEmail:  p.BuyerEmail,
 		BuyerPhone:  p.BuyerPhone,
+		Promo:       p.Promo,
 	})
 	if err != nil {
 		return CheckoutResult{}, err
@@ -511,6 +527,125 @@ func recordPayment(
 	).Scan(&payment.ID, &payment.AmountKZT, &payment.Status,
 		&payment.Provider, &payment.IsSimulated, &payment.PaidAt)
 	return payment, mapError(err)
+}
+
+// applyPromo redeems a campaign against an order, inside the checkout
+// transaction.
+//
+// The campaign row is locked with FOR UPDATE and its limit re-checked here,
+// not just when the attendee typed the code: validation and payment are
+// separate moments, and the last redemption may have been taken in between.
+// campaigns_redemption_limit_chk is the backstop if this logic were ever wrong.
+func applyPromo(
+	ctx context.Context, tx pgx.Tx, promo *Campaign, orderID uuid.UUID, userID *uuid.UUID,
+) (*AppliedPromo, error) {
+	if promo == nil {
+		return nil, nil
+	}
+
+	var (
+		discountType   string
+		discountValue  string
+		maxRedemptions *int
+		redeemed       int
+		status         string
+	)
+	err := tx.QueryRow(ctx, `
+		SELECT discount_type::text, discount_value::text, max_redemptions,
+		       redemption_count, status::text
+		  FROM campaigns WHERE id = $1 FOR UPDATE`, promo.ID,
+	).Scan(&discountType, &discountValue, &maxRedemptions, &redeemed, &status)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrPromoNotFound
+	}
+	if err != nil {
+		return nil, mapError(err)
+	}
+
+	// Exhaustion is checked before the general status, and both before the
+	// discount is computed. The winner of a race marks the campaign exhausted,
+	// so everyone behind it must be told "fully redeemed" rather than the
+	// vaguer "not active" - the attendee needs to know the code was real but
+	// is gone, not that they mistyped it.
+	if status == CampaignExhausted ||
+		(maxRedemptions != nil && redeemed >= *maxRedemptions) {
+		return nil, ErrPromoExhausted
+	}
+	if status != CampaignActive {
+		return nil, ErrPromoNotActive
+	}
+
+	// The discount is computed by PostgreSQL over the order's own lines, so no
+	// amount is ever taken from the client and no float touches the money.
+	// Only lines the campaign covers count towards it.
+	var discount string
+	err = tx.QueryRow(ctx, `
+		WITH eligible AS (
+			SELECT COALESCE(sum(oi.line_total_kzt), 0) AS base
+			  FROM order_items oi
+			 WHERE oi.order_id = $1
+			   AND (NOT EXISTS (SELECT 1 FROM campaign_ticket_types WHERE campaign_id = $2)
+			        OR oi.ticket_type_id IN (
+			             SELECT ticket_type_id FROM campaign_ticket_types WHERE campaign_id = $2))
+		)
+		SELECT CASE
+		         WHEN $3 = 'percentage' THEN round(base * $4::numeric / 100, 2)
+		         ELSE least($4::numeric, base)
+		       END::text
+		  FROM eligible`,
+		orderID, promo.ID, discountType, discountValue).Scan(&discount)
+	if err != nil {
+		return nil, mapError(err)
+	}
+
+	// discount and total move together: orders_total_math_chk requires
+	// total = subtotal - discount + fee to hold after every statement.
+	if _, err := tx.Exec(ctx, `
+		UPDATE orders
+		   SET discount_kzt = $2::numeric,
+		       total_kzt    = subtotal_kzt - $2::numeric + processing_fee_kzt,
+		       campaign_id  = $3,
+		       promo_code_id = $4
+		 WHERE id = $1`, orderID, discount, promo.ID, promo.CodeID); err != nil {
+		return nil, mapError(err)
+	}
+
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO promo_redemptions (campaign_id, promo_code_id, order_id, user_id, discount_kzt)
+		VALUES ($1, $2, $3, $4, $5::numeric)`,
+		promo.ID, promo.CodeID, orderID, userID, discount); err != nil {
+		return nil, mapError(err)
+	}
+
+	// Increment last, so the constraint fires here if anything slipped through.
+	var newCount int
+	if err := tx.QueryRow(ctx, `
+		UPDATE campaigns SET redemption_count = redemption_count + 1
+		 WHERE id = $1
+		RETURNING redemption_count`, promo.ID).Scan(&newCount); err != nil {
+		var constraintErr *ConstraintError
+		mapped := mapError(err)
+		if errors.As(mapped, &constraintErr) &&
+			constraintErr.Constraint == "campaigns_redemption_limit_chk" {
+			return nil, ErrPromoExhausted
+		}
+		return nil, mapped
+	}
+
+	// A campaign that has just run out is marked so, which is what makes the
+	// organizer dashboard and the checkout agree without a background job.
+	if maxRedemptions != nil && newCount >= *maxRedemptions {
+		if _, err := tx.Exec(ctx,
+			`UPDATE campaigns SET status = 'exhausted' WHERE id = $1`, promo.ID); err != nil {
+			return nil, mapError(err)
+		}
+	}
+
+	return &AppliedPromo{
+		CampaignID:   promo.ID,
+		CampaignName: promo.Name,
+		Code:         promo.Code,
+	}, nil
 }
 
 // GetOrder returns a previously placed order with its items and tickets.
