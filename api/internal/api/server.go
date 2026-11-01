@@ -24,10 +24,11 @@ type Server struct {
 	events      *store.EventStore
 	ticketTypes *store.TicketTypeStore
 	tickets     *store.TicketStore
+	campaigns   *store.CampaignStore
 	checkIns    *store.CheckInStore
 	staff       *store.StaffStore
-	campaigns   *store.CampaignStore
 	support     *store.SupportStore
+	analytics   *store.AnalyticsStore
 	checkout    *store.CheckoutStore
 	audit       *store.AuditStore
 
@@ -67,10 +68,11 @@ func NewWithSender(cfg config.Config, pool *pgxpool.Pool, sender email.Sender) *
 		events:      store.NewEventStore(pool),
 		ticketTypes: store.NewTicketTypeStore(pool),
 		tickets:     store.NewTicketStore(pool),
+		campaigns:   store.NewCampaignStore(pool),
 		checkIns:    store.NewCheckInStore(pool),
 		staff:       store.NewStaffStore(pool),
-		campaigns:   store.NewCampaignStore(pool),
 		support:     store.NewSupportStore(pool),
+		analytics:   store.NewAnalyticsStore(pool),
 		checkout: store.NewCheckoutStoreWithFees(pool, store.Fees{
 			Percent:  cfg.ProcessingFeePercent,
 			FixedKZT: cfg.ProcessingFeeFixedKZT,
@@ -164,6 +166,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/events/{id}/publish", s.requireAuth(s.handlePublishEvent))
 	mux.HandleFunc("POST /api/v1/events/{id}/unpublish", s.requireAuth(s.handleUnpublishEvent))
 	mux.HandleFunc("POST /api/v1/events/{id}/cancel", s.requireAuth(s.handleCancelEvent))
+	mux.HandleFunc("GET /api/v1/events/{id}/timeline", s.requireAuth(s.handleEventTimeline))
+	mux.HandleFunc("GET /api/v1/events/{id}/analytics", s.requireAuth(s.handleEventAnalytics))
+	mux.HandleFunc("POST /api/v1/events/{id}/duplicate", s.requireAuth(s.handleDuplicateEvent))
 
 	// --- ticket types (organizer) -------------------------------------------
 	mux.HandleFunc("GET /api/v1/events/{id}/ticket-types", s.requireAuth(s.handleListTicketTypes))
