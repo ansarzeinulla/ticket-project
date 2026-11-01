@@ -1,6 +1,6 @@
 import Script from "next/script";
 
-import { GA4_MEASUREMENT_ID, analyticsEnabled } from "@/lib/analytics";
+import { GA4_MEASUREMENT_ID, analyticsEnabled } from "@/lib/analytics-config";
 
 /**
  * Loads GA4, and only when it is configured (bonus).
