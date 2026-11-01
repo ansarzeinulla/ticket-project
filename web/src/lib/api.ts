@@ -14,11 +14,15 @@ import type {
   BiletEvent,
   CheckoutInput,
   CheckoutResult,
+  Campaign,
+  CreateCampaignInput,
   CreateEventInput,
   CreateTicketTypeInput,
+  PromoPreview,
   EventListResponse,
   EventOrder,
   EventResponse,
+  AnalyticsResponse,
   ApiErrorBody,
   OpenCaseInput,
   Hold,
@@ -27,6 +31,7 @@ import type {
   RefundResponse,
   SupportCase,
   SupportThread,
+  TimelineEntry,
   TicketType,
   TicketTypeListResponse,
   TicketTypeResponse,
@@ -114,6 +119,21 @@ export function ticketQRURL(ticketID: string): string {
   return `${PUBLIC_API_BASE_URL}/tickets/${ticketID}/qr.png`;
 }
 
+/**
+ * The campaign QR as a PNG, for the organizer to put on a poster.
+ *
+ * Built here rather than from the `qr_image_url` the API returns: that field is
+ * an absolute API path including /api/v1, and API_BASE_URL already ends in it.
+ * Composing the two produced /api/v1/api/v1/... and a broken image.
+ */
+export function campaignQRURL(campaignID: string): string {
+  return `${PUBLIC_API_BASE_URL}/campaigns/${campaignID}/qr.png`;
+}
+
+/**
+ * A failed API call, carrying the pieces of the Go error envelope so the UI can
+ * react to `code` and highlight the exact inputs named in `fields`.
+ */
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
@@ -339,13 +359,14 @@ export const api = {
    * the dashboard that just created it.
    */
   listMyEvents(
-    params: { limit?: number; offset?: number; status?: string } = {},
+    params: { limit?: number; offset?: number; status?: string; lifecycle?: string } = {},
     signal?: AbortSignal,
   ) {
     const query = new URLSearchParams();
     if (params.limit !== undefined) query.set("limit", String(params.limit));
     if (params.offset !== undefined) query.set("offset", String(params.offset));
     if (params.status) query.set("status", params.status);
+    if (params.lifecycle) query.set("lifecycle", params.lifecycle);
 
     const suffix = query.size > 0 ? `?${query}` : "";
     return request<EventListResponse>(`/events/mine${suffix}`, { signal });
@@ -452,8 +473,121 @@ export const api = {
     return request<void>(`/ticket-types/${id}`, { method: "DELETE" });
   },
 
+  // --- analytics and history (organizer) --------------------------------------
+
+  /**
+   * GET /events/{id}/analytics - the dashboard figures.
+   *
+   * Optional filters: date range and ticket type (SRS 4.15).
+   */
+  eventAnalytics(
+    eventID: string,
+    filter: { from?: string; to?: string; ticketTypeID?: string } = {},
+    signal?: AbortSignal,
+  ): Promise<AnalyticsResponse> {
+    const query = new URLSearchParams();
+    if (filter.from) query.set("from", filter.from);
+    if (filter.to) query.set("to", filter.to);
+    if (filter.ticketTypeID) query.set("ticket_type_id", filter.ticketTypeID);
+
+    const suffix = query.size > 0 ? `?${query}` : "";
+    return request<AnalyticsResponse>(`/events/${eventID}/analytics${suffix}`, { signal });
+  },
+
+  /** GET /events/{id}/timeline - the chronological activity history. */
+  async eventTimeline(
+    eventID: string,
+    filter: { from?: string; to?: string; type?: string; limit?: number } = {},
+    signal?: AbortSignal,
+  ): Promise<TimelineEntry[]> {
+    const query = new URLSearchParams();
+    if (filter.from) query.set("from", filter.from);
+    if (filter.to) query.set("to", filter.to);
+    if (filter.type) query.set("type", filter.type);
+    if (filter.limit) query.set("limit", String(filter.limit));
+
+    const suffix = query.size > 0 ? `?${query}` : "";
+    const data = await request<{ entries: TimelineEntry[] }>(
+      `/events/${eventID}/timeline${suffix}`,
+      { signal },
+    );
+    return data.entries;
+  },
+
+  /** POST /events/{id}/duplicate - copies the setup into a new draft. */
+  async duplicateEvent(
+    eventID: string,
+    overrides: { title?: string; starts_at?: string; ends_at?: string } = {},
+  ): Promise<BiletEvent> {
+    const data = await request<EventResponse>(`/events/${eventID}/duplicate`, {
+      method: "POST",
+      body: overrides,
+    });
+    return data.event;
+  },
+
+  // --- campaigns (organizer) --------------------------------------------------
+
+  /** GET /events/{id}/campaigns */
+  async listCampaigns(eventID: string, signal?: AbortSignal): Promise<Campaign[]> {
+    const data = await request<{ campaigns: Campaign[] }>(
+      `/events/${eventID}/campaigns`,
+      { signal },
+    );
+    return data.campaigns;
+  },
+
+  /** POST /events/{id}/campaigns */
+  async createCampaign(eventID: string, input: CreateCampaignInput): Promise<Campaign> {
+    const data = await request<{ campaign: Campaign }>(`/events/${eventID}/campaigns`, {
+      method: "POST",
+      body: input,
+    });
+    return data.campaign;
+  },
+
+  /** PATCH /campaigns/{id} */
+  async setCampaignActive(id: string, active: boolean): Promise<Campaign> {
+    const data = await request<{ campaign: Campaign }>(`/campaigns/${id}`, {
+      method: "PATCH",
+      body: { active },
+    });
+    return data.campaign;
+  },
+
+  /** DELETE /campaigns/{id} */
+  deleteCampaign(id: string): Promise<void> {
+    return request<void>(`/campaigns/${id}`, { method: "DELETE" });
+  },
+
   // --- attendee-facing --------------------------------------------------------
 
+  /**
+   * POST /events/{id}/promo/preview - prices a code against the basket.
+   *
+   * A preview only: nothing is reserved and no counter moves. The binding check
+   * happens during checkout, because the last redemption can be taken between
+   * seeing the discount and paying for it.
+   */
+  previewPromo(
+    eventID: string,
+    input: {
+      code?: string;
+      campaign_token?: string;
+      items: { ticket_type_id: string; quantity: number }[];
+    },
+  ): Promise<PromoPreview> {
+    return request<PromoPreview>(`/events/${eventID}/promo/preview`, {
+      method: "POST",
+      body: input,
+      anonymous: true,
+    });
+  },
+
+  /**
+   * GET /public/events/{slug} - needs no token, so it works from a Server
+   * Component as well as from the browser.
+   */
   getPublicEvent(slug: string, signal?: AbortSignal): Promise<PublicEventResponse> {
     return request<PublicEventResponse>(`/public/events/${encodeURIComponent(slug)}`, {
       anonymous: true,
@@ -839,7 +973,7 @@ export const api = {
   /** POST /orders/{id}/confirm - pay for a held basket. */
   confirmHold(
     orderID: string,
-    input: { buyer_name: string; buyer_email: string },
+    input: { buyer_name: string; buyer_email: string; promo_code?: string },
   ): Promise<CheckoutResult> {
     return request<CheckoutResult>(`/orders/${orderID}/confirm`, {
       method: "POST",
