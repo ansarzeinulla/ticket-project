@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import type { ReactNode } from "react";
 
+import { AnalyticsScripts } from "@/components/analytics-scripts";
 import { AuthProvider } from "@/lib/auth-context";
 import { getLocale } from "@/lib/i18n/server";
 import { I18nProvider } from "@/lib/i18n/context";
@@ -41,6 +42,8 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         <I18nProvider locale={locale}>
           <AuthProvider>{children}</AuthProvider>
         </I18nProvider>
+        {/* Renders nothing unless a measurement id is configured. */}
+        <AnalyticsScripts />
       </body>
     </html>
   );

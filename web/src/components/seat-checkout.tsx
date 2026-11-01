@@ -6,6 +6,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { TextField } from "@/components/ui/field";
+import { toAnalyticsValue, trackPurchase } from "@/lib/analytics";
 import { ApiError, api } from "@/lib/api";
 import { formatKZT } from "@/lib/money";
 import type { Hold } from "@/lib/types";
@@ -20,10 +21,12 @@ import type { Hold } from "@/lib/types";
  */
 export function SeatCheckout({
   orderID,
+  eventSlug,
   onExpired,
   onCancelled,
 }: {
   orderID: string;
+  eventSlug: string;
   /** The hold ran out; the caller puts the seat map back. */
   onExpired: () => void;
   onCancelled: () => void;
@@ -81,6 +84,13 @@ export function SeatCheckout({
       const result = await api.confirmHold(orderID, {
         buyer_name: name.trim(),
         buyer_email: email.trim(),
+      });
+
+      trackPurchase({
+        slug: eventSlug,
+        valueKZT: toAnalyticsValue(result.order.total_kzt),
+        tickets: result.tickets.length,
+        discounted: toAnalyticsValue(result.order.discount_kzt) > 0,
       });
 
       router.push(`/orders/${result.order.id}`);

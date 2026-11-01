@@ -7,6 +7,7 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { TextField } from "@/components/ui/field";
 import { ApiError, api } from "@/lib/api";
+import { toAnalyticsValue, trackPurchase } from "@/lib/analytics";
 import { useT } from "@/lib/i18n/context";
 import { formatKZT, formatTiyn, lineTotal, toTiyn } from "@/lib/money";
 import type { PromoPreview, TicketType } from "@/lib/types";
@@ -24,6 +25,7 @@ interface Line {
  */
 export function CheckoutDialog({
   eventID,
+  eventSlug,
   eventTitle,
   lines,
   totalTiyn,
@@ -34,6 +36,8 @@ export function CheckoutDialog({
   onPromoRejected,
 }: {
   eventID: string;
+  /** Analytics label only - a slug identifies an event, not a person. */
+  eventSlug: string;
   eventTitle: string;
   lines: Line[];
   totalTiyn: number;
@@ -90,6 +94,15 @@ export function CheckoutDialog({
         })),
         // The code travels, never the discount: the server prices it again.
         ...(promo ? { promo_code: promo.code } : campaignToken ? { campaign_token: campaignToken } : {}),
+      });
+
+      // The completed purchase (bonus). No order id and no buyer - a value,
+      // a count, and whether a discount was involved.
+      trackPurchase({
+        slug: eventSlug,
+        valueKZT: toAnalyticsValue(result.order.total_kzt),
+        tickets: result.tickets.length,
+        discounted: toAnalyticsValue(result.order.discount_kzt) > 0,
       });
 
       // The confirmation lives at its own URL, so it survives a refresh and can
