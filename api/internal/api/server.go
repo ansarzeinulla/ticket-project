@@ -26,6 +26,7 @@ type Server struct {
 	tickets     *store.TicketStore
 	checkIns    *store.CheckInStore
 	staff       *store.StaffStore
+	campaigns   *store.CampaignStore
 	support     *store.SupportStore
 	checkout    *store.CheckoutStore
 	audit       *store.AuditStore
@@ -68,6 +69,7 @@ func NewWithSender(cfg config.Config, pool *pgxpool.Pool, sender email.Sender) *
 		tickets:     store.NewTicketStore(pool),
 		checkIns:    store.NewCheckInStore(pool),
 		staff:       store.NewStaffStore(pool),
+		campaigns:   store.NewCampaignStore(pool),
 		support:     store.NewSupportStore(pool),
 		checkout: store.NewCheckoutStoreWithFees(pool, store.Fees{
 			Percent:  cfg.ProcessingFeePercent,
@@ -215,6 +217,19 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/tickets/{id}", s.handleGetTicket)
 	mux.HandleFunc("GET /api/v1/tickets/{id}/pdf", s.handleTicketPDF)
 	mux.HandleFunc("GET /api/v1/tickets/{id}/qr.png", s.handleTicketQR)
+
+	// --- promotional campaigns ----------------------------------------------
+	mux.HandleFunc("GET /api/v1/events/{id}/campaigns", s.requireAuth(s.handleListCampaigns))
+	mux.HandleFunc("POST /api/v1/events/{id}/campaigns", s.requireAuth(s.handleCreateCampaign))
+	mux.HandleFunc("PATCH /api/v1/campaigns/{id}", s.requireAuth(s.handleSetCampaignStatus))
+	mux.HandleFunc("DELETE /api/v1/campaigns/{id}", s.requireAuth(s.handleDeleteCampaign))
+	// The campaign QR image is public, like the ticket QR: an <img> tag cannot
+	// send a bearer header, and a code destined for a poster has nothing to
+	// hide. Managing campaigns still requires the organizer's token.
+	mux.HandleFunc("GET /api/v1/campaigns/{id}/qr.png", s.handleCampaignQR)
+
+	// Attendee-facing: price a promo code against a basket before paying.
+	mux.HandleFunc("POST /api/v1/events/{id}/promo/preview", s.optionalAuth(s.handlePromoPreview))
 
 	// --- check-in (the scanner app) -----------------------------------------
 	// "/events/scannable" is a literal segment, so ServeMux prefers it over
