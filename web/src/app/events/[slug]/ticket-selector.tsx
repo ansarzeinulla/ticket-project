@@ -7,12 +7,14 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { CheckoutDialog } from "@/components/checkout-dialog";
 import { PromoBox } from "@/components/promo-box";
+import { trackBeginCheckout } from "@/lib/analytics";
 import { useT } from "@/lib/i18n/context";
 import { formatKZT, formatTiyn, toTiyn } from "@/lib/money";
 import type { PromoPreview, TicketType } from "@/lib/types";
 
 export function TicketSelector({
   eventID,
+  eventSlug,
   eventTitle,
   ticketTypes,
   onSale,
@@ -20,6 +22,8 @@ export function TicketSelector({
   campaignToken,
 }: {
   eventID: string;
+  /** Used as the analytics label: a slug identifies an event, not a person. */
+  eventSlug: string;
   eventTitle: string;
   ticketTypes: TicketType[];
   onSale: boolean;
@@ -178,7 +182,16 @@ export function TicketSelector({
 
         <Button
           disabled={!onSale || totalTickets === 0}
-          onClick={() => setCheckoutOpen(true)}
+          onClick={() => {
+            // The top of the funnel (bonus). A price and a count - no buyer.
+            trackBeginCheckout({
+              slug: eventSlug,
+              valueKZT: totalTiyn / 100,
+              tickets: totalTickets,
+              viaCampaignQR: Boolean(campaignToken),
+            });
+            setCheckoutOpen(true);
+          }}
         >
           {t("tickets.getTickets")}
         </Button>
@@ -195,6 +208,7 @@ export function TicketSelector({
       {checkoutOpen && (
         <CheckoutDialog
           eventID={eventID}
+          eventSlug={eventSlug}
           eventTitle={eventTitle}
           lines={selected}
           totalTiyn={totalTiyn}

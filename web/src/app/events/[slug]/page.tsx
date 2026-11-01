@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
+import { EventAnalyticsTracker } from "@/components/event-analytics-tracker";
 import { SeatedPurchase } from "@/components/seated-purchase";
 import { ApiError, api } from "@/lib/api";
 import { formatInTimezone } from "@/lib/datetime";
@@ -53,6 +54,16 @@ export default async function PublicEventPage({
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-10 sm:px-6">
+      {/*
+        Reports the view, and separately whether it arrived through a campaign
+        QR (bonus). No token is sent - only the fact that one was present.
+      */}
+      <EventAnalyticsTracker
+        slug={event.slug}
+        category={event.category}
+        viaCampaignQR={Boolean(campaignToken)}
+      />
+
       <article className="space-y-8">
         {event.cover_image_url && (
           <figure>
@@ -156,13 +167,14 @@ export default async function PublicEventPage({
         */}
         {!suspended && !(paidSalesPending && !hasFreeTier) &&
           event.seating_mode === "assigned_seating" && (
-            <SeatedPurchase eventID={event.id} />
+            <SeatedPurchase eventID={event.id} eventSlug={event.slug} />
           )}
 
         {!suspended && !(paidSalesPending && !hasFreeTier) &&
           event.seating_mode !== "assigned_seating" && (
           <TicketSelector
             eventID={event.id}
+            eventSlug={event.slug}
             eventTitle={event.title}
             /*
               While activation is outstanding the paid tiers are not offered.
