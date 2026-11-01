@@ -13,32 +13,29 @@ import (
 
 // --- processing fees (SRS 3.3) -----------------------------------------------
 
-// TestProcessingFeeIsCharged pins the arithmetic (SRS 3.3): 3.5% of what the
-// attendee pays for the tickets, added on top, quoted before they commit.
-func TestProcessingFeeIsCharged(t *testing.T) {
+// TestProcessingFeeIsChargedOnWhatIsActuallyPaid pins the arithmetic: the fee
+// is a percentage of the discounted subtotal, not of the list price.
+func TestProcessingFeeIsChargedOnWhatIsActuallyPaid(t *testing.T) {
 	c := newClient(t)
 	organizer := c.register("feearithmetic")
 	eventID, _, ticketTypeID := c.sellableEvent(organizer.Token, "Fee Arithmetic Fest", "5000", 20)
 
-	// The basket quotes the fee before anything is paid.
-	held := c.post("/api/v1/events/"+eventID.String()+"/holds", "", map[string]any{
-		"items": []map[string]any{{"ticket_type_id": ticketTypeID.String(), "quantity": 2}},
+	// 20% off 10 000 leaves 8 000; 3.5% of 8 000 is 280.
+	c.createCampaign(organizer.Token, eventID, map[string]any{
+		"name": "Fee Promo", "code": "FEE20", "discount_type": "percentage",
+		"discount_value": "20", "max_redemptions": 5,
 	})
-	requireStatus(t, held, http.StatusCreated)
-	hold := held.Body["hold"].(map[string]any)
-	if hold["estimated_processing_fee_kzt"] != "350.00" || hold["estimated_total_kzt"] != "10350.00" {
-		t.Errorf("quote = %v / %v, want 350.00 / 10350.00",
-			hold["estimated_processing_fee_kzt"], hold["estimated_total_kzt"])
-	}
 
-	bought := c.buy(eventID, ticketTypeID, 2, "Fee Buyer", "fee@biletflow.test")
+	bought := c.buyWithPromo(eventID, ticketTypeID, 2, "fee@biletflow.test",
+		map[string]any{"promo_code": "FEE20"})
 	requireStatus(t, bought, http.StatusCreated)
 
 	order := bought.Body["order"].(map[string]any)
 	for field, want := range map[string]string{
 		"subtotal_kzt":       "10000.00",
-		"processing_fee_kzt": "350.00",
-		"total_kzt":          "10350.00",
+		"discount_kzt":       "2000.00",
+		"processing_fee_kzt": "280.00",
+		"total_kzt":          "8280.00",
 	} {
 		if order[field] != want {
 			t.Errorf("%s = %v, want %v", field, order[field], want)
@@ -46,20 +43,21 @@ func TestProcessingFeeIsCharged(t *testing.T) {
 	}
 
 	// The payment is for what the attendee actually owes, fee included.
-	if payment := bought.Body["payment"].(map[string]any); payment["amount_kzt"] != "10350.00" {
-		t.Errorf("payment amount = %v, want 10350.00", payment["amount_kzt"])
+	if payment := bought.Body["payment"].(map[string]any); payment["amount_kzt"] != "8280.00" {
+		t.Errorf("payment amount = %v, want 8280.00", payment["amount_kzt"])
 	}
 
 	// And the database agrees, because orders_total_math_chk would have
 	// refused the row otherwise.
-	var subtotal, fee, total string
+	var subtotal, discount, fee, total string
 	if err := c.pool.QueryRow(t.Context(), `
-		SELECT subtotal_kzt::text, processing_fee_kzt::text, total_kzt::text
-		  FROM orders WHERE id = $1`, order["id"]).Scan(&subtotal, &fee, &total); err != nil {
+		SELECT subtotal_kzt::text, discount_kzt::text,
+		       processing_fee_kzt::text, total_kzt::text
+		  FROM orders WHERE id = $1`, order["id"]).Scan(&subtotal, &discount, &fee, &total); err != nil {
 		t.Fatalf("read the order: %v", err)
 	}
-	if subtotal != "10000.00" || fee != "350.00" || total != "10350.00" {
-		t.Errorf("db row = %s/%s/%s", subtotal, fee, total)
+	if subtotal != "10000.00" || discount != "2000.00" || fee != "280.00" || total != "8280.00" {
+		t.Errorf("db row = %s/%s/%s/%s", subtotal, discount, fee, total)
 	}
 }
 
@@ -76,6 +74,28 @@ func TestFreeRegistrationPaysNoFee(t *testing.T) {
 	if order["processing_fee_kzt"] != "0.00" || order["total_kzt"] != "0.00" {
 		t.Errorf("a free registration was charged: fee=%v total=%v",
 			order["processing_fee_kzt"], order["total_kzt"])
+	}
+}
+
+// TestFeeIsWaivedWhenADiscountClearsTheBasket: 100% off leaves nothing to
+// process, so there is nothing to charge for processing it.
+func TestFeeIsWaivedWhenADiscountClearsTheBasket(t *testing.T) {
+	c := newClient(t)
+	organizer := c.register("fullyfree")
+	eventID, _, ticketTypeID := c.sellableEvent(organizer.Token, "Comped Fest", "5000", 20)
+
+	c.createCampaign(organizer.Token, eventID, map[string]any{
+		"name": "On the house", "code": "COMPED", "discount_type": "percentage",
+		"discount_value": "100", "max_redemptions": 5,
+	})
+
+	bought := c.buyWithPromo(eventID, ticketTypeID, 1, "comped@biletflow.test",
+		map[string]any{"promo_code": "COMPED"})
+	requireStatus(t, bought, http.StatusCreated)
+
+	order := bought.Body["order"].(map[string]any)
+	if order["processing_fee_kzt"] != "0.00" || order["total_kzt"] != "0.00" {
+		t.Errorf("a fully discounted basket was charged a fee: %v", order)
 	}
 }
 

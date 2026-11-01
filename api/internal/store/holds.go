@@ -41,8 +41,9 @@ type Hold struct {
 	// SecondsRemaining is what a countdown renders. Computed rather than left
 	// to the client, whose clock may be anywhere.
 	SecondsRemaining int `json:"seconds_remaining"`
-	// EstimatedFeeKZT and EstimatedTotalKZT price the basket, so an attendee
-	// sees what they will pay before committing (SRS 4.3.1).
+	// EstimatedFeeKZT and EstimatedTotalKZT price the basket before a promo
+	// code is applied, so an attendee sees what they will pay before
+	// committing (SRS 4.3.1).
 	EstimatedFeeKZT   string `json:"estimated_processing_fee_kzt"`
 	EstimatedTotalKZT string `json:"estimated_total_kzt"`
 }
@@ -237,6 +238,7 @@ type ConfirmParams struct {
 	BuyerName   string
 	BuyerEmail  string
 	BuyerPhone  *string
+	Promo       *Campaign
 }
 
 // Confirm pays for a held basket and issues its tickets.
@@ -377,7 +379,14 @@ func (s *CheckoutStore) confirm(
 		}
 	}
 
-	// --- 5. The processing charge (SRS 3.3) ---------------------------------
+	// --- 5. The discount, decided entirely by the server --------------------
+	applied, err := applyPromo(ctx, tx, p.Promo, p.OrderID, p.BuyerUserID)
+	if err != nil {
+		return CheckoutResult{}, err
+	}
+
+	// --- 6. The processing charge (SRS 3.3) ---------------------------------
+	// After the discount, because a fee is charged on what is actually paid.
 	if err := chargeFee(ctx, tx, p.OrderID, s.fees); err != nil {
 		return CheckoutResult{}, err
 	}
@@ -395,8 +404,11 @@ func (s *CheckoutStore) confirm(
 	if err != nil {
 		return CheckoutResult{}, mapError(err)
 	}
+	if applied != nil {
+		applied.DiscountKZT = order.DiscountKZT
+	}
 
-	// --- 6. The attendee and their tickets ----------------------------------
+	// --- 7. The attendee and their tickets ----------------------------------
 	attendee, tickets, err := issueTickets(ctx, tx, order, items)
 	if err != nil {
 		return CheckoutResult{}, err
@@ -409,13 +421,13 @@ func (s *CheckoutStore) confirm(
 		return CheckoutResult{}, mapError(err)
 	}
 
-	// --- 7. The simulated payment -------------------------------------------
+	// --- 8. The simulated payment -------------------------------------------
 	payment, err := recordPayment(ctx, tx, order, now)
 	if err != nil {
 		return CheckoutResult{}, err
 	}
 
-	// --- 8. Timeline entry ---------------------------------------------------
+	// --- 9. Timeline entry ---------------------------------------------------
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO audit_logs (event_id, actor_user_id, action, entity_type, entity_id,
 		                        description, metadata)
@@ -430,7 +442,7 @@ func (s *CheckoutStore) confirm(
 
 	return CheckoutResult{
 		Order: order, Items: items, Attendee: attendee,
-		Tickets: tickets, Payment: payment,
+		Tickets: tickets, Payment: payment, Promo: applied,
 	}, nil
 }
 

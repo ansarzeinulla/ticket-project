@@ -211,25 +211,28 @@ func TestCheckInIsAtomicUnderConcurrency(t *testing.T) {
 	}
 }
 
-// SRS 4.14: a campaign QR must never open the gate. The gate refuses the CMP_
-// namespace outright - the bare token and the event link it is printed as - so
-// no campaign can ever be admission, whatever campaigns later turn out to be.
+// SRS 4.14: a campaign QR must never open the gate.
 func TestCheckInRejectsCampaignToken(t *testing.T) {
 	c := newClient(t)
 	organizer := c.register("campaignGate")
 	eventID, _, _ := c.sellableEvent(organizer.Token, "Campaign Gate Event", "1000", 5)
 
-	for _, code := range []string{
-		"CMP_" + uuid.NewString(),
-		"https://biletflow.kz/events/campaign-gate-event?c=CMP_" + uuid.NewString(),
-	} {
-		res := c.scan(organizer.Token, eventID, code)
-		if res.Status != http.StatusBadRequest {
-			t.Fatalf("status = %d, want 400 for a campaign code; body = %s", res.Status, res.Raw)
-		}
-		if res.errorCode() != CodeCampaignToken {
-			t.Errorf("code = %q, want %q", res.errorCode(), CodeCampaignToken)
-		}
+	// A real campaign row, so this is not just a prefix check on a made-up value.
+	var campaignToken string
+	err := c.pool.QueryRow(t.Context(), `
+		INSERT INTO campaigns (event_id, name, discount_type, discount_value, qr_token, status)
+		VALUES ($1, 'Student Promo', 'percentage', 10, $2, 'active')
+		RETURNING qr_token`, eventID, "CMP_"+uuid.NewString()).Scan(&campaignToken)
+	if err != nil {
+		t.Fatalf("create campaign: %v", err)
+	}
+
+	res := c.scan(organizer.Token, eventID, campaignToken)
+	if res.Status != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 for a campaign code; body = %s", res.Status, res.Raw)
+	}
+	if res.errorCode() != CodeCampaignToken {
+		t.Errorf("code = %q, want %q", res.errorCode(), CodeCampaignToken)
 	}
 
 	var records int

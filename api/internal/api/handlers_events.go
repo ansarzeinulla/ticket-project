@@ -288,9 +288,25 @@ func (s *Server) handleListMyEvents(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// SRS 4.16 groups an organizer's history as Upcoming, Active, Completed and
+	// Cancelled. Those are derived from the event's dates rather than stored, so
+	// the filter is applied to the rows that come back rather than in SQL.
+	lifecycle := r.URL.Query().Get("lifecycle")
+	if lifecycle != "" && !validLifecycles[lifecycle] {
+		errs.add("lifecycle", "Must be upcoming, active, completed, cancelled, draft or suspended.")
+	}
+
 	if errs.any() {
 		httpx.WriteValidationError(w, errs)
 		return
+	}
+
+	if lifecycle != "" {
+		// The narrowing happens after the query, so the page has to be fetched
+		// whole first. An organizer's own event list is small enough that this
+		// is honest rather than clever.
+		filter.Limit = maxPageSize
+		filter.Offset = 0
 	}
 
 	events, total, err := s.events.List(r.Context(), filter)
@@ -299,9 +315,26 @@ func (s *Server) handleListMyEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if lifecycle != "" {
+		matching := make([]store.Event, 0, len(events))
+		for _, event := range events {
+			if event.LifecycleStage == lifecycle {
+				matching = append(matching, event)
+			}
+		}
+		events = matching
+		total = len(events)
+	}
+
 	httpx.WriteJSON(w, http.StatusOK, eventListResponse{
 		Events: events, Total: total, Limit: limit, Offset: offset,
 	})
+}
+
+// validLifecycles are the groupings the organizer's history view offers.
+var validLifecycles = map[string]bool{
+	"upcoming": true, "active": true, "completed": true,
+	"cancelled": true, "draft": true, "suspended": true,
 }
 
 // updateEventRequest carries PATCH fields. Absent keys are left unchanged;
