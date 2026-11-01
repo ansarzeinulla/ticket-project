@@ -6,8 +6,10 @@ import { useMemo, useState } from "react";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { CheckoutDialog } from "@/components/checkout-dialog";
+import { PromoBox } from "@/components/promo-box";
+import { useT } from "@/lib/i18n/context";
 import { formatKZT, formatTiyn, toTiyn } from "@/lib/money";
-import type { TicketType } from "@/lib/types";
+import type { PromoPreview, TicketType } from "@/lib/types";
 
 export function TicketSelector({
   eventID,
@@ -15,16 +17,21 @@ export function TicketSelector({
   ticketTypes,
   onSale,
   soldOut,
+  campaignToken,
 }: {
   eventID: string;
   eventTitle: string;
   ticketTypes: TicketType[];
   onSale: boolean;
   soldOut: boolean;
+  /** Present when the attendee arrived through a campaign QR or link. */
+  campaignToken?: string;
 }) {
   const router = useRouter();
+  const t = useT();
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [promo, setPromo] = useState<PromoPreview | null>(null);
 
   const selected = useMemo(
     () =>
@@ -48,15 +55,24 @@ export function TicketSelector({
   function setQuantity(type: TicketType, next: number) {
     const clamped = Math.max(0, Math.min(next, limitFor(type)));
 
-    setQuantities((current) => ({ ...current, [type.id]: clamped }));
+    setQuantities((current) => {
+      const updated = { ...current, [type.id]: clamped };
+
+      // A discount priced against a basket means nothing once the basket is
+      // empty, so it is dropped here - in the handler that emptied it.
+      const anyLeft = Object.values(updated).some((quantity) => quantity > 0);
+      if (!anyLeft) setPromo(null);
+
+      return updated;
+    });
   }
 
   if (ticketTypes.length === 0) {
     return (
       <section className="rounded-xl border border-border-subtle bg-surface p-6">
-        <h2 className="text-lg font-semibold tracking-tight">Tickets</h2>
+        <h2 className="text-lg font-semibold tracking-tight">{t("tickets.heading")}</h2>
         <p className="mt-2 text-sm text-foreground-muted">
-          The organizer has not published any ticket types for this event yet.
+          {t("tickets.none")}
         </p>
       </section>
     );
@@ -64,16 +80,16 @@ export function TicketSelector({
 
   return (
     <section className="space-y-4">
-      <h2 className="text-lg font-semibold tracking-tight">Tickets</h2>
+      <h2 className="text-lg font-semibold tracking-tight">{t("tickets.heading")}</h2>
 
       {soldOut && (
-        <Alert tone="info" title={"Sold out"}>
-          Every ticket for this event has been taken.
+        <Alert tone="info" title={t("tickets.soldOutTitle")}>
+          {t("tickets.soldOutBody")}
         </Alert>
       )}
       {!onSale && !soldOut && (
-        <Alert tone="info" title={"Not on sale"}>
-          Tickets for this event are not currently available.
+        <Alert tone="info" title={t("tickets.notOnSaleTitle")}>
+          {t("tickets.notOnSaleBody")}
         </Alert>
       )}
 
@@ -93,7 +109,7 @@ export function TicketSelector({
                   <h3 className="font-medium">{type.name}</h3>
                   {type.is_free && (
                     <span className="rounded-full bg-brand-soft px-2 py-0.5 text-xs font-medium text-brand-strong">
-                      Free
+                      {t("tickets.free")}
                     </span>
                   )}
                 </div>
@@ -108,8 +124,11 @@ export function TicketSelector({
                     }`}
                   >
                     {exhausted
-                      ? "Sold out"
-                      : `${type.quantity_remaining} of ${type.quantity_total} left`}
+                      ? t("tickets.soldOutShort")
+                      : t("tickets.remaining", {
+                          remaining: type.quantity_remaining,
+                          total: type.quantity_total,
+                        })}
                   </span>
                 </p>
               </div>
@@ -118,7 +137,7 @@ export function TicketSelector({
                 <Button
                   size="sm"
                   variant="secondary"
-                  aria-label={`Remove one ${type.name}`}
+                  aria-label={t("tickets.removeOne", { name: type.name })}
                   disabled={!onSale || quantity === 0}
                   onClick={() => setQuantity(type, quantity - 1)}
                 >
@@ -133,7 +152,7 @@ export function TicketSelector({
                 <Button
                   size="sm"
                   variant="secondary"
-                  aria-label={`Add one ${type.name}`}
+                  aria-label={t("tickets.addOne", { name: type.name })}
                   disabled={!onSale || quantity >= limit}
                   onClick={() => setQuantity(type, quantity + 1)}
                 >
@@ -149,10 +168,10 @@ export function TicketSelector({
         <div>
           <p className="text-xs text-foreground-muted">
             {totalTickets === 0
-              ? "No tickets selected"
+              ? t("tickets.noneSelected")
               : totalTickets === 1
-                ? `${totalTickets} ticket`
-                : `${totalTickets} tickets`}
+                ? t("tickets.countOne", { count: totalTickets })
+                : t("tickets.countMany", { count: totalTickets })}
           </p>
           <p className="text-xl font-semibold tabular-nums">{formatTiyn(totalTiyn)}</p>
         </div>
@@ -161,9 +180,17 @@ export function TicketSelector({
           disabled={!onSale || totalTickets === 0}
           onClick={() => setCheckoutOpen(true)}
         >
-          Get tickets
+          {t("tickets.getTickets")}
         </Button>
       </div>
+
+      <PromoBox
+        eventID={eventID}
+        campaignToken={campaignToken}
+        lines={selected}
+        promo={promo}
+        onChange={setPromo}
+      />
 
       {checkoutOpen && (
         <CheckoutDialog
@@ -171,12 +198,15 @@ export function TicketSelector({
           eventTitle={eventTitle}
           lines={selected}
           totalTiyn={totalTiyn}
+          promo={promo}
+          campaignToken={campaignToken}
           onClose={() => setCheckoutOpen(false)}
           onSoldOut={() => {
             // Stock moved under us: pull fresh counts from the server.
             setQuantities({});
             router.refresh();
           }}
+          onPromoRejected={() => setPromo(null)}
         />
       )}
     </section>

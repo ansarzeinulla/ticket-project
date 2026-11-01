@@ -65,8 +65,12 @@ export interface BiletEvent {
   refund_policy?: string;
   published_at?: string;
   cancelled_at?: string;
+  /** Set when this event was created by duplicating another (SRS 4.16). */
+  duplicated_from_event_id?: string;
   created_at: string;
   updated_at: string;
+  /** Derived server-side: Upcoming / Active / Completed / Cancelled (SRS 4.16). */
+  lifecycle: Lifecycle;
 }
 
 /** POST /auth/register and POST /auth/login both return this. */
@@ -235,6 +239,7 @@ export interface CheckoutResult {
   attendee?: OrderAttendee;
   tickets: IssuedTicket[];
   payment?: OrderPayment;
+  promo?: AppliedPromo;
 }
 
 export interface CreateTicketTypeInput {
@@ -253,6 +258,72 @@ export interface CheckoutInput {
   buyer_email: string;
   buyer_phone?: string;
   items: { ticket_type_id: string; quantity: number }[];
+  /** A typed code, or the opaque token from a scanned campaign QR. */
+  promo_code?: string;
+  campaign_token?: string;
+}
+
+export type DiscountType = "percentage" | "fixed_amount";
+export type CampaignStatus = "draft" | "active" | "disabled" | "exhausted" | "expired";
+
+export interface Campaign {
+  id: string;
+  event_id: string;
+  name: string;
+  code: string;
+  promo_code_id: string;
+  code_is_active: boolean;
+  discount_type: DiscountType;
+  discount_value: Money;
+  starts_at?: string;
+  ends_at?: string;
+  max_redemptions?: number;
+  redemption_count: number;
+  status: CampaignStatus;
+  /** Always prefixed CMP_. Opaque: it never encodes the discount itself. */
+  qr_token: string;
+  ticket_type_ids: string[];
+  /** The trackable event link the QR encodes. */
+  campaign_url: string;
+  qr_image_url: string;
+  remaining: number;
+  orders_count: number;
+  tickets_sold: number;
+  gross_revenue_kzt: Money;
+  discount_given_kzt: Money;
+  created_at: string;
+}
+
+export interface CreateCampaignInput {
+  name: string;
+  code: string;
+  discount_type: DiscountType;
+  discount_value: Money;
+  max_redemptions?: number;
+  starts_at?: string;
+  ends_at?: string;
+  ticket_type_ids?: string[];
+}
+
+/** What the checkout shows once a promo code has been priced by the server. */
+export interface PromoPreview {
+  code: string;
+  campaign_id: string;
+  campaign_name: string;
+  discount_type: DiscountType;
+  discount_value: Money;
+  subtotal_kzt: Money;
+  discount_kzt: Money;
+  total_kzt: Money;
+  remaining: number;
+  applies_to_all: boolean;
+}
+
+export interface AppliedPromo {
+  campaign_id: string;
+  campaign_name: string;
+  code: string;
+  discount_kzt: Money;
 }
 
 export type SupportStatus = "open" | "in_progress" | "waiting_for_customer" | "resolved";
@@ -316,6 +387,73 @@ export type Lifecycle =
   | "draft"
   | "suspended";
 
+export interface TicketTypeSales {
+  ticket_type_id: string;
+  name: string;
+  price_kzt: Money;
+  quantity_total: number;
+  sold: number;
+  remaining: number;
+  checked_in: number;
+  revenue_kzt: Money;
+}
+
+export interface CampaignSales {
+  campaign_id: string;
+  name: string;
+  code: string;
+  redemptions: number;
+  tickets_sold: number;
+  revenue_kzt: Money;
+  discount_kzt: Money;
+}
+
+export interface SalesPoint {
+  day: string;
+  orders: number;
+  tickets: number;
+  revenue_kzt: Money;
+}
+
+/** Every figure here is computed by PostgreSQL from the authoritative rows. */
+export interface EventAnalytics {
+  event_id: string;
+  total_capacity: number;
+  tickets_sold: number;
+  tickets_remaining: number;
+  tickets_refunded: number;
+  percentage_sold: number;
+  gross_revenue_kzt: Money;
+  discounts_kzt: Money;
+  refunds_kzt: Money;
+  net_revenue_kzt: Money;
+  orders_count: number;
+  checked_in: number;
+  absent: number;
+  check_in_percentage: number;
+  by_ticket_type: TicketTypeSales[];
+  by_campaign: CampaignSales[];
+  sales_over_time: SalesPoint[];
+}
+
+export interface AnalyticsResponse {
+  analytics: EventAnalytics;
+  event: BiletEvent;
+}
+
+export interface TimelineEntry {
+  id: number;
+  event_id?: string;
+  actor_user_id?: string;
+  actor_name?: string;
+  action: string;
+  entity_type: string;
+  entity_id?: string;
+  description?: string;
+  created_at: string;
+}
+
+/** One step of the paid-sales activation checklist (SRS 4.5). */
 export type ActivationStep = "identity" | "payout" | "terms" | "fee";
 
 export type ActivationStatus =
