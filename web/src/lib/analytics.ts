@@ -20,11 +20,9 @@
  * because somebody forgot to configure it.
  */
 
-/** The GA4 measurement id; empty unless one is configured. */
-export const GA4_MEASUREMENT_ID = process.env.NEXT_PUBLIC_GA4_MEASUREMENT_ID ?? "";
+import { analyticsEnabled } from "@/lib/analytics-config";
 
-/** Analytics is off unless a measurement id is configured. */
-export const analyticsEnabled = GA4_MEASUREMENT_ID !== "";
+export { analyticsEnabled, GA4_MEASUREMENT_ID } from "@/lib/analytics-config";
 
 type GtagArgs =
   | ["js", Date]
