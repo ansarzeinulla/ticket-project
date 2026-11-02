@@ -121,11 +121,20 @@ With the three terminals running, the project can be used end to end:
    <http://localhost:3000/admin> searches users, events, orders and payments,
    suspends an event or an account, works through reported events and changes
    platform settings such as the activation fee.
+9. **Campaigns.** On the dashboard the organizer creates a campaign with a
+   promo code and a QR for a poster; the seeded jazz night has `STUDENT15`
+   (15% off). Attendees type the code at checkout or arrive through the QR.
+10. **Analytics.** The event's page shows sales, revenue, fees, refunds and
+    check-ins computed from the orders themselves, by ticket type and by
+    campaign, and the activity timeline of everything that happened to the
+    event. An event can be duplicated into a new draft.
+11. **Languages.** The attendee pages speak Kazakh, Russian and English; the
+    switcher is in the header of `/events`.
 
 What each step must do, and what it must refuse, is written down in `1.md`
 (accounts), `2.md` (events and ticket types), `3.md` (checkout), `4.md`
-(ticket delivery), `5.md` (check-in at the door) and `6.md` (refunds and
-order management).
+(ticket delivery), `5.md` (check-in at the door), `6.md` (refunds and
+order management) and `7.md` (analytics and the activity timeline).
 
 The browser never holds the access token: sign-in goes through the web app's
 own `/api/auth/*` routes, the token lives in an httpOnly cookie, and every API
@@ -140,6 +149,6 @@ The same commands run in CI on every pull request:
 | `make test` | database schema tests |
 | `make api-check` | Go formatting, `go vet`, unit and integration tests (needs `make up`) |
 | `make api-smoke` | cURL acceptance checks against a running API |
-| `make web-check` | ESLint, TypeScript, production build |
+| `make web-check` | ESLint, TypeScript, unit tests, production build |
 | `make scan-check` | TypeScript for the scanner app |
 

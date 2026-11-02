@@ -6,7 +6,7 @@ week by week.
 
 ---
 
-## What exists today (week 6)
+## What exists today (week 7)
 
 Accounts and organizer profiles, events with ticket types, a public event page,
 banner uploads, assigned seating, and a checkout that reserves a basket for 15
@@ -24,6 +24,11 @@ cases from the order page and the organizer answers them. A platform
 administrator searches everything, suspends events, paid sales or accounts,
 reviews reported events and changes platform settings; a declined simulated
 payment answers `402 payment_failed` and issues nothing.
+
+Since week 7: campaigns with promo codes and poster QR codes, priced and capped
+inside the checkout transaction; analytics computed from the operational rows;
+the event's activity timeline; duplicating an event into a new draft; the
+organizer's event list grouped as upcoming, active, completed and cancelled.
 
 ### Layout
 
@@ -86,7 +91,7 @@ make api-run   # the API on :8080
 | `POST` | `/api/v1/auth/password` | Bearer | `204`; needs the current password, closes open reset links |
 | `POST` | `/api/v1/events` | Bearer | `201` a draft; creating an event grants the `organizer` role |
 | `GET` | `/api/v1/events` | – | published public events: `limit`, `offset`, `category`, `q`, `starts_after`, `starts_before` |
-| `GET` | `/api/v1/events/mine` | Bearer | the organizer's own events, drafts included; `status` filter |
+| `GET` | `/api/v1/events/mine` | Bearer | the organizer's own events, drafts included; `status` and `lifecycle` filters |
 | `GET` | `/api/v1/events/{id}` | optional | a draft or private event is visible to its organizer only |
 | `PATCH` | `/api/v1/events/{id}` | Bearer | partial update; an explicit `null` clears a field |
 | `DELETE` | `/api/v1/events/{id}` | Bearer | drafts without orders only |
@@ -99,7 +104,7 @@ make api-run   # the API on :8080
 | `DELETE` | `/api/v1/ticket-types/{id}` | Bearer | only a type with no sales; hide it otherwise |
 | `GET` | `/api/v1/public/events/{slug}` | – | the attendee view: event, on-sale types, `on_sale`, `sold_out` |
 | `POST` | `/api/v1/uploads/images` | Bearer | multipart field `file`; JPEG, PNG, GIF or WebP, 5 MB, at least 200×200 |
-| `POST` | `/api/v1/events/{id}/checkout` | optional | `201` order, tickets and simulated payment; `items` by tier, or `seat_ids` for assigned seating |
+| `POST` | `/api/v1/events/{id}/checkout` | optional | `201` order, tickets and simulated payment; `items` by tier, or `seat_ids` for assigned seating; optional `promo_code` or `campaign_token` |
 | `GET` | `/api/v1/events/{id}/seats` | optional | the seat map of an assigned-seating event, each seat `available`, `held`, `sold` or `unavailable` |
 | `POST` | `/api/v1/events/{id}/holds` | optional | `201` a basket reserved for 15 minutes, with the fee quoted |
 | `GET` | `/api/v1/orders/{id}/hold` | optional | read the basket back; `409 hold_expired` once it has run out |
@@ -137,6 +142,13 @@ make api-run   # the API on :8080
 | `GET` / `PATCH` | `/api/v1/admin/settings` | admin | platform settings, e.g. the activation fee |
 | `GET` | `/api/v1/admin/search` | admin | users, events, orders and payments at once |
 | `GET` | `/api/v1/admin/reports/events.csv` | admin | the per-event report as CSV |
+| `GET` / `POST` | `/api/v1/events/{id}/campaigns` | Bearer | the event's campaigns / create one with a promo code |
+| `PATCH` / `DELETE` | `/api/v1/campaigns/{id}` | Bearer | enable, disable, or delete an unused campaign |
+| `GET` | `/api/v1/campaigns/{id}/qr.png` | – | the campaign QR for a poster; it encodes an event link |
+| `POST` | `/api/v1/events/{id}/promo/preview` | optional | price a code against a basket before paying |
+| `GET` | `/api/v1/events/{id}/analytics` | Bearer | sales, revenue, fees, refunds and check-ins; `from`, `to`, `ticket_type_id` |
+| `GET` | `/api/v1/events/{id}/timeline` | Bearer | the activity history, newest first |
+| `POST` | `/api/v1/events/{id}/duplicate` | Bearer | a new draft with the same setup and no sales |
 
 Every request body must be JSON with `Content-Type: application/json`.
 
