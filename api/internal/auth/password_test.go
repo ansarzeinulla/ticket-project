@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"errors"
 	"strings"
 	"testing"
 
@@ -53,17 +52,43 @@ func TestHashIsSaltedPerCall(t *testing.T) {
 	}
 }
 
-// TestHashRejectsOverlongPassword: bcrypt silently ignores everything past
-// 72 bytes, so two long passwords sharing a prefix would be interchangeable.
-// Refusing them is safer than accepting a password that is not really checked.
-func TestHashRejectsOverlongPassword(t *testing.T) {
+func TestHashAcceptsLongAndMultibytePasswords(t *testing.T) {
 	h := NewHasher(bcrypt.MinCost)
 
-	if _, err := h.Hash(strings.Repeat("a", bcryptMaxPasswordBytes)); err != nil {
-		t.Fatalf("Hash(72 bytes) error = %v, want nil", err)
+	// Pre-hashing removes bcrypt's 72-byte ceiling: a very long password, and a
+	// Cyrillic one that runs well past 72 bytes in UTF-8, both hash and verify.
+	long := strings.Repeat("a", 500)
+	hash, err := h.Hash(long)
+	if err != nil {
+		t.Fatalf("Hash(500 chars) error = %v, want nil", err)
 	}
-	if _, err := h.Hash(strings.Repeat("a", bcryptMaxPasswordBytes+1)); !errors.Is(err, ErrPasswordTooLong) {
-		t.Fatalf("Hash(73 bytes) error = %v, want ErrPasswordTooLong", err)
+	if !h.Verify(hash, long) {
+		t.Error("Verify() rejected a correct 500-character password")
+	}
+
+	cyrillic := strings.Repeat("құпиясөз", 12) // ~192 bytes, 96 runes
+	cyHash, err := h.Hash(cyrillic)
+	if err != nil {
+		t.Fatalf("Hash(cyrillic) error = %v, want nil", err)
+	}
+	if !h.Verify(cyHash, cyrillic) {
+		t.Error("Verify() rejected a correct multi-byte password")
+	}
+}
+
+func TestLongPasswordsStayDistinct(t *testing.T) {
+	h := NewHasher(bcrypt.MinCost)
+
+	// The property the old 72-byte cap protected: two long passwords that share
+	// their first 72 bytes must NOT be interchangeable. Pre-hashing guarantees
+	// it because SHA-256 of the two differs.
+	base := strings.Repeat("a", 72)
+	hash, err := h.Hash(base + "ONE")
+	if err != nil {
+		t.Fatalf("Hash() error = %v", err)
+	}
+	if h.Verify(hash, base+"TWO") {
+		t.Error("two passwords sharing their first 72 bytes verified against each other")
 	}
 }
 
