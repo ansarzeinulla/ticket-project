@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/biletflow/api/internal/api"
 	"github.com/biletflow/api/internal/config"
@@ -50,12 +49,13 @@ func run() error {
 	// Abandoned baskets go back on sale without anybody asking (SRS 4.6).
 	// Tied to the run context, so it stops when the process is shutting down.
 	apiServer.StartHoldSweeper(ctx)
+
 	server := &http.Server{
 		Addr:         cfg.Addr(),
 		Handler:      apiServer.Handler(),
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 30 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		ReadTimeout:  cfg.ReadTimeout,
+		WriteTimeout: cfg.WriteTimeout,
+		IdleTimeout:  cfg.IdleTimeout,
 	}
 
 	serverErr := make(chan error, 1)
@@ -73,13 +73,17 @@ func run() error {
 		slog.Info("shutting down")
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownGrace)
 	defer cancel()
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		return err
 	}
-	// Account emails are sent after the response is written; wait for any still
-	// in flight so a reset link is not lost on shutdown.
+
+	// Notifications are dispatched after their response is written, so a
+	// confirmation can still be in flight when the last request finishes.
+	// Draining the mailer keeps the process alive for it.
 	apiServer.Mailer().Wait()
+
+	slog.Info("shutdown complete")
 	return nil
 }
