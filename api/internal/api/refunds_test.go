@@ -274,18 +274,3 @@ func TestOrganizerSeesTheirOrders(t *testing.T) {
 		t.Errorf("live_tickets = %v after the refund, want 0", refunded["live_tickets"])
 	}
 }
-
-// contains reports whether needle occurs in haystack.
-func contains(haystack, needle string) bool {
-	return len(needle) > 0 && len(haystack) >= len(needle) &&
-		(haystack == needle || indexOf(haystack, needle) >= 0)
-}
-
-func indexOf(haystack, needle string) int {
-	for i := 0; i+len(needle) <= len(haystack); i++ {
-		if haystack[i:i+len(needle)] == needle {
-			return i
-		}
-	}
-	return -1
-}
