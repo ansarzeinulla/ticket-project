@@ -26,6 +26,7 @@ type Server struct {
 	tickets     *store.TicketStore
 	campaigns   *store.CampaignStore
 	checkIns    *store.CheckInStore
+	myOrders    *store.BuyerOrderStore
 	staff       *store.StaffStore
 	support     *store.SupportStore
 	analytics   *store.AnalyticsStore
@@ -70,6 +71,7 @@ func NewWithSender(cfg config.Config, pool *pgxpool.Pool, sender email.Sender) *
 		tickets:     store.NewTicketStore(pool),
 		campaigns:   store.NewCampaignStore(pool),
 		checkIns:    store.NewCheckInStore(pool),
+		myOrders:    store.NewBuyerOrderStore(pool),
 		staff:       store.NewStaffStore(pool),
 		support:     store.NewSupportStore(pool),
 		analytics:   store.NewAnalyticsStore(pool),
@@ -189,6 +191,9 @@ func (s *Server) Handler() http.Handler {
 	// Checkout takes optionalAuth: guests may buy, and a signed-in buyer gets
 	// the order linked to their account.
 	mux.HandleFunc("POST /api/v1/events/{id}/checkout", s.optionalAuth(s.handleCheckout))
+	// SRS 4.9: an attendee's own orders, found through their account rather
+	// than by keeping the emailed link.
+	mux.HandleFunc("GET /api/v1/orders", s.requireAuth(s.handleListMyOrders))
 	mux.HandleFunc("GET /api/v1/orders/{id}", s.optionalAuth(s.handleGetOrder))
 
 	// --- assigned seating (SRS 4.3.1) ---------------------------------------
