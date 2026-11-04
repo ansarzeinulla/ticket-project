@@ -7,13 +7,24 @@ import { EventCard } from "@/components/event-card";
 import { Alert } from "@/components/ui/alert";
 import { Button, Spinner } from "@/components/ui/button";
 import { ApiError, api } from "@/lib/api";
-import type { BiletEvent } from "@/lib/types";
+import type { BiletEvent, Lifecycle } from "@/lib/types";
+
+/** The groupings SRS 4.16 asks the organizer's history to offer. */
+const LIFECYCLE_TABS: { label: string; value: Lifecycle | "" }[] = [
+  { label: "All", value: "" },
+  { label: "Upcoming", value: "upcoming" },
+  { label: "Active", value: "active" },
+  { label: "Completed", value: "completed" },
+  { label: "Cancelled", value: "cancelled" },
+  { label: "Drafts", value: "draft" },
+];
 
 export default function DashboardPage() {
   const [events, setEvents] = useState<BiletEvent[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [lifecycle, setLifecycle] = useState<Lifecycle | "">("");
 
   /**
    * Fetches the organizer's own events. Every state update happens after the
@@ -21,7 +32,10 @@ export default function DashboardPage() {
    */
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
-      const data = await api.listMyEvents({ limit: 100 }, signal);
+      const data = await api.listMyEvents(
+        { limit: 100, ...(lifecycle ? { lifecycle } : {}) },
+        signal,
+      );
       setEvents(data.events);
       setTotal(data.total);
       setError(null);
@@ -31,7 +45,7 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [lifecycle]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -88,6 +102,23 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      <div className="flex flex-wrap gap-1" role="group" aria-label="Filter events">
+        {LIFECYCLE_TABS.map((tab) => (
+          <Button
+            key={tab.label}
+            size="sm"
+            variant={lifecycle === tab.value ? "primary" : "secondary"}
+            onClick={() => {
+              setLoading(true);
+              setLifecycle(tab.value);
+            }}
+            data-testid={`filter-${tab.value || "all"}`}
+          >
+            {tab.label}
+          </Button>
+        ))}
+      </div>
+
       {error && (
         <Alert tone="error" title="Could not load your events">
           {error}
@@ -99,6 +130,10 @@ export default function DashboardPage() {
           <Spinner />
           Fetching your events from the API…
         </div>
+      ) : events.length === 0 && !error && lifecycle ? (
+        <p className="rounded-xl border border-dashed border-border-subtle bg-surface p-10 text-center text-sm text-foreground-muted">
+          No {LIFECYCLE_TABS.find((tab) => tab.value === lifecycle)?.label.toLowerCase()} events.
+        </p>
       ) : events.length === 0 && !error ? (
         <div className="rounded-xl border border-dashed border-border-subtle bg-surface p-12 text-center">
           <h2 className="text-base font-semibold">No events yet</h2>

@@ -53,6 +53,9 @@ export function EventCard({
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="truncate text-base font-semibold">{event.title}</h3>
             <StatusBadge status={event.status} />
+            <span className="rounded-full bg-surface-muted px-2 py-0.5 text-xs capitalize text-foreground-muted">
+              {event.lifecycle}
+            </span>
           </div>
           <p className="mt-1 font-mono text-xs text-foreground-muted">/{event.slug}</p>
         </div>

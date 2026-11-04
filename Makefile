@@ -9,7 +9,7 @@ PSQL     = $(COMPOSE) exec -T db psql -U $(DB_USER) -d $(DB_NAME) -v ON_ERROR_ST
 
 .DEFAULT_GOAL := help
 .PHONY: help up down reset wait psql seed test api-run api-test api-smoke api-check \
-	web-install web-dev web-check scan-install scan-dev scan-check
+	web-install web-dev web-test web-check scan-install scan-dev scan-check
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -66,9 +66,13 @@ web-install: ## Install the web dependencies
 web-dev: ## Run the web app on http://localhost:3000 (needs `make api-run`)
 	cd web && npm run dev
 
-web-check: ## Web: lint, typecheck and production build
+web-test: ## Web: unit tests (money, dates, translations)
+	cd web && npx vitest run
+
+web-check: ## Web: lint, typecheck, unit tests and production build
 	cd web && npm run lint
 	cd web && npm run typecheck
+	cd web && npx vitest run
 	cd web && npm run build
 
 scan-install: ## Install the scanner app dependencies

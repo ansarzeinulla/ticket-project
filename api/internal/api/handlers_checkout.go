@@ -35,6 +35,11 @@ type checkoutRequest struct {
 	BuyerPhone *string               `json:"buyer_phone"`
 	Items      []checkoutItemRequest `json:"items"`
 
+	// Either a typed promo code or the opaque token from a scanned campaign QR.
+	// The discount itself is never accepted from the client (SRS 4.14).
+	PromoCode     string `json:"promo_code"`
+	CampaignToken string `json:"campaign_token"`
+
 	// SeatIDs buys specific seats in one step, for an assigned-seating event
 	// (SRS 4.3.1). When present the tiers are derived from the seats, so
 	// `items` is not needed.
@@ -116,6 +121,19 @@ func (s *Server) handleCheckout(w http.ResponseWriter, r *http.Request) {
 		req.BuyerPhone = nil
 	}
 
+	// --- resolve the promo, if the attendee brought one ---------------------
+	// The basket is described as order items so one helper serves both this
+	// flow and the two-step confirm, which only has stored lines to work from.
+	asLines := make([]store.OrderItem, 0, len(items))
+	for _, item := range items {
+		asLines = append(asLines, store.OrderItem{TicketTypeID: item.TicketTypeID})
+	}
+	promo, ok := s.resolvePromoForBasket(w, r, event.ID, asLines,
+		req.PromoCode, req.CampaignToken)
+	if !ok {
+		return
+	}
+
 	// --- the atomic part -----------------------------------------------------
 	result, err := s.checkout.Checkout(r.Context(), store.CheckoutParams{
 		EventID:     event.ID,
@@ -125,6 +143,7 @@ func (s *Server) handleCheckout(w http.ResponseWriter, r *http.Request) {
 		BuyerPhone:  req.BuyerPhone,
 		Items:       items,
 		SeatIDs:     seatIDs,
+		Promo:       promo,
 	})
 	if err != nil {
 		s.writeCheckoutError(w, r, err)
@@ -232,6 +251,12 @@ func (s *Server) writeCheckoutError(w http.ResponseWriter, r *http.Request, err 
 			"One of the selected ticket types does not belong to this event.")
 
 	default:
+		// A promo can run out between the preview and the payment, so the
+		// checkout path has to report that as precisely as the preview does.
+		if status, code, message := promoErrorCode(err); code != "" {
+			httpx.WriteError(w, status, code, message)
+			return
+		}
 		httpx.WriteInternalError(w, r, err)
 	}
 }
@@ -370,4 +395,37 @@ func mergeCheckoutItems(requested []checkoutItemRequest) ([]store.CheckoutItem, 
 		items = append(items, store.CheckoutItem{TicketTypeID: id, Quantity: merged[id]})
 	}
 	return items, errs
+}
+
+// resolvePromoForBasket validates a promo code against the tiers actually
+// being bought, writing the refusal itself when it does not apply.
+func (s *Server) resolvePromoForBasket(
+	w http.ResponseWriter, r *http.Request, eventID uuid.UUID,
+	items []store.OrderItem, promoCode, campaignToken string,
+) (*store.Campaign, bool) {
+	if blank(promoCode) && blank(campaignToken) {
+		return nil, true
+	}
+
+	campaign, err := s.campaigns.Resolve(r.Context(), store.ResolveParams{
+		EventID: eventID, Code: promoCode, CampaignToken: campaignToken,
+	})
+	if err != nil {
+		s.writePromoError(w, r, err)
+		return nil, false
+	}
+	if usableErr := store.CheckUsable(campaign, s.now()); usableErr != nil {
+		s.writePromoError(w, r, usableErr)
+		return nil, false
+	}
+
+	// A campaign restricted to tiers the buyer did not pick would otherwise
+	// silently discount nothing.
+	for _, item := range items {
+		if campaign.AppliesTo(item.TicketTypeID) {
+			return &campaign, true
+		}
+	}
+	s.writePromoError(w, r, store.ErrPromoNotApplicable)
+	return nil, false
 }

@@ -243,6 +243,13 @@ func TestCancellationIsAudited(t *testing.T) {
 	if !strings.Contains(description, "1 ticket") {
 		t.Errorf("audit description = %q, want the ticket count in it", description)
 	}
+
+	// It shows up on the organizer's timeline (SRS 4.16).
+	timeline := c.get("/api/v1/events/"+eventID.String()+"/timeline", organizer.Token)
+	requireStatus(t, timeline, http.StatusOK)
+	if !strings.Contains(timeline.Raw, "order.cancelled") {
+		t.Errorf("timeline does not mention the cancellation: %s", timeline.Raw)
+	}
 }
 
 // TestCancellationNotifiesTheAttendee - SRS 4.10 lists event/registration

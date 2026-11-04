@@ -14,7 +14,13 @@ import { SeatMapPicker } from "@/components/seat-map";
  * timer is running - and pretending otherwise is how a checkout ends up
  * showing a countdown for seats nobody has claimed.
  */
-export function SeatedPurchase({ eventID }: { eventID: string }) {
+export function SeatedPurchase({
+  eventID,
+  eventSlug,
+}: {
+  eventID: string;
+  eventSlug: string;
+}) {
   const [orderID, setOrderID] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -22,6 +28,7 @@ export function SeatedPurchase({ eventID }: { eventID: string }) {
     return (
       <SeatCheckout
         orderID={orderID}
+        eventSlug={eventSlug}
         onExpired={() => {
           setOrderID(null);
           setNotice(

@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
+import { EventAnalyticsTracker } from "@/components/event-analytics-tracker";
 import { SeatedPurchase } from "@/components/seated-purchase";
 import { ApiError, api } from "@/lib/api";
 import { formatInTimezone } from "@/lib/datetime";
+import { getTranslations } from "@/lib/i18n/server";
 
 import { TicketSelector } from "./ticket-selector";
 
@@ -17,13 +19,22 @@ import { TicketSelector } from "./ticket-selector";
  */
 export default async function PublicEventPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
-  const { slug } = await params;
+  const [{ slug }, query] = await Promise.all([params, searchParams]);
+  const { t } = await getTranslations();
 
   const data = await loadEvent(slug);
   if (!data) notFound();
+
+  // A scanned campaign QR lands here as ?c=CMP_<uuid>. Only the opaque token
+  // travels in the link; what it is worth is decided by the server.
+  const campaignToken = typeof query.c === "string" && query.c.startsWith("CMP_")
+    ? query.c
+    : undefined;
 
   const {
     event,
@@ -43,6 +54,16 @@ export default async function PublicEventPage({
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-10 sm:px-6">
+      {/*
+        Reports the view, and separately whether it arrived through a campaign
+        QR (bonus). No token is sent - only the fact that one was present.
+      */}
+      <EventAnalyticsTracker
+        slug={event.slug}
+        category={event.category}
+        viaCampaignQR={Boolean(campaignToken)}
+      />
+
       <article className="space-y-8">
         {event.cover_image_url && (
           <figure>
@@ -70,17 +91,20 @@ export default async function PublicEventPage({
 
           <dl className="flex flex-wrap gap-x-8 gap-y-3 text-sm">
             <div>
-              <dt className="text-xs text-foreground-muted">When</dt>
+              <dt className="text-xs text-foreground-muted">{t("eventPage.when")}</dt>
               <dd className="mt-0.5 font-medium">
                 {formatInTimezone(event.starts_at, event.timezone)}
               </dd>
               <dd className="text-xs text-foreground-muted">
-                until {formatInTimezone(event.ends_at, event.timezone)} ({event.timezone})
+                {t("eventPage.until", {
+                  time: formatInTimezone(event.ends_at, event.timezone),
+                  tz: event.timezone,
+                })}
               </dd>
             </div>
             {event.venue_name && (
               <div>
-                <dt className="text-xs text-foreground-muted">Where</dt>
+                <dt className="text-xs text-foreground-muted">{t("eventPage.where")}</dt>
                 <dd className="mt-0.5 font-medium">{event.venue_name}</dd>
                 {event.venue_address && (
                   <dd className="text-xs text-foreground-muted">{event.venue_address}</dd>
@@ -96,11 +120,11 @@ export default async function PublicEventPage({
             className="rounded-xl border border-danger/40 bg-danger-soft p-5"
             data-testid="suspended-banner"
           >
-            <h2 className="text-base font-semibold text-danger">Ticket sales suspended</h2>
+            <h2 className="text-base font-semibold text-danger">
+              {t("eventPage.suspendedTitle")}
+            </h2>
             <p className="mt-1 text-sm text-danger/90">
-              BiletFlow has suspended this event pending review, so no new tickets can be
-              bought. Tickets already issued remain valid — if you are holding one, contact
-              the organizer from your order page for the latest information.
+              {t("eventPage.suspendedBody")}
             </p>
           </div>
         )}
@@ -112,13 +136,13 @@ export default async function PublicEventPage({
             data-testid="paid-sales-pending-banner"
           >
             <h2 className="text-base font-semibold text-warning">
-              Paid tickets are not on sale yet
+              {t("eventPage.paidPendingTitle")}
             </h2>
             <p className="mt-1 text-sm text-warning/90">
-              The organizer is still completing BiletFlow&apos;s activation checks for this event.
+              {t("eventPage.paidPendingBody")}
               {hasFreeTier
-                ? " Free tickets below can be booked in the meantime."
-                : " Check back shortly."}
+                ? t("eventPage.paidPendingFree")
+                : t("eventPage.paidPendingCheckBack")}
             </p>
           </div>
         )}
@@ -132,7 +156,8 @@ export default async function PublicEventPage({
         {/*
           With activation outstanding and no free tier there is nothing to
           offer, and the selector's empty state would claim the organizer had
-          published no ticket types - which is untrue. The banner above has
+          published no ticket types - which is untrue and would send them
+          looking for a problem that does not exist. The banner above has
           already explained the real reason.
         */}
         {/*
@@ -141,26 +166,35 @@ export default async function PublicEventPage({
           "+/-" cannot express that (SRS 4.3.1).
         */}
         {!suspended && !(paidSalesPending && !hasFreeTier) &&
-          event.seating_mode === "assigned_seating" && <SeatedPurchase eventID={event.id} />}
+          event.seating_mode === "assigned_seating" && (
+            <SeatedPurchase eventID={event.id} eventSlug={event.slug} />
+          )}
 
         {!suspended && !(paidSalesPending && !hasFreeTier) &&
           event.seating_mode !== "assigned_seating" && (
           <TicketSelector
             eventID={event.id}
+            eventSlug={event.slug}
             eventTitle={event.title}
-            // While activation is outstanding the paid tiers are not offered:
-            // the checkout would refuse them anyway.
+            /*
+              While activation is outstanding the paid tiers are not offered.
+              The checkout would refuse them anyway, and a selector that lets
+              somebody build a basket it will reject is worse than one that
+              shows only what can actually be bought. The banner above explains
+              where the rest went.
+            */
             ticketTypes={
               paidSalesPending ? ticketTypes.filter((type) => type.is_free) : ticketTypes
             }
             onSale={onSale}
             soldOut={soldOut}
+            campaignToken={campaignToken}
           />
         )}
 
         {event.refund_policy && (
           <section className="rounded-xl border border-border-subtle bg-surface p-5">
-            <h2 className="text-sm font-semibold">Refund policy</h2>
+            <h2 className="text-sm font-semibold">{t("eventPage.refundPolicy")}</h2>
             <p className="mt-1 whitespace-pre-line text-sm text-foreground-muted">
               {event.refund_policy}
             </p>

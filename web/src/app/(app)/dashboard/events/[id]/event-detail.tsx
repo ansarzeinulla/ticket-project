@@ -1,34 +1,47 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { ActivationChecklist } from "@/components/activation-checklist";
 import { AttendeeList } from "@/components/attendee-list";
+import { CampaignManager } from "@/components/campaign-manager";
+import { StatsPanel } from "@/components/stats-panel";
+import { EventTimeline } from "@/components/event-timeline";
 import { OrderManager } from "@/components/order-manager";
 import { StaffManager } from "@/components/staff-manager";
 import { SupportInbox } from "@/components/support-inbox";
 import { TicketTypeManager } from "@/components/ticket-type-manager";
 import { Alert } from "@/components/ui/alert";
-import { Spinner } from "@/components/ui/button";
+import { Button, Spinner } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { ApiError, api } from "@/lib/api";
 import { formatInTimezone } from "@/lib/datetime";
-import type { BiletEvent } from "@/lib/types";
+import type { BiletEvent, TicketType } from "@/lib/types";
 
 export function EventDetail({ eventID }: { eventID: string }) {
   // Bumped when something elsewhere on the page changes the figures - a
-  // refund, or paid sales opening - so the panels below re-read rather than
-  // showing numbers the organizer just invalidated.
+  // refund, or paid sales opening - so the analytics panel re-reads rather
+  // than showing numbers the organizer just invalidated.
   const [refreshKey, setRefreshKey] = useState(0);
 
+  const router = useRouter();
+
   const [event, setEvent] = useState<BiletEvent | null>(null);
+  const [ticketTypes, setTicketTypes] = useState<TicketType[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [duplicating, setDuplicating] = useState(false);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
-      setEvent(await api.getEvent(eventID, signal));
+      const [loaded, types] = await Promise.all([
+        api.getEvent(eventID, signal),
+        api.listTicketTypes(eventID, signal),
+      ]);
+      setEvent(loaded);
+      setTicketTypes(types);
       setError(null);
     } catch (cause) {
       if (cause instanceof DOMException && cause.name === "AbortError") return;
@@ -37,6 +50,25 @@ export function EventDetail({ eventID }: { eventID: string }) {
       setLoading(false);
     }
   }, [eventID]);
+
+  /**
+   * Copies the event's setup into a new draft and opens it (SRS 4.16).
+   *
+   * The copy carries the title, description, venue and ticket type definitions;
+   * orders, tickets, check-ins and support cases stay with the original.
+   */
+  async function handleDuplicate() {
+    setDuplicating(true);
+    setError(null);
+    try {
+      const copy = await api.duplicateEvent(eventID);
+      router.push(`/dashboard/events/${copy.id}`);
+      router.refresh();
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.message : "The event could not be duplicated.");
+      setDuplicating(false);
+    }
+  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -69,7 +101,35 @@ export function EventDetail({ eventID }: { eventID: string }) {
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-semibold tracking-tight">{event.title}</h1>
           <StatusBadge status={event.status} />
+          <span className="rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-medium capitalize text-foreground-muted">
+            {event.lifecycle}
+          </span>
+
+          <div className="ml-auto">
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={duplicating}
+              onClick={() => void handleDuplicate()}
+              data-testid="duplicate-event"
+            >
+              Duplicate event
+            </Button>
+          </div>
         </div>
+
+        {event.duplicated_from_event_id && (
+          <p className="mt-2 text-xs text-foreground-muted">
+            Duplicated from{" "}
+            <Link
+              href={`/dashboard/events/${event.duplicated_from_event_id}`}
+              className="text-brand hover:underline"
+            >
+              an earlier event
+            </Link>
+            .
+          </p>
+        )}
 
         <p className="mt-1 font-mono text-xs text-foreground-muted">/{event.slug}</p>
 
@@ -121,15 +181,21 @@ export function EventDetail({ eventID }: { eventID: string }) {
       */}
       <ActivationChecklist eventID={event.id} onActivated={() => setRefreshKey((n) => n + 1)} />
 
+      <StatsPanel
+        key={`analytics-${refreshKey}`}
+        eventID={event.id}
+        ticketTypes={ticketTypes}
+      />
+
       <OrderManager
         eventID={event.id}
         onRefunded={() => setRefreshKey((n) => n + 1)}
       />
 
       {/*
-        Keyed on the refresh counter: a refund returns inventory, so leaving
-        this panel showing the pre-refund "sold" would contradict the order
-        list directly above it.
+        Keyed on the same counter as the analytics: a refund returns inventory,
+        so leaving this panel showing the pre-refund "sold" would contradict
+        the numbers directly above it.
       */}
       <TicketTypeManager key={`types-${refreshKey}`} eventID={event.id} />
 
@@ -137,8 +203,11 @@ export function EventDetail({ eventID }: { eventID: string }) {
 
       <StaffManager eventID={event.id} />
 
+      <CampaignManager eventID={event.id} />
+
       <SupportInbox eventID={event.id} />
 
+      <EventTimeline eventID={event.id} />
     </div>
   );
 }
