@@ -49,16 +49,20 @@ const (
 )
 
 // allowedUploadTypes maps a sniffed content type to the extension it is stored
-// under. Images only: these are event banners (SRS 4.2).
+// under.
+//
+// Images for event banners (SRS 4.2), plus PDF because a support attachment is
+// as often a receipt or a printed ticket as a screenshot (SRS 4.13).
 //
 // The type is detected from the file's own first bytes, not from the
 // Content-Type header or the filename, because both are supplied by the client
 // and neither is evidence of anything.
 var allowedUploadTypes = map[string]string{
-	"image/jpeg": ".jpg",
-	"image/png":  ".png",
-	"image/gif":  ".gif",
-	"image/webp": ".webp",
+	"image/jpeg":      ".jpg",
+	"image/png":       ".png",
+	"image/gif":       ".gif",
+	"image/webp":      ".webp",
+	"application/pdf": ".pdf",
 }
 
 type uploadResponse struct {
@@ -117,7 +121,7 @@ func (s *Server) handleUploadImage(w http.ResponseWriter, r *http.Request) {
 	extension, ok := allowedUploadTypes[mimeType]
 	if !ok {
 		httpx.WriteError(w, http.StatusUnsupportedMediaType, CodeUnsupportedMedia,
-			"Upload a JPEG, PNG, GIF or WebP image.")
+			"Upload a JPEG, PNG, GIF or WebP image, or a PDF.")
 		return
 	}
 
@@ -126,15 +130,18 @@ func (s *Server) handleUploadImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// An image that is too small, too large, or a decompression bomb is refused
-	// here rather than stored and served as a broken banner (SRS 4.2).
-	if msg := checkImageDimensions(file); msg != "" {
-		httpx.WriteError(w, http.StatusUnprocessableEntity, CodeBadImageDimensions, msg)
-		return
-	}
-	if _, err := file.Seek(0, io.SeekStart); err != nil {
-		httpx.WriteInternalError(w, r, err)
-		return
+	// A PDF has no pixel dimensions; every image type does, and an image that is
+	// too small, too large, or a decompression bomb is refused here rather than
+	// stored and served as a broken banner (SRS 4.2).
+	if mimeType != "application/pdf" {
+		if msg := checkImageDimensions(file); msg != "" {
+			httpx.WriteError(w, http.StatusUnprocessableEntity, CodeBadImageDimensions, msg)
+			return
+		}
+		if _, err := file.Seek(0, io.SeekStart); err != nil {
+			httpx.WriteInternalError(w, r, err)
+			return
+		}
 	}
 
 	if err := os.MkdirAll(s.cfg.UploadDir, 0o755); err != nil {
