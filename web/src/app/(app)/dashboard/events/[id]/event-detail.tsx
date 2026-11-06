@@ -7,7 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ActivationChecklist } from "@/components/activation-checklist";
 import { AttendeeList } from "@/components/attendee-list";
 import { CampaignManager } from "@/components/campaign-manager";
-import { StatsPanel } from "@/components/stats-panel";
+import { EventAnalyticsPanel } from "@/components/event-analytics";
 import { EventTimeline } from "@/components/event-timeline";
 import { OrderManager } from "@/components/order-manager";
 import { StaffManager } from "@/components/staff-manager";
@@ -181,7 +181,7 @@ export function EventDetail({ eventID }: { eventID: string }) {
       */}
       <ActivationChecklist eventID={event.id} onActivated={() => setRefreshKey((n) => n + 1)} />
 
-      <StatsPanel
+      <EventAnalyticsPanel
         key={`analytics-${refreshKey}`}
         eventID={event.id}
         ticketTypes={ticketTypes}

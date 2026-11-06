@@ -15,7 +15,7 @@ import type { EventAnalytics, TicketType } from "@/lib/types";
  * rows and rendered exactly as received. Nothing is recalculated here, so what
  * is on screen is what a SQL query against the database would return.
  */
-export function StatsPanel({
+export function EventAnalyticsPanel({
   eventID,
   ticketTypes,
 }: {
