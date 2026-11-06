@@ -643,3 +643,17 @@ func TestDeleteCampaignBlockedAfterRedemption(t *testing.T) {
 	requireErrorCode(t, c.delete("/api/v1/campaigns/"+usedID.String(), organizer.Token),
 		http.StatusConflict, "conflict")
 }
+
+func contains(haystack, needle string) bool {
+	return len(needle) > 0 && len(haystack) >= len(needle) &&
+		(haystack == needle || indexOf(haystack, needle) >= 0)
+}
+
+func indexOf(haystack, needle string) int {
+	for i := 0; i+len(needle) <= len(haystack); i++ {
+		if haystack[i:i+len(needle)] == needle {
+			return i
+		}
+	}
+	return -1
+}
