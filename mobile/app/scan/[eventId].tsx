@@ -12,11 +12,11 @@ import {
   View,
 } from "react-native";
 
-import { ScanResultOverlay, type ScanOutcome } from "../components/ScanResultOverlay";
-import { ApiError, api } from "../lib/api";
-import { useAuth } from "../lib/auth-context";
-import { radius, theme } from "../lib/theme";
-import type { CheckInStats } from "../lib/types";
+import { ScanResultOverlay, type ScanOutcome } from "../../components/ScanResultOverlay";
+import { ApiError, api } from "../../lib/api";
+import { useAuth } from "../../lib/auth-context";
+import { radius, theme } from "../../lib/theme";
+import type { CheckInStats } from "../../lib/types";
 
 /**
  * How long a green result fills the screen before the camera resumes.
