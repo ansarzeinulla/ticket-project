@@ -121,7 +121,7 @@ export default function EventsScreen() {
           return (
             <Pressable
               style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
-              onPress={() => router.push(`/scanner?eventId=${item.id}`)}
+              onPress={() => router.push(`/scan/${item.id}`)}
               testID={`event-${item.id}`}
             >
               <View style={styles.cardHeader}>
@@ -168,6 +168,17 @@ export default function EventsScreen() {
                 >
                   <Text style={styles.secondaryText}>Find by name</Text>
                 </Pressable>
+                {/*
+                  Offline check-in (SRS 4.8): download the roster now, then work
+                  the door with no network at all.
+                */}
+                <Pressable
+                  onPress={() => router.push(`/offline/${item.id}`)}
+                  testID={`offline-${item.id}`}
+                  style={({ pressed }) => [styles.secondary, pressed && styles.cardPressed]}
+                >
+                  <Text style={styles.secondaryText}>Offline mode</Text>
+                </Pressable>
               </View>
             </Pressable>
           );
@@ -179,6 +190,16 @@ export default function EventsScreen() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: theme.bg },
+  secondaryRow: { flexDirection: "row", gap: 10, marginTop: 12 },
+  secondary: {
+    flex: 1,
+    borderColor: theme.border,
+    borderWidth: 1,
+    borderRadius: radius.sm,
+    paddingVertical: 10,
+    alignItems: "center",
+  },
+  secondaryText: { color: theme.brand, fontSize: 14, fontWeight: "600" },
   centered: {
     flex: 1,
     alignItems: "center",
@@ -224,16 +245,6 @@ const styles = StyleSheet.create({
   statLabel: { color: theme.textMuted, fontSize: 11, marginTop: 2 },
   empty: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32, gap: 10 },
   emptyTitle: { color: theme.text, fontSize: 17, fontWeight: "600" },
-  secondaryRow: { flexDirection: "row", gap: 10, marginTop: 12 },
-  secondary: {
-    flex: 1,
-    borderColor: theme.border,
-    borderWidth: 1,
-    borderRadius: radius.sm,
-    paddingVertical: 10,
-    alignItems: "center",
-  },
-  secondaryText: { color: theme.brand, fontSize: 14, fontWeight: "600" },
   errorBox: {
     margin: 16,
     backgroundColor: "#450a0a",

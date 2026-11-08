@@ -24,9 +24,9 @@ type Server struct {
 	events      *store.EventStore
 	ticketTypes *store.TicketTypeStore
 	tickets     *store.TicketStore
+	myOrders    *store.BuyerOrderStore
 	campaigns   *store.CampaignStore
 	checkIns    *store.CheckInStore
-	myOrders    *store.BuyerOrderStore
 	staff       *store.StaffStore
 	support     *store.SupportStore
 	analytics   *store.AnalyticsStore
@@ -45,6 +45,7 @@ type Server struct {
 
 	// Phase 12: account tokens, the admin portal and uploads.
 	seating       *store.SeatingStore
+	offline       *store.OfflineStore
 	accountTokens *store.TokenStore
 	admin         *store.AdminStore
 	attendees     *store.AttendeeStore
@@ -69,9 +70,9 @@ func NewWithSender(cfg config.Config, pool *pgxpool.Pool, sender email.Sender) *
 		events:      store.NewEventStore(pool),
 		ticketTypes: store.NewTicketTypeStore(pool),
 		tickets:     store.NewTicketStore(pool),
+		myOrders:    store.NewBuyerOrderStore(pool),
 		campaigns:   store.NewCampaignStore(pool),
 		checkIns:    store.NewCheckInStore(pool),
-		myOrders:    store.NewBuyerOrderStore(pool),
 		staff:       store.NewStaffStore(pool),
 		support:     store.NewSupportStore(pool),
 		analytics:   store.NewAnalyticsStore(pool),
@@ -88,6 +89,7 @@ func NewWithSender(cfg config.Config, pool *pgxpool.Pool, sender email.Sender) *
 		profiles:      store.NewProfileStore(pool),
 
 		seating:       store.NewSeatingStore(pool),
+		offline:       store.NewOfflineStore(pool),
 		accountTokens: store.NewTokenStore(pool),
 		admin:         store.NewAdminStore(pool),
 		attendees:     store.NewAttendeeStore(pool),
@@ -250,6 +252,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/events/{id}/attendees", s.requireAuth(s.handleSearchAttendees))
 	mux.HandleFunc("POST /api/v1/events/{id}/check-in/manual",
 		s.requireAuth(s.handleManualCheckIn))
+
+	// SRS 4.8: work offline, then reconcile. The roster is the guest list plus
+	// the means to validate it, so it is gated exactly like scanning.
+	mux.HandleFunc("GET /api/v1/events/{id}/roster", s.requireAuth(s.handleEventRoster))
+	mux.HandleFunc("POST /api/v1/events/{id}/check-in/sync",
+		s.requireAuth(s.handleSyncCheckIns))
 	mux.HandleFunc("GET /api/v1/events/{id}/check-in/stats", s.requireAuth(s.handleCheckInStats))
 	mux.HandleFunc("POST /api/v1/tickets/{id}/check-in/reverse", s.requireAuth(s.handleReverseCheckIn))
 

@@ -1,4 +1,4 @@
-# BiletFlow Scanner
+# BiletFlow Scanner — Phases 6 & 12
 
 React Native / Expo app for Event Admins to check attendees in at the entrance.
 
@@ -8,23 +8,20 @@ Expo SDK 57, React Native 0.86, expo-router, expo-camera.
 
 ## Run it
 
-The database and the API must be running first. From the **repository root**:
+All three backend layers must be running first. From the **repository root**:
 
 ```bash
-make up && make seed   # PostgreSQL with the demo data
-make api-run           # Go API on :8080
+make up        # PostgreSQL
+make api-run   # Go API on :8080
 ```
 
-Then, in a third terminal:
+Then:
 
 ```bash
-make scan-install      # once: npm install in mobile/
-make scan-dev          # npx expo start - press i for iOS, a for Android, or scan the QR
+cd mobile
+npm install
+npx expo start          # press i for iOS, a for Android, or scan the QR
 ```
-
-Sign in as `scanner@biletflow.kz` (password `biletflow-demo`): the seed assigns
-that account to both demo events. `dana@biletflow.kz` works too - an organizer
-may always scan their own events.
 
 ### On a real phone
 
@@ -49,21 +46,19 @@ Use the "Enter a code by hand" path, or run on a physical device.
 
 ---
 
-## The screens
+## The three screens
 
 | Screen | What it does |
 | --- | --- |
 | `/login` | Event Admin sign-in; shows the resolved API host |
 | `/events` | The events this account may scan, with live check-in counts |
-| `/scanner?eventId=…` | Camera scanner, full-screen result, manual entry, undo |
-| `/attendees/[eventId]` | Find an attendee by name and check them in without a QR |
+| `/scan/[eventId]` | Camera scanner, full-screen result, manual entry |
 
 An Event Admin sees **only** the events an organizer assigned them to
 (SRS 4.8). The list comes from `GET /events/scannable`, which returns events
 you organize plus events you hold an unrevoked scanner assignment on.
 
-To assign someone, the organizer adds them under **Gate staff** on the
-event's dashboard page, which calls:
+To assign someone, the organizer calls:
 
 ```bash
 POST /api/v1/events/{id}/staff   {"email": "scanner@biletflow.kz", "role": "event_admin"}
@@ -126,7 +121,7 @@ nothing to act on:
 | `already_checked_in` | Already used — with the name and the time of first entry |
 | `campaign_token` | This is a promotional code, not an admission ticket |
 | `wrong_event` | This ticket is for *(the other event)* |
-| `ticket_not_valid` | The ticket is cancelled |
+| `ticket_not_valid` | The ticket is cancelled or refunded |
 | `unknown_ticket` | The code matches no ticket |
 | `network_error` | Offline — check the venue Wi-Fi |
 
@@ -140,8 +135,7 @@ app/
 ├── index.tsx             session gate → /login or /events
 ├── login.tsx             Event Admin sign-in
 ├── events.tsx            event selector with live counts
-├── scanner.tsx           camera, manual entry, result handling
-└── attendees/[eventId].tsx  search by name, admit without a QR
+└── scan/[eventId].tsx    camera, manual entry, result handling
 components/
 └── ScanResultOverlay.tsx the full-screen green / red result
 lib/
@@ -153,7 +147,7 @@ lib/
 └── types.ts              mirrors of the Go response structs
 ```
 
-## Finding an attendee by name (SRS 4.8)
+## Finding an attendee by name (Phase 12, SRS 4.8)
 
 The screen staff open when a QR will not scan at all: a cracked screen, a dead
 battery, a printout left at home. Reachable from the event list and from the
@@ -175,12 +169,30 @@ Admitting somebody here is a **real** check-in. The server runs the same
 transaction as a scan, so the same duplicate protection applies: a second tap
 is refused exactly as a second scan would be, and the row records
 `device_label = "manual search"` so the history distinguishes a typed
-admission from a scanned one. A ticket that is already in shows an **Undo
-check-in** button instead, and a cancelled one a disabled button rather than
-one that is certain to be refused.
+admission from a scanned one. A ticket that is already in, cancelled or
+refunded is shown with a disabled button rather than one that is certain to be
+refused.
 
-## Checks
+## Working offline (SRS 4.8)
 
-```bash
-npx tsc --noEmit     # or `make scan-check` from the repository root
-```
+A venue door often has no reliable network, so the scanner keeps working without
+one. From the event list, **Offline mode** downloads the event's roster once,
+then admits tickets against it with the connection off.
+
+**The roster is hashes, never tokens.** The server returns the SHA-256 of each
+admission token (`GET /events/{id}/roster`); the device stores those in SQLite
+(`lib/offline-db.ts`) and, when a QR is scanned, hashes what it read with
+`expo-crypto` and compares hash to hash. A phone left on a table at the entrance
+therefore never holds the credential needed to forge a ticket — it can answer
+"is this ticket real?" without holding the answer to "what are the real
+tickets?".
+
+Every offline admission is written to a local queue and, the moment connectivity
+returns (`expo-network`, `lib/use-connectivity.ts`), synced to the server
+(`POST /events/{id}/check-in/sync`). The server judges each queued admission
+independently and reports back per ticket — `recorded`, `already_checked_in`,
+`not_valid` or `unknown_ticket` — so one ticket refunded while the door was
+offline cannot discard the good admissions queued behind it, and the winner of a
+conflict is always whoever synced first rather than whichever phone's clock was
+fastest. A queued admission not yet synced can still be undone at the door; once
+the server has it, the reversal goes through the online endpoint.
