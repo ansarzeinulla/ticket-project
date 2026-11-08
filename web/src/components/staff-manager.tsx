@@ -20,9 +20,10 @@ const ROLE_LABELS: Record<string, string> = {
  * Naming the people who work an event (SRS 4.2: "Assign event administrators
  * who verify tickets and check attendees in through a mobile app").
  *
- * The scanner app lists only the events somebody has been put on, so without
- * this panel nobody but the organizer could use it - granting the access would
- * mean hand-writing a cURL call.
+ * The three staff endpoints have existed since Phase 6, but only the scanner
+ * app consumed the result - there was no way for an organizer to grant the
+ * access in the first place without hand-writing a cURL call. That made the
+ * mobile app effectively unusable by anybody who was not already the organizer.
  */
 export function StaffManager({ eventID }: { eventID: string }) {
   const [staff, setStaff] = useState<StaffMember[] | null>(null);

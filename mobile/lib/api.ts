@@ -5,8 +5,10 @@ import type {
   AuthResponse,
   CheckInStats,
   CheckInSuccess,
+  Roster,
   ScanErrorCode,
   ScannableEvent,
+  SyncSummary,
   User,
 } from "./types";
 
@@ -52,13 +54,14 @@ interface RequestOptions {
   body?: unknown;
   token?: string | null;
   anonymous?: boolean;
+  signal?: AbortSignal;
 }
 
 /** A scan should fail fast: staff cannot wait at a gate. */
 const REQUEST_TIMEOUT_MS = 10_000;
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = "GET", body, token, anonymous = false } = options;
+  const { method = "GET", body, token, anonymous = false, signal } = options;
 
   const headers: Record<string, string> = { Accept: "application/json" };
   if (body !== undefined) headers["Content-Type"] = "application/json";
@@ -70,6 +73,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  if (signal) signal.addEventListener("abort", () => controller.abort());
 
   let response: Response;
   try {
@@ -83,13 +87,22 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     throw new ApiError(
       0,
       "network_error",
-      `Cannot reach the BiletFlow API at ${API_BASE_URL}. Check the Wi-Fi and try again.`,
+      `Cannot reach the BiletFlow API at ${API_BASE_URL}. Check the venue Wi-Fi and try again.`,
     );
   } finally {
     clearTimeout(timeout);
   }
 
-  const parsed: unknown = await response.json().catch(() => null);
+  const raw = await response.text();
+  let parsed: unknown = null;
+  if (raw.length > 0) {
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      throw new ApiError(response.status, "invalid_response",
+        `The API returned an unexpected response (HTTP ${response.status}).`);
+    }
+  }
 
   if (!response.ok) {
     const envelope = parsed as
@@ -129,7 +142,7 @@ export const api = {
     });
   },
 
-  async me(token?: string): Promise<User> {
+  async me(token?: string | null): Promise<User> {
     const data = await request<{ user: User }>("/auth/me", { token });
     return data.user;
   },
@@ -187,5 +200,31 @@ export const api = {
       { method: "POST", body: { reason } },
     );
     return data.stats;
+  },
+
+  /**
+   * Download the hashed guest list so the door can work without a network
+   * (SRS 4.8). Returns admission hashes, never plaintext tokens.
+   */
+  async roster(eventID: string): Promise<Roster> {
+    const data = await request<{ roster: Roster }>(`/events/${eventID}/roster`);
+    return data.roster;
+  },
+
+  /**
+   * Reconcile the admissions the device recorded while offline (SRS 4.8).
+   *
+   * Each entry is judged independently by the server and reported on
+   * separately: one ticket refunded while the door was offline must not throw
+   * away the good admissions queued behind it.
+   */
+  async syncCheckIns(
+    eventID: string,
+    checkIns: { ticket_id: string; scanned_at: string; device_label: string }[],
+  ): Promise<SyncSummary> {
+    return request<SyncSummary>(`/events/${eventID}/check-in/sync`, {
+      method: "POST",
+      body: { check_ins: checkIns },
+    });
   },
 };

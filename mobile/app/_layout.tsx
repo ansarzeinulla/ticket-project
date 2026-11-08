@@ -21,7 +21,7 @@ export default function RootLayout() {
           <Stack.Screen name="index" options={{ headerShown: false }} />
           <Stack.Screen name="login" options={{ headerShown: false }} />
           <Stack.Screen name="events" options={{ title: "Choose an event" }} />
-          <Stack.Screen name="scanner" options={{ title: "Scan tickets" }} />
+          <Stack.Screen name="scan/[eventId]" options={{ title: "Scan tickets" }} />
         </Stack>
       </AuthProvider>
     </SafeAreaProvider>

@@ -92,56 +92,30 @@ func TestOrderConfirmationCountsTickets(t *testing.T) {
 	}
 }
 
-func sampleAccount() AccountTokenDetails {
-	return AccountTokenDetails{
-		FullName:  "Aliya Nurlanovna",
-		Email:     "aliya@biletflow.test",
-		Token:     "abc123",
-		Link:      "http://localhost:3000/verify-email?token=abc123",
-		ExpiresIn: "24 hours",
-	}
-}
+func TestRefundCompletedExplainsTheConsequence(t *testing.T) {
+	msg := RefundCompleted(RefundDetails{
+		BuyerName:   "Dana Kim",
+		BuyerEmail:  "dana@biletflow.test",
+		OrderNumber: "BF-REFUND01",
+		EventTitle:  "Almaty Autumn Fest 2026",
+		AmountKZT:   "10000.00",
+		TicketCount: 2,
+		Reason:      "Event rescheduled",
+	})
 
-func TestEmailVerificationCarriesTheLink(t *testing.T) {
-	msg := EmailVerification(sampleAccount())
-
-	if msg.To != "aliya@biletflow.test" {
-		t.Errorf("to = %q", msg.To)
+	if msg.Subject != "Refund for Almaty Autumn Fest 2026" {
+		t.Errorf("Subject = %q", msg.Subject)
 	}
-	if msg.Type != TypeEmailVerification {
-		t.Errorf("type = %q, want %q", msg.Type, TypeEmailVerification)
+	if msg.Type != TypeRefundCompleted {
+		t.Errorf("Type = %q", msg.Type)
 	}
-	for _, want := range []string{"Hi Aliya,", "/verify-email?token=abc123", "24 hours"} {
+	for _, want := range []string{
+		"Hi Dana,", "BF-REFUND01", "10000.00 KZT (simulated)",
+		"2, now void", "Event rescheduled", "no longer be admitted",
+	} {
 		if !strings.Contains(msg.Body, want) {
-			t.Errorf("body is missing %q:\n%s", want, msg.Body)
+			t.Errorf("body is missing %q", want)
 		}
-	}
-}
-
-func TestPasswordResetCarriesTheLink(t *testing.T) {
-	d := sampleAccount()
-	d.Token = "xyz789"
-	d.Link = "http://localhost:3000/reset-password?token=xyz789"
-	d.ExpiresIn = "1 hour"
-	msg := PasswordReset(d)
-
-	if msg.Type != TypePasswordReset {
-		t.Errorf("type = %q, want %q", msg.Type, TypePasswordReset)
-	}
-	for _, want := range []string{"/reset-password?token=xyz789", "1 hour"} {
-		if !strings.Contains(msg.Body, want) {
-			t.Errorf("body is missing %q:\n%s", want, msg.Body)
-		}
-	}
-}
-
-// TestGreetingFallsBackWithoutAName: an account created from an email alone
-// still gets a greeting rather than "Hi ,".
-func TestGreetingFallsBackWithoutAName(t *testing.T) {
-	d := sampleAccount()
-	d.FullName = ""
-	if !strings.HasPrefix(EmailVerification(d).Body, "Hi there,") {
-		t.Error("an empty name should fall back to \"Hi there,\"")
 	}
 }
 
@@ -149,19 +123,19 @@ func TestGreetingFallsBackWithoutAName(t *testing.T) {
 // Subject and a body, framed and unmistakably labelled as simulated.
 func TestRenderIsReadable(t *testing.T) {
 	out := Render(Message{
-		Type:    TypeEmailVerification,
+		Type:    TypeOrderConfirmation,
 		To:      "aliya@biletflow.test",
-		Subject: "Confirm your email",
-		Body:    "Hi Aliya,\n\nPlease confirm your email.\n",
+		Subject: "Your Tickets to Almaty Autumn Fest 2026",
+		Body:    "Hi Aliya,\n\nYour order is confirmed.\n",
 	})
 
 	for _, want := range []string{
 		"MOCK EMAIL - simulated delivery",
 		"To:      aliya@biletflow.test",
-		"Subject: Confirm your email",
-		"Type:    " + TypeEmailVerification,
+		"Subject: Your Tickets to Almaty Autumn Fest 2026",
+		"Type:    " + TypeOrderConfirmation,
 		"  Hi Aliya,",
-		"  Please confirm your email.",
+		"  Your order is confirmed.",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("rendered block is missing %q; got:\n%s", want, out)
