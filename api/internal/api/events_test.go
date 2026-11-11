@@ -679,6 +679,34 @@ func TestUnpublishRequiresPublishedEvent(t *testing.T) {
 		http.StatusConflict, "conflict")
 }
 
+func TestLifecycleWritesTimeline(t *testing.T) {
+	c := newClient(t)
+	owner := c.register("timeline")
+	eventID, _ := c.createEvent(owner.Token, "Timeline Event")
+	path := "/api/v1/events/" + eventID.String()
+
+	requireStatus(t, c.patch(path, owner.Token, map[string]any{"title": "Renamed"}), http.StatusOK)
+	requireStatus(t, c.post(path+"/publish", owner.Token, nil), http.StatusOK)
+	requireStatus(t, c.post(path+"/cancel", owner.Token, nil), http.StatusOK)
+
+	res := c.get(path+"/timeline", owner.Token)
+	requireStatus(t, res, http.StatusOK)
+
+	entries, _ := res.Body["entries"].([]any)
+	actions := map[string]bool{}
+	for _, e := range entries {
+		actions[e.(map[string]any)["action"].(string)] = true
+	}
+
+	for _, want := range []string{"event.created", "event.updated", "event.published", "event.cancelled"} {
+		if !actions[want] {
+			t.Errorf("timeline is missing %q; got %v", want, actions)
+		}
+	}
+
+	requireErrorCode(t, c.get(path+"/timeline", ""), http.StatusUnauthorized, "unauthorized")
+}
+
 // --- deleting ----------------------------------------------------------------
 
 func TestDeleteDraftEvent(t *testing.T) {
