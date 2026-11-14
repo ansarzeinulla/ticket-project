@@ -3,10 +3,6 @@ package api
 import (
 	"bytes"
 	"encoding/csv"
-	"image"
-	"image/color"
-	"image/png"
-	"mime/multipart"
 	"net/http"
 	"strings"
 	"testing"
@@ -581,52 +577,4 @@ func TestSupportAttachmentMustBeOneOfOurUploads(t *testing.T) {
 				"mime_type": "image/png", "bytes": 10,
 			},
 		}), http.StatusUnprocessableEntity)
-}
-
-// pngBytes is a real 256x256 PNG. It has to clear the uploader's minimum
-// dimension check (200x200), so a 1x1 pixel will not do; the pattern is
-// deterministic so repeated calls return byte-identical content, which the
-// round-trip assertion relies on.
-func pngBytes() []byte {
-	img := image.NewRGBA(image.Rect(0, 0, 256, 256))
-	for y := 0; y < 256; y++ {
-		for x := 0; x < 256; x++ {
-			img.Set(x, y, color.RGBA{R: uint8(x), G: uint8(y), B: 128, A: 255})
-		}
-	}
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, img); err != nil {
-		panic(err)
-	}
-	return buf.Bytes()
-}
-
-// uploadImage posts a multipart image the way the browser does.
-func (c *client) uploadImage(token, filename string, content []byte) response {
-	c.t.Helper()
-
-	var body bytes.Buffer
-	form := multipart.NewWriter(&body)
-	part, err := form.CreateFormFile(uploadFormKey, filename)
-	if err != nil {
-		c.t.Fatalf("build the upload form: %v", err)
-	}
-	if _, err := part.Write(content); err != nil {
-		c.t.Fatalf("write the upload body: %v", err)
-	}
-	if err := form.Close(); err != nil {
-		c.t.Fatalf("close the upload form: %v", err)
-	}
-
-	req, err := http.NewRequest(http.MethodPost,
-		c.server.URL+"/api/v1/uploads/images", &body)
-	if err != nil {
-		c.t.Fatalf("build the upload request: %v", err)
-	}
-	req.Header.Set("Content-Type", form.FormDataContentType())
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-
-	return c.send(req)
 }
