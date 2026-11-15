@@ -2,7 +2,6 @@ package api
 
 import (
 	"net/http"
-	"strings"
 	"testing"
 	"time"
 
@@ -256,20 +255,4 @@ func TestResetPasswordIssuesNoSession(t *testing.T) {
 	if _, issued := done.Body["access_token"]; issued {
 		t.Error("resetting a password handed back a session token")
 	}
-}
-
-// tokenFromConsole pulls a token out of a printed link, the way a person
-// reading the console would.
-func tokenFromConsole(t *testing.T, output, marker string) string {
-	t.Helper()
-
-	index := strings.Index(output, marker)
-	if index < 0 {
-		return ""
-	}
-	rest := output[index+len(marker):]
-	if end := strings.IndexAny(rest, " \n\r\t"); end >= 0 {
-		rest = rest[:end]
-	}
-	return strings.TrimSpace(rest)
 }
