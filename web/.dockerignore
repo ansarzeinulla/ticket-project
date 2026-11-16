@@ -1,6 +1,5 @@
 node_modules
 .next
-out
-coverage
-.env*
-npm-debug.log*
+e2e/.results
+playwright-report
+.env.local
