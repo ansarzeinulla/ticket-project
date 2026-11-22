@@ -8,23 +8,32 @@ import { Alert } from "@/components/ui/alert";
 import { Button, Spinner } from "@/components/ui/button";
 import { ApiError, api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { useT } from "@/lib/i18n/context";
+import type { MessageKey } from "@/lib/i18n/dictionaries";
 import type { EventReport, ReportStatus } from "@/lib/types";
 
-const FILTERS: { value: string; label: string }[] = [
-  { value: "open", label: "Open" },
-  { value: "reviewing", label: "Reviewing" },
-  { value: "upheld", label: "Upheld" },
-  { value: "dismissed", label: "Dismissed" },
-  { value: "", label: "Everything" },
+const FILTERS: { value: string; label: MessageKey }[] = [
+  { value: "open", label: "org.reports.filters.open" },
+  { value: "reviewing", label: "org.reports.filters.reviewing" },
+  { value: "upheld", label: "org.reports.filters.upheld" },
+  { value: "dismissed", label: "org.reports.filters.dismissed" },
+  { value: "", label: "org.timeline.filters.all" },
 ];
 
-const REASON_LABELS: Record<string, string> = {
-  fraud: "Fraud",
-  misleading: "Misleading",
-  inappropriate: "Inappropriate",
-  spam: "Spam",
-  copyright: "Copyright",
-  other: "Other",
+const REASON_LABELS: Record<string, MessageKey> = {
+  fraud: "org.reports.reasons.fraud",
+  misleading: "org.reports.reasons.misleading",
+  inappropriate: "org.reports.reasons.inappropriate",
+  spam: "org.reports.reasons.spam",
+  copyright: "org.reports.reasons.copyright",
+  other: "org.reports.reasons.other",
+};
+
+const STATUS_LABELS: Record<ReportStatus, MessageKey> = {
+  open: "org.reports.status.open",
+  reviewing: "org.reports.status.reviewing",
+  upheld: "org.reports.status.upheld",
+  dismissed: "org.reports.status.dismissed",
 };
 
 const STATUS_TONES: Record<ReportStatus, string> = {
@@ -46,6 +55,7 @@ const STATUS_TONES: Record<ReportStatus, string> = {
  */
 export function ReportsQueue() {
   const { user } = useAuth();
+  const t = useT();
   const isAdmin = user?.roles.includes("platform_admin") ?? false;
 
   const [status, setStatus] = useState("open");
@@ -61,12 +71,12 @@ export function ReportsQueue() {
         setError(null);
       } catch (cause) {
         if (cause instanceof DOMException && cause.name === "AbortError") return;
-        setError(cause instanceof ApiError ? cause.message : "Could not load the queue.");
+        setError(cause instanceof ApiError ? cause.message : t("org.reports.loadFailed"));
       } finally {
         setLoading(false);
       }
     },
-    [],
+    [t],
   );
 
   useEffect(() => {
@@ -79,8 +89,8 @@ export function ReportsQueue() {
 
   if (!isAdmin) {
     return (
-      <Alert tone="error" title="Not available">
-        The moderation queue is restricted to platform administrators.
+      <Alert tone="error" title={t("org.reports.deniedTitle")}>
+        {t("org.reports.deniedBody")}
       </Alert>
     );
   }
@@ -90,15 +100,15 @@ export function ReportsQueue() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <Link href="/admin" className="text-sm text-foreground-muted hover:underline">
-            ← Back to administration
+            {t("org.reports.back")}
           </Link>
-          <h1 className="mt-2 text-2xl font-semibold tracking-tight">Reported events</h1>
+          <h1 className="mt-2 text-2xl font-semibold tracking-tight">{t("org.titles.reports")}</h1>
           <p className="mt-1 text-sm text-foreground-muted">
-            Complaints raised by attendees, newest first.
+            {t("org.reports.subtitle")}
           </p>
         </div>
         <Button variant="secondary" size="sm" onClick={() => void load(status)}>
-          Refresh
+          {t("org.common.refresh")}
         </Button>
       </div>
 
@@ -116,7 +126,7 @@ export function ReportsQueue() {
                 : "border border-border-subtle hover:bg-surface-muted"
             }`}
           >
-            {filter.label}
+            {t(filter.label)}
           </button>
         ))}
       </div>
@@ -125,14 +135,14 @@ export function ReportsQueue() {
 
       {loading ? (
         <p className="flex items-center gap-2 text-sm text-foreground-muted">
-          <Spinner aria-hidden /> Loading…
+          <Spinner aria-hidden /> {t("org.common.loading")}
         </p>
       ) : reports.length === 0 ? (
         <p
           className="rounded-xl border border-dashed border-border-subtle px-6 py-12 text-center text-sm text-foreground-muted"
           data-testid="queue-empty"
         >
-          Nothing here. {status === "open" ? "No open complaints." : "No reports match."}
+          {t("org.reports.nothing")} {status === "open" ? t("org.reports.noneOpen") : t("org.reports.noneMatch")}
         </p>
       ) : (
         <ul className="space-y-4" data-testid="report-queue">
@@ -154,15 +164,15 @@ export function ReportsQueue() {
                     <span
                       className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_TONES[report.status]}`}
                     >
-                      {report.status}
+                      {t(STATUS_LABELS[report.status])}
                     </span>
                     <span className="rounded-full bg-surface-muted px-2 py-0.5 text-xs">
-                      {REASON_LABELS[report.reason] ?? report.reason}
+                      {REASON_LABELS[report.reason] ? t(REASON_LABELS[report.reason]) : report.reason}
                     </span>
                   </div>
                   <p className="mt-1 text-xs text-foreground-muted">
-                    Organizer {report.organizer_email}
-                    {report.reporter_email && ` · reported by ${report.reporter_email}`}
+                    {t("org.reports.organizer", { email: report.organizer_email })}
+                    {report.reporter_email && ` · ${t("org.reports.reportedBy", { email: report.reporter_email })}`}
                   </p>
                 </div>
                 <time className="text-xs text-foreground-muted">
@@ -178,7 +188,7 @@ export function ReportsQueue() {
 
               {report.resolution && (
                 <p className="mt-3 text-sm">
-                  <span className="text-foreground-muted">Resolution: </span>
+                  <span className="text-foreground-muted">{t("org.reports.resolution")} </span>
                   {report.resolution}
                 </p>
               )}
@@ -186,18 +196,18 @@ export function ReportsQueue() {
               {(report.status === "open" || report.status === "reviewing") && (
                 <div className="mt-4 flex flex-wrap gap-2">
                   <ModerationAction
-                    label="Uphold"
-                    confirmLabel="Uphold this report"
-                    consequence="Records that the complaint was justified. Suspending the event is a separate decision, taken from the administration page."
+                    label={t("org.reports.uphold")}
+                    confirmLabel={t("org.reports.upholdConfirm")}
+                    consequence={t("org.reports.upholdConsequence")}
                     onConfirm={(reason) =>
                       api.reviewEventReport(report.id, "upheld", reason)
                     }
                     onDone={() => void load(status)}
                   />
                   <ModerationAction
-                    label="Dismiss"
-                    confirmLabel="Dismiss this report"
-                    consequence="Records that the complaint was not justified. The event is untouched and the reporter is not told."
+                    label={t("org.reports.dismiss")}
+                    confirmLabel={t("org.reports.dismissConfirm")}
+                    consequence={t("org.reports.dismissConsequence")}
                     tone="secondary"
                     onConfirm={(reason) =>
                       api.reviewEventReport(report.id, "dismissed", reason)

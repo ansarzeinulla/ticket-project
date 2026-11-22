@@ -8,6 +8,8 @@ import { Button, Spinner } from "@/components/ui/button";
 import { TextAreaField, TextField } from "@/components/ui/field";
 import { ApiError, api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { useT } from "@/lib/i18n/context";
+import type { MessageKey } from "@/lib/i18n/dictionaries";
 import type { OrganizerProfile, ProfilePatch } from "@/lib/types";
 
 /**
@@ -26,6 +28,7 @@ import type { OrganizerProfile, ProfilePatch } from "@/lib/types";
  */
 export function ProfileForm() {
   const { user } = useAuth();
+  const t = useT();
 
   const [profile, setProfile] = useState<OrganizerProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -60,11 +63,11 @@ export function ProfileForm() {
       setLoadError(null);
     } catch (cause) {
       if (cause instanceof DOMException && cause.name === "AbortError") return;
-      setLoadError(cause instanceof ApiError ? cause.message : "Could not load your profile.");
+      setLoadError(cause instanceof ApiError ? cause.message : t("org.profile.loadFailed"));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -102,11 +105,11 @@ export function ProfileForm() {
         setFieldErrors(cause.fields);
         setFormError(
           Object.keys(cause.fields).length > 0
-            ? "Please correct the highlighted fields."
+            ? t("auth.common.fixFields")
             : cause.message,
         );
       } else {
-        setFormError("Something went wrong. Please try again.");
+        setFormError(t("auth.common.genericError"));
       }
     } finally {
       setSaving(false);
@@ -116,7 +119,7 @@ export function ProfileForm() {
   if (loading) {
     return (
       <div className="flex items-center gap-3 py-16 text-sm text-foreground-muted">
-        <Spinner aria-hidden /> Loading your profile…
+        <Spinner aria-hidden /> {t("org.profile.loading")}
       </div>
     );
   }
@@ -125,30 +128,30 @@ export function ProfileForm() {
     <div className="mx-auto max-w-2xl space-y-8">
       <div>
         <Link href="/dashboard" className="text-sm text-foreground-muted hover:underline">
-          ← Back to events
+          {t("org.detail.back")}
         </Link>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight">Your profile</h1>
+        <h1 className="mt-2 text-2xl font-semibold tracking-tight">{t("org.titles.profile")}</h1>
         <p className="mt-1 text-sm text-foreground-muted">
-          Signed in as {user?.email}.
+          {t("org.profile.signedInAs", { email: user?.email ?? "" })}
         </p>
       </div>
 
       {loadError && <Alert tone="error">{loadError}</Alert>}
       {formError && <Alert tone="error">{formError}</Alert>}
-      {saved && <Alert tone="success">Profile saved.</Alert>}
+      {saved && <Alert tone="success">{t("org.profile.saved")}</Alert>}
 
       <form
         onSubmit={save}
         noValidate
         className="space-y-5 rounded-xl border border-border-subtle bg-surface p-6"
       >
-        <h2 className="text-base font-semibold">Organizer details</h2>
+        <h2 className="text-base font-semibold">{t("org.profile.details")}</h2>
 
         <TextField
-          label="Display name"
+          label={t("org.profile.displayName")}
           name="display_name"
           placeholder="Dana Events"
-          hint="How attendees see you."
+          hint={t("org.profile.displayNameHint")}
           value={values.display_name}
           error={fieldErrors.display_name}
           disabled={saving}
@@ -157,7 +160,7 @@ export function ProfileForm() {
 
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField
-            label="Legal name"
+            label={t("org.profile.legalName")}
             name="legal_name"
             placeholder="Dana Events LLP"
             value={values.legal_name}
@@ -166,7 +169,7 @@ export function ProfileForm() {
             onChange={(event) => update("legal_name", event.target.value)}
           />
           <TextField
-            label="Website"
+            label={t("org.profile.website")}
             name="website_url"
             placeholder="https://danaevents.kz"
             value={values.website_url}
@@ -178,18 +181,18 @@ export function ProfileForm() {
 
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField
-            label="Contact email"
+            label={t("org.profile.contactEmail")}
             type="email"
             name="contact_email"
             placeholder="hello@danaevents.kz"
-            hint="Shown to attendees; separate from your sign-in address."
+            hint={t("org.profile.contactEmailHint")}
             value={values.contact_email}
             error={fieldErrors.contact_email}
             disabled={saving}
             onChange={(event) => update("contact_email", event.target.value)}
           />
           <TextField
-            label="Contact phone"
+            label={t("org.profile.contactPhone")}
             name="contact_phone"
             placeholder="+7 700 000 0000"
             value={values.contact_phone}
@@ -200,9 +203,9 @@ export function ProfileForm() {
         </div>
 
         <TextAreaField
-          label="About you"
+          label={t("org.profile.about")}
           name="description"
-          placeholder="Independent promoter in Almaty."
+          placeholder={t("org.profile.aboutPlaceholder")}
           value={values.description}
           error={fieldErrors.description}
           disabled={saving}
@@ -211,7 +214,7 @@ export function ProfileForm() {
 
         <div className="border-t border-border-subtle pt-5">
           <Button type="submit" loading={saving} data-testid="save-profile">
-            {saving ? "Saving…" : "Save profile"}
+            {saving ? t("org.form.saving") : t("org.profile.save")}
           </Button>
         </div>
       </form>
@@ -225,17 +228,24 @@ export function ProfileForm() {
 /**
  * The payout destinations, read-only and masked (SRS 4.1, NFR section 7).
  */
+const PAYOUT_STATUS: Record<string, MessageKey> = {
+  unverified: "org.profile.payoutStatus.unverified",
+  pending_review: "org.profile.payoutStatus.pending_review",
+  verified: "org.profile.payoutStatus.verified",
+  rejected: "org.profile.payoutStatus.rejected",
+};
+
 function PayoutSection({ profile }: { profile: OrganizerProfile | null }) {
+  const t = useT();
   const accounts = profile?.payout_accounts ?? [];
 
   return (
     <section className="rounded-xl border border-border-subtle bg-surface p-6">
-      <h2 className="text-base font-semibold">Payout destination</h2>
+      <h2 className="text-base font-semibold">{t("org.profile.payout")}</h2>
 
       {accounts.length === 0 ? (
         <p className="mt-2 text-sm text-foreground-muted">
-          None yet. A destination is registered when you complete the paid-sales
-          activation checklist on an event.
+          {t("org.profile.payoutNone")}
         </p>
       ) : (
         <ul className="mt-3 space-y-3" data-testid="payout-accounts">
@@ -248,7 +258,7 @@ function PayoutSection({ profile }: { profile: OrganizerProfile | null }) {
                 <div className="font-mono text-sm">{account.masked_account ?? "••••"}</div>
                 <p className="text-xs text-foreground-muted">
                   {account.provider} · {account.currency}
-                  {account.is_simulated && " · simulated"}
+                  {account.is_simulated && ` · ${t("org.activation.simulated")}`}
                 </p>
               </div>
               <span
@@ -258,7 +268,7 @@ function PayoutSection({ profile }: { profile: OrganizerProfile | null }) {
                     : "bg-surface-muted text-foreground-muted"
                 }`}
               >
-                {account.status}
+                {PAYOUT_STATUS[account.status] ? t(PAYOUT_STATUS[account.status]) : account.status}
               </span>
             </li>
           ))}
@@ -266,9 +276,7 @@ function PayoutSection({ profile }: { profile: OrganizerProfile | null }) {
       )}
 
       <p className="mt-4 text-xs text-foreground-muted">
-        BiletFlow never stores account or card numbers — only a masked display value
-        and a reference held by the payment provider. Settlement is simulated for
-        this release; no money moves.
+        {t("org.profile.payoutNote")}
       </p>
     </section>
   );
@@ -276,6 +284,7 @@ function PayoutSection({ profile }: { profile: OrganizerProfile | null }) {
 
 /** Changing the password of an already-signed-in account (SRS 4.1). */
 function PasswordSection() {
+  const t = useT();
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -292,7 +301,7 @@ function PasswordSection() {
     setDone(false);
 
     if (next !== confirm) {
-      setFieldErrors({ confirm: "The two passwords do not match." });
+      setFieldErrors({ confirm: t("auth.common.mismatch") });
       return;
     }
 
@@ -308,7 +317,7 @@ function PasswordSection() {
         setFieldErrors(cause.fields);
         if (Object.keys(cause.fields).length === 0) setError(cause.message);
       } else {
-        setError("Could not change your password.");
+        setError(t("org.profile.passwordFailed"));
       }
     } finally {
       setBusy(false);
@@ -317,10 +326,9 @@ function PasswordSection() {
 
   return (
     <section className="rounded-xl border border-border-subtle bg-surface p-6">
-      <h2 className="text-base font-semibold">Password</h2>
+      <h2 className="text-base font-semibold">{t("auth.common.password")}</h2>
       <p className="mt-1 text-sm text-foreground-muted">
-        Your current password is required, so a session left open on a shared machine
-        cannot be used to lock you out.
+        {t("org.profile.passwordNote")}
       </p>
 
       {error && (
@@ -330,13 +338,13 @@ function PasswordSection() {
       )}
       {done && (
         <div className="mt-4">
-          <Alert tone="success">Your password has been changed.</Alert>
+          <Alert tone="success">{t("org.profile.passwordChanged")}</Alert>
         </div>
       )}
 
       <form onSubmit={submit} noValidate className="mt-4 space-y-4">
         <TextField
-          label="Current password"
+          label={t("org.profile.currentPassword")}
           type="password"
           name="current_password"
           autoComplete="current-password"
@@ -348,19 +356,19 @@ function PasswordSection() {
         />
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField
-            label="New password"
+            label={t("auth.reset.newPassword")}
             type="password"
             name="new_password"
             autoComplete="new-password"
             required
-            hint="At least 8 characters."
+            hint={t("auth.common.minLengthHint")}
             value={next}
             error={fieldErrors.new_password}
             disabled={busy}
             onChange={(event) => setNext(event.target.value)}
           />
           <TextField
-            label="Confirm new password"
+            label={t("auth.reset.confirm")}
             type="password"
             name="confirm_password"
             autoComplete="new-password"
@@ -372,7 +380,7 @@ function PasswordSection() {
           />
         </div>
         <Button type="submit" loading={busy} data-testid="change-password">
-          Change password
+          {t("auth.reset.submit")}
         </Button>
       </form>
     </section>

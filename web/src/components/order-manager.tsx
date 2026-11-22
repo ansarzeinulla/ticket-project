@@ -6,6 +6,9 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { ApiError, api } from "@/lib/api";
 import { formatKZT } from "@/lib/money";
+import { useT } from "@/lib/i18n/context";
+import type { MessageKey } from "@/lib/i18n/dictionaries";
+import type { Translator } from "@/lib/i18n/translate";
 import type { EventOrder } from "@/lib/types";
 
 /** How an order's status reads, and how it looks. */
@@ -18,17 +21,18 @@ const STATUS_STYLES: Record<string, string> = {
   pending: "bg-surface-muted text-foreground-muted",
 };
 
-const STATUS_LABELS: Record<string, string> = {
-  paid: "Paid",
-  completed: "Completed",
-  refunded: "Refunded",
-  partially_refunded: "Partly refunded",
-  cancelled: "Cancelled",
-  pending: "Pending",
+const STATUS_LABELS: Record<string, MessageKey> = {
+  paid: "org.orders.status.paid",
+  completed: "org.orders.status.completed",
+  refunded: "org.orders.status.refunded",
+  partially_refunded: "org.orders.status.partially_refunded",
+  cancelled: "org.orders.status.cancelled",
+  pending: "org.orders.status.pending",
 };
 
-function statusLabel(status: string): string {
-  return STATUS_LABELS[status] ?? status;
+function statusLabel(t: Translator, status: string): string {
+  const key = STATUS_LABELS[status];
+  return key ? t(key) : status;
 }
 
 function formatWhen(iso: string): string {
@@ -55,6 +59,7 @@ export function OrderManager({
   eventID: string;
   onRefunded?: () => void;
 }) {
+  const t = useT();
   const [orders, setOrders] = useState<EventOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -72,12 +77,12 @@ export function OrderManager({
         setError(null);
       } catch (cause) {
         if (cause instanceof DOMException && cause.name === "AbortError") return;
-        setError(cause instanceof ApiError ? cause.message : "Could not load orders.");
+        setError(cause instanceof ApiError ? cause.message : t("org.orders.loadFailed"));
       } finally {
         setLoading(false);
       }
     },
-    [eventID],
+    [eventID, t],
   );
 
   useEffect(() => {
@@ -93,9 +98,11 @@ export function OrderManager({
     try {
       const result = await api.refundOrder(order.id, reason.trim() || undefined);
       setNotice(
-        `Refunded ${formatKZT(result.refund.amount_kzt)} to ${order.buyer_name}. ` +
-          `${result.voided_tickets} ticket${result.voided_tickets === 1 ? "" : "s"} ` +
-          `${result.voided_tickets === 1 ? "is" : "are"} now void.`,
+        t("org.orders.refundedNotice", { amount: formatKZT(result.refund.amount_kzt), name: order.buyer_name }) +
+          " " +
+          (result.voided_tickets === 1
+            ? t("org.orders.voidOne")
+            : t("org.orders.voidMany", { count: result.voided_tickets })),
       );
       setError(null);
       setConfirming(null);
@@ -103,7 +110,7 @@ export function OrderManager({
       await load();
       onRefunded?.();
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : "Could not refund this order.");
+      setError(cause instanceof ApiError ? cause.message : t("org.orders.refundFailed"));
     } finally {
       setRefunding(null);
     }
@@ -121,9 +128,11 @@ export function OrderManager({
     try {
       const result = await api.cancelOrder(order.id, reason.trim() || undefined);
       setNotice(
-        `Cancelled ${order.buyer_name}'s registration. ` +
-          `${result.cancelled_tickets} ticket${result.cancelled_tickets === 1 ? "" : "s"} ` +
-          `${result.cancelled_tickets === 1 ? "is" : "are"} now void.`,
+        t("org.orders.cancelledNotice", { name: order.buyer_name }) +
+          " " +
+          (result.cancelled_tickets === 1
+            ? t("org.orders.voidOne")
+            : t("org.orders.voidMany", { count: result.cancelled_tickets })),
       );
       setError(null);
       setConfirming(null);
@@ -132,7 +141,7 @@ export function OrderManager({
       onRefunded?.();
     } catch (cause) {
       setError(
-        cause instanceof ApiError ? cause.message : "Could not cancel this registration.",
+        cause instanceof ApiError ? cause.message : t("org.orders.cancelFailed"),
       );
     } finally {
       setRefunding(null);
@@ -144,20 +153,20 @@ export function OrderManager({
   return (
     <section className="space-y-4">
       <div>
-        <h2 className="text-lg font-semibold tracking-tight">Orders &amp; attendees</h2>
+        <h2 className="text-lg font-semibold tracking-tight">{t("org.orders.heading")}</h2>
         <p className="mt-1 text-sm text-foreground-muted">
           {loading
-            ? "Loading…"
+            ? t("org.common.loading")
             : orders.length === 0
-              ? "Nobody has bought a ticket yet."
-              : `${orders.length} order${orders.length === 1 ? "" : "s"}` +
-                (refundedCount > 0 ? ` · ${refundedCount} refunded` : "")}
+              ? t("org.orders.none")
+              : (orders.length === 1 ? t("org.analytics.orderOne") : t("org.analytics.orderMany", { count: orders.length })) +
+                (refundedCount > 0 ? ` · ${t("org.analytics.refundedCount", { count: refundedCount })}` : "")}
         </p>
       </div>
 
       {error && <Alert>{error}</Alert>}
       {notice && (
-        <Alert tone="success" title="Refund complete">
+        <Alert tone="success" title={t("org.orders.refundComplete")}>
           {notice}
         </Alert>
       )}
@@ -167,12 +176,12 @@ export function OrderManager({
           <table className="w-full min-w-[42rem] text-sm">
             <thead className="bg-surface-muted text-left text-xs uppercase tracking-wide text-foreground-muted">
               <tr>
-                <th className="px-4 py-2 font-medium">Attendee</th>
-                <th className="px-4 py-2 font-medium">Order</th>
-                <th className="px-4 py-2 text-right font-medium">Tickets</th>
-                <th className="px-4 py-2 text-right font-medium">Total</th>
-                <th className="px-4 py-2 font-medium">Status</th>
-                <th className="px-4 py-2 text-right font-medium">Action</th>
+                <th className="px-4 py-2 font-medium">{t("org.orders.colAttendee")}</th>
+                <th className="px-4 py-2 font-medium">{t("org.orders.colOrder")}</th>
+                <th className="px-4 py-2 text-right font-medium">{t("org.analytics.tickets")}</th>
+                <th className="px-4 py-2 text-right font-medium">{t("seatCheckout.total")}</th>
+                <th className="px-4 py-2 font-medium">{t("org.orders.colStatus")}</th>
+                <th className="px-4 py-2 text-right font-medium">{t("org.orders.colAction")}</th>
               </tr>
             </thead>
             <tbody>
@@ -192,12 +201,12 @@ export function OrderManager({
                     <div>{order.live_tickets}</div>
                     {order.live_tickets !== order.ticket_count && (
                       <div className="text-xs text-foreground-muted">
-                        of {order.ticket_count} issued
+                        {t("org.orders.ofIssued", { count: order.ticket_count })}
                       </div>
                     )}
                     {order.checked_in > 0 && (
                       <div className="text-xs text-foreground-muted">
-                        {order.checked_in} checked in
+                        {t("org.orders.checkedIn", { count: order.checked_in })}
                       </div>
                     )}
                   </td>
@@ -205,7 +214,7 @@ export function OrderManager({
                     <div>{formatKZT(order.total_kzt)}</div>
                     {order.status === "refunded" && (
                       <div className="text-xs text-danger">
-                        −{formatKZT(order.refunded_kzt)} refunded
+                        {t("org.orders.refundedAmount", { amount: formatKZT(order.refunded_kzt) })}
                       </div>
                     )}
                   </td>
@@ -215,7 +224,7 @@ export function OrderManager({
                         STATUS_STYLES[order.status] ?? "bg-surface-muted text-foreground-muted"
                       }`}
                     >
-                      {statusLabel(order.status)}
+                      {statusLabel(t, order.status)}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right">
@@ -231,7 +240,7 @@ export function OrderManager({
                         disabled={refunding !== null}
                         data-testid={`order-action-${order.id}`}
                       >
-                        {order.refundable ? "Refund order" : "Cancel registration"}
+                        {order.refundable ? t("org.orders.refund") : t("org.orders.cancelRegistration")}
                       </Button>
                     ) : (
                       <span className="text-xs text-foreground-muted">—</span>
@@ -242,25 +251,30 @@ export function OrderManager({
                         <p className="text-xs text-foreground">
                           {order.refundable ? (
                             <>
-                              Refund {formatKZT(order.total_kzt)} to {order.buyer_name} and
-                              void {order.live_tickets} ticket
-                              {order.live_tickets === 1 ? "" : "s"}?
+                              {t(
+                                order.live_tickets === 1
+                                  ? "org.orders.confirmRefundOne"
+                                  : "org.orders.confirmRefundMany",
+                                { amount: formatKZT(order.total_kzt), name: order.buyer_name, count: order.live_tickets },
+                              )}
                             </>
                           ) : (
                             <>
-                              Cancel {order.buyer_name}&rsquo;s registration and void{" "}
-                              {order.live_tickets} ticket
-                              {order.live_tickets === 1 ? "" : "s"}? Nothing was charged,
-                              so there is no refund to make.
+                              {t(
+                                order.live_tickets === 1
+                                  ? "org.orders.confirmCancelOne"
+                                  : "org.orders.confirmCancelMany",
+                                { name: order.buyer_name, count: order.live_tickets },
+                              )}
                             </>
                           )}{" "}
-                          The QR codes stop working immediately and this cannot be undone.
+                          {t("org.orders.irreversible")}
                         </p>
                         <input
                           type="text"
                           value={reason}
                           onChange={(e) => setReason(e.target.value)}
-                          placeholder="Reason (optional, shown to the attendee)"
+                          placeholder={t("org.orders.reason")}
                           maxLength={500}
                           className="w-full rounded-md border border-border-subtle bg-surface px-2 py-1.5 text-xs"
                         />
@@ -271,7 +285,7 @@ export function OrderManager({
                             onClick={() => setConfirming(null)}
                             disabled={refunding === order.id}
                           >
-                            Cancel
+                            {t("org.form.cancel")}
                           </Button>
                           <Button
                             variant="danger"
@@ -282,7 +296,7 @@ export function OrderManager({
                             }
                             data-testid={`confirm-${order.id}`}
                           >
-                            {order.refundable ? "Confirm refund" : "Cancel this registration"}
+                            {order.refundable ? t("org.orders.confirmRefundButton") : t("org.orders.confirmCancelButton")}
                           </Button>
                         </div>
                       </div>

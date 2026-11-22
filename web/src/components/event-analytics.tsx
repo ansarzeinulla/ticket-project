@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Alert } from "@/components/ui/alert";
 import { Button, Spinner } from "@/components/ui/button";
 import { ApiError, api } from "@/lib/api";
+import { useT } from "@/lib/i18n/context";
 import { formatKZT, toTiyn } from "@/lib/money";
 import type { EventAnalytics, TicketType } from "@/lib/types";
 
@@ -23,6 +24,7 @@ export function EventAnalyticsPanel({
   /** Offered as a filter (SRS 4.15). */
   ticketTypes: TicketType[];
 }) {
+  const t = useT();
   const [data, setData] = useState<EventAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -43,12 +45,12 @@ export function EventAnalyticsPanel({
         setError(null);
       } catch (cause) {
         if (cause instanceof DOMException && cause.name === "AbortError") return;
-        setError(cause instanceof ApiError ? cause.message : "Could not load the figures.");
+        setError(cause instanceof ApiError ? cause.message : t("org.analytics.loadFailed"));
       } finally {
         setLoading(false);
       }
     },
-    [eventID, from, to, ticketTypeID],
+    [eventID, from, to, ticketTypeID, t],
   );
 
   useEffect(() => {
@@ -65,20 +67,20 @@ export function EventAnalyticsPanel({
     <section className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold tracking-tight">Analytics</h2>
+          <h2 className="text-lg font-semibold tracking-tight">{t("org.analytics.heading")}</h2>
           <p className="mt-1 text-sm text-foreground-muted">
-            Calculated from your actual orders, tickets and check-ins.
+            {t("org.analytics.subtitle")}
           </p>
         </div>
         <Button variant="secondary" size="sm" onClick={() => void load()} disabled={loading}>
-          Refresh
+          {t("org.common.refresh")}
         </Button>
       </div>
 
       <div className="flex flex-wrap items-end gap-3 rounded-xl border border-border-subtle bg-surface p-4">
         <div className="space-y-1">
           <label htmlFor="analytics-from" className="block text-xs text-foreground-muted">
-            From
+            {t("org.analytics.from")}
           </label>
           <input
             id="analytics-from"
@@ -90,7 +92,7 @@ export function EventAnalyticsPanel({
         </div>
         <div className="space-y-1">
           <label htmlFor="analytics-to" className="block text-xs text-foreground-muted">
-            To
+            {t("org.analytics.to")}
           </label>
           <input
             id="analytics-to"
@@ -102,7 +104,7 @@ export function EventAnalyticsPanel({
         </div>
         <div className="space-y-1">
           <label htmlFor="analytics-type" className="block text-xs text-foreground-muted">
-            Ticket type
+            {t("org.analytics.ticketType")}
           </label>
           <select
             id="analytics-type"
@@ -110,7 +112,7 @@ export function EventAnalyticsPanel({
             onChange={(event) => setTicketTypeID(event.target.value)}
             className="rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm"
           >
-            <option value="">All ticket types</option>
+            <option value="">{t("org.analytics.allTypes")}</option>
             {ticketTypes.map((type) => (
               <option key={type.id} value={type.id}>
                 {type.name}
@@ -128,7 +130,7 @@ export function EventAnalyticsPanel({
               setTicketTypeID("");
             }}
           >
-            Clear filters
+            {t("org.analytics.clear")}
           </Button>
         )}
       </div>
@@ -138,75 +140,81 @@ export function EventAnalyticsPanel({
       {loading && !data ? (
         <div className="flex items-center gap-3 rounded-xl border border-border-subtle bg-surface p-6 text-sm text-foreground-muted">
           <Spinner />
-          Calculating…
+          {t("org.analytics.calculating")}
         </div>
       ) : data ? (
         <>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Stat
-              label="Tickets sold"
+              label={t("org.analytics.sold")}
               value={String(data.tickets_sold)}
-              detail={`of ${data.total_capacity} capacity · ${data.percentage_sold}% sold`}
+              detail={t("org.analytics.soldDetail", { capacity: data.total_capacity, percent: data.percentage_sold })}
               testID="stat-sold"
             />
             <Stat
-              label="Tickets remaining"
+              label={t("org.analytics.remaining")}
               value={String(data.tickets_remaining)}
               detail={
                 data.tickets_refunded > 0
-                  ? `${data.tickets_refunded} refunded`
-                  : `${data.orders_count} order${data.orders_count === 1 ? "" : "s"}`
+                  ? t("org.analytics.refundedCount", { count: data.tickets_refunded })
+                  : data.orders_count === 1
+                    ? t("org.analytics.orderOne")
+                    : t("org.analytics.orderMany", { count: data.orders_count })
               }
               testID="stat-remaining"
             />
             <Stat
-              label="Gross revenue"
+              label={t("org.analytics.gross")}
               value={formatKZT(data.gross_revenue_kzt)}
               detail={
                 toTiyn(data.discounts_kzt) > 0
-                  ? `${formatKZT(data.discounts_kzt)} discounted`
-                  : "no discounts applied"
+                  ? t("org.analytics.discounted", { amount: formatKZT(data.discounts_kzt) })
+                  : t("org.analytics.noDiscounts")
               }
               testID="stat-revenue"
             />
             <Stat
-              label="Checked in"
+              label={t("org.analytics.checkedIn")}
               value={String(data.checked_in)}
-              detail={`${data.absent} absent · ${data.check_in_percentage}% attended`}
+              detail={t("org.analytics.checkedInDetail", { absent: data.absent, percent: data.check_in_percentage })}
               testID="stat-checkedin"
             />
           </div>
 
           {toTiyn(data.refunds_kzt) > 0 && (
             <div className="grid gap-3 sm:grid-cols-2">
-              <Stat label="Refunded" value={formatKZT(data.refunds_kzt)} detail="returned to buyers" />
               <Stat
-                label="Net revenue"
+                label={t("org.analytics.refunded")}
+                value={formatKZT(data.refunds_kzt)}
+                detail={t("org.analytics.refundedDetail")}
+              />
+              <Stat
+                label={t("org.analytics.net")}
                 value={formatKZT(data.net_revenue_kzt)}
-                detail="gross less refunds"
+                detail={t("org.analytics.netDetail")}
               />
             </div>
           )}
 
           <div>
-            <h3 className="text-sm font-semibold">Sales by ticket type</h3>
+            <h3 className="text-sm font-semibold">{t("org.analytics.byType")}</h3>
             <div className="mt-2 overflow-x-auto rounded-xl border border-border-subtle bg-surface">
               <table className="w-full min-w-[36rem] text-sm">
                 <thead>
                   <tr className="border-b border-border-subtle text-left text-xs text-foreground-muted">
-                    <th className="px-4 py-3 font-medium">Ticket type</th>
-                    <th className="px-4 py-3 font-medium">Price</th>
-                    <th className="px-4 py-3 text-right font-medium">Sold</th>
-                    <th className="px-4 py-3 text-right font-medium">Remaining</th>
-                    <th className="px-4 py-3 text-right font-medium">Checked in</th>
-                    <th className="px-4 py-3 text-right font-medium">Revenue</th>
+                    <th className="px-4 py-3 font-medium">{t("org.analytics.ticketType")}</th>
+                    <th className="px-4 py-3 font-medium">{t("org.analytics.price")}</th>
+                    <th className="px-4 py-3 text-right font-medium">{t("org.analytics.colSold")}</th>
+                    <th className="px-4 py-3 text-right font-medium">{t("org.analytics.colRemaining")}</th>
+                    <th className="px-4 py-3 text-right font-medium">{t("org.analytics.checkedIn")}</th>
+                    <th className="px-4 py-3 text-right font-medium">{t("org.analytics.revenue")}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border-subtle" data-testid="sales-by-type">
                   {data.by_ticket_type.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="px-4 py-6 text-center text-foreground-muted">
-                        No ticket types yet.
+                        {t("org.analytics.noTypes")}
                       </td>
                     </tr>
                   ) : (
@@ -232,7 +240,7 @@ export function EventAnalyticsPanel({
 
           {data.by_campaign.length > 0 && (
             <div>
-              <h3 className="text-sm font-semibold">Campaign performance</h3>
+              <h3 className="text-sm font-semibold">{t("org.analytics.campaigns")}</h3>
               <ul className="mt-2 space-y-2">
                 {data.by_campaign.map((row) => (
                   <li
@@ -245,15 +253,15 @@ export function EventAnalyticsPanel({
                     </span>
                     <span className="flex gap-6 text-sm tabular-nums">
                       <span>
-                        <span className="block text-xs text-foreground-muted">Orders</span>
+                        <span className="block text-xs text-foreground-muted">{t("org.analytics.orders")}</span>
                         {row.redemptions}
                       </span>
                       <span>
-                        <span className="block text-xs text-foreground-muted">Tickets</span>
+                        <span className="block text-xs text-foreground-muted">{t("org.analytics.tickets")}</span>
                         {row.tickets_sold}
                       </span>
                       <span>
-                        <span className="block text-xs text-foreground-muted">Revenue</span>
+                        <span className="block text-xs text-foreground-muted">{t("org.analytics.revenue")}</span>
                         {formatKZT(row.revenue_kzt)}
                       </span>
                     </span>
@@ -298,11 +306,12 @@ function Stat({
  * carries its own numbers as text, so the chart is not the only way to read it.
  */
 function SalesChart({ points }: { points: { day: string; orders: number; tickets: number; revenue_kzt: string }[] }) {
+  const t = useT();
   const peak = Math.max(...points.map((point) => toTiyn(point.revenue_kzt)), 1);
 
   return (
     <div>
-      <h3 className="text-sm font-semibold">Sales over time</h3>
+      <h3 className="text-sm font-semibold">{t("org.analytics.overTime")}</h3>
       <ul className="mt-2 space-y-2 rounded-xl border border-border-subtle bg-surface p-5">
         {points.map((point) => {
           const tiyn = toTiyn(point.revenue_kzt);
@@ -321,7 +330,7 @@ function SalesChart({ points }: { points: { day: string; orders: number; tickets
                 />
               </span>
               <span className="w-40 shrink-0 text-right text-xs tabular-nums">
-                {point.tickets} ticket{point.tickets === 1 ? "" : "s"} ·{" "}
+                {point.tickets === 1 ? t("org.analytics.ticketOne") : t("org.analytics.ticketMany", { count: point.tickets })} ·{" "}
                 <span className="font-medium">{formatKZT(point.revenue_kzt)}</span>
               </span>
             </li>

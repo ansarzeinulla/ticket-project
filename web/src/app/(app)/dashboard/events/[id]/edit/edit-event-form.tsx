@@ -12,6 +12,7 @@ import {
 import { Alert } from "@/components/ui/alert";
 import { Button, Spinner } from "@/components/ui/button";
 import { ApiError, api } from "@/lib/api";
+import { useT } from "@/lib/i18n/context";
 import { isoToLocalInput, localInputToISO, slugify, timezoneOptions } from "@/lib/datetime";
 import type { BiletEvent } from "@/lib/types";
 
@@ -28,6 +29,7 @@ import type { BiletEvent } from "@/lib/types";
  */
 export function EditEventForm({ eventID }: { eventID: string }) {
   const router = useRouter();
+  const t = useT();
   const zones = useMemo(() => timezoneOptions(), []);
 
   const [event, setEvent] = useState<BiletEvent | null>(null);
@@ -50,13 +52,13 @@ export function EditEventForm({ eventID }: { eventID: string }) {
       } catch (cause) {
         if (cause instanceof DOMException && cause.name === "AbortError") return;
         setLoadError(
-          cause instanceof ApiError ? cause.message : "Could not load this event.",
+          cause instanceof ApiError ? cause.message : t("org.detail.loadFailed"),
         );
       } finally {
         setLoading(false);
       }
     },
-    [eventID],
+    [eventID, t],
   );
 
   useEffect(() => {
@@ -79,7 +81,7 @@ export function EditEventForm({ eventID }: { eventID: string }) {
     setFieldErrors({});
     setSaved(false);
 
-    const { errors, startsISO, endsISO } = validateEventForm(values, localInputToISO);
+    const { errors, startsISO, endsISO } = validateEventForm(values, localInputToISO, t);
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
       return;
@@ -119,7 +121,7 @@ export function EditEventForm({ eventID }: { eventID: string }) {
     }
 
     if (Object.keys(patch).length === 0) {
-      setFormError("Nothing has changed yet.");
+      setFormError(t("org.form.nothingChanged"));
       return;
     }
 
@@ -135,11 +137,11 @@ export function EditEventForm({ eventID }: { eventID: string }) {
         setFieldErrors(cause.fields);
         setFormError(
           Object.keys(cause.fields).length > 0
-            ? "Please correct the highlighted fields."
+            ? t("auth.common.fixFields")
             : cause.message,
         );
       } else {
-        setFormError("Something went wrong. Please try again.");
+        setFormError(t("auth.common.genericError"));
       }
     } finally {
       setSubmitting(false);
@@ -150,13 +152,13 @@ export function EditEventForm({ eventID }: { eventID: string }) {
     return (
       <div className="flex items-center gap-3 py-16 text-sm text-foreground-muted">
         <Spinner aria-hidden />
-        Loading this event…
+        {t("org.form.loadingEvent")}
       </div>
     );
   }
 
   if (loadError || !values || !event) {
-    return <Alert tone="error">{loadError ?? "Could not load this event."}</Alert>;
+    return <Alert tone="error">{loadError ?? t("org.detail.loadFailed")}</Alert>;
   }
 
   return (
@@ -166,18 +168,18 @@ export function EditEventForm({ eventID }: { eventID: string }) {
           href={`/dashboard/events/${eventID}`}
           className="text-sm text-foreground-muted hover:underline"
         >
-          ← Back to {event.title}
+          {t("org.form.backTo", { title: event.title })}
         </Link>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight">Edit event</h1>
+        <h1 className="mt-2 text-2xl font-semibold tracking-tight">{t("org.form.editHeading")}</h1>
         <p className="mt-1 text-sm text-foreground-muted">
           {isPublished(event)
-            ? "This event is live. Changing when or where it happens emails everybody holding a ticket."
-            : "This event is not published yet, so nobody is notified of changes."}
+            ? t("org.form.liveNote")
+            : t("org.form.draftNote")}
         </p>
       </div>
 
       {formError && <Alert tone="error">{formError}</Alert>}
-      {saved && <Alert tone="success">Saved.</Alert>}
+      {saved && <Alert tone="success">{t("org.form.saved")}</Alert>}
 
       <form
         onSubmit={handleSubmit}
@@ -196,13 +198,13 @@ export function EditEventForm({ eventID }: { eventID: string }) {
 
         <div className="flex items-center gap-3 border-t border-border-subtle pt-5">
           <Button type="submit" loading={submitting} data-testid="save-event">
-            {submitting ? "Saving…" : "Save changes"}
+            {submitting ? t("org.form.saving") : t("org.form.save")}
           </Button>
           <Link
             href={`/dashboard/events/${eventID}`}
             className="rounded-lg px-4 py-2.5 text-sm font-medium text-foreground-muted hover:bg-surface-muted"
           >
-            Discard
+            {t("org.form.discard")}
           </Link>
         </div>
       </form>

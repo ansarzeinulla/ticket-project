@@ -2,22 +2,6 @@ import type { MessageKey } from "@/lib/i18n/dictionaries";
 import type { Translator } from "@/lib/i18n/translate";
 import type { SupportStatus } from "@/lib/types";
 
-/** Human labels for the support_case_category enum values. */
-export const CATEGORY_LABELS: Record<string, string> = {
-  ticket_delivery: "Ticket delivery",
-  payment: "Payment",
-  refund: "Refund",
-  seating: "Seating",
-  event_information: "Event information",
-  check_in: "Check-in",
-  account: "Account",
-  technical: "Technical problem",
-};
-
-export function categoryLabel(category: string): string {
-  return CATEGORY_LABELS[category] ?? category.replace(/_/g, " ");
-}
-
 const CATEGORY_KEYS: Record<string, MessageKey> = {
   ticket_delivery: "support.category.ticket_delivery",
   payment: "support.category.payment",
@@ -45,13 +29,6 @@ const STATUS_KEYS: Record<SupportStatus, MessageKey> = {
 export function supportStatusLabel(t: Translator, status: SupportStatus): string {
   return t(STATUS_KEYS[status]);
 }
-
-export const STATUS_LABELS: Record<SupportStatus, string> = {
-  open: "Open",
-  in_progress: "In progress",
-  waiting_for_customer: "Waiting for you",
-  resolved: "Resolved",
-};
 
 /** Statuses an organizer can set, in the order they normally happen. */
 export const ORGANIZER_STATUSES: SupportStatus[] = [

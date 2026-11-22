@@ -7,19 +7,22 @@ import { EventCard } from "@/components/event-card";
 import { Alert } from "@/components/ui/alert";
 import { Button, Spinner } from "@/components/ui/button";
 import { ApiError, api } from "@/lib/api";
+import { useT } from "@/lib/i18n/context";
+import type { MessageKey } from "@/lib/i18n/dictionaries";
 import type { BiletEvent, Lifecycle } from "@/lib/types";
 
 /** The groupings SRS 4.16 asks the organizer's history to offer. */
-const LIFECYCLE_TABS: { label: string; value: Lifecycle | "" }[] = [
-  { label: "All", value: "" },
-  { label: "Upcoming", value: "upcoming" },
-  { label: "Active", value: "active" },
-  { label: "Completed", value: "completed" },
-  { label: "Cancelled", value: "cancelled" },
-  { label: "Drafts", value: "draft" },
+const LIFECYCLE_TABS: { label: MessageKey; empty: MessageKey; value: Lifecycle | "" }[] = [
+  { label: "org.dashboard.tabs.all", empty: "org.dashboard.empty.all", value: "" },
+  { label: "org.dashboard.tabs.upcoming", empty: "org.dashboard.empty.upcoming", value: "upcoming" },
+  { label: "org.dashboard.tabs.active", empty: "org.dashboard.empty.active", value: "active" },
+  { label: "org.dashboard.tabs.completed", empty: "org.dashboard.empty.completed", value: "completed" },
+  { label: "org.dashboard.tabs.cancelled", empty: "org.dashboard.empty.cancelled", value: "cancelled" },
+  { label: "org.dashboard.tabs.drafts", empty: "org.dashboard.empty.drafts", value: "draft" },
 ];
 
 export default function DashboardPage() {
+  const t = useT();
   const [events, setEvents] = useState<BiletEvent[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -41,11 +44,11 @@ export default function DashboardPage() {
       setError(null);
     } catch (cause) {
       if (cause instanceof DOMException && cause.name === "AbortError") return;
-      setError(cause instanceof ApiError ? cause.message : "Could not load your events.");
+      setError(cause instanceof ApiError ? cause.message : t("org.dashboard.loadFailed"));
     } finally {
       setLoading(false);
     }
-  }, [lifecycle]);
+  }, [lifecycle, t]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -79,30 +82,30 @@ export default function DashboardPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Your events</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{t("org.dashboard.heading")}</h1>
           <p className="mt-1 text-sm text-foreground-muted">
             {loading
-              ? "Loading…"
-              : `${total} event${total === 1 ? "" : "s"}` +
-                (counts.draft ? ` · ${counts.draft} draft` : "") +
-                (counts.published ? ` · ${counts.published} published` : "")}
+              ? t("org.common.loading")
+              : (total === 1 ? t("org.dashboard.countOne") : t("org.dashboard.countMany", { count: total })) +
+                (counts.draft ? ` · ${t("org.dashboard.drafts", { count: counts.draft })}` : "") +
+                (counts.published ? ` · ${t("org.dashboard.published", { count: counts.published })}` : "")}
           </p>
         </div>
 
         <div className="flex gap-2">
           <Button variant="secondary" onClick={handleRefresh} disabled={loading}>
-            Refresh
+            {t("org.common.refresh")}
           </Button>
           <Link
             href="/events/new"
             className="inline-flex items-center justify-center rounded-lg bg-brand px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-strong"
           >
-            New event
+            {t("org.dashboard.newEvent")}
           </Link>
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-1" role="group" aria-label="Filter events">
+      <div className="flex flex-wrap gap-1" role="group" aria-label={t("org.dashboard.filter")}>
         {LIFECYCLE_TABS.map((tab) => (
           <Button
             key={tab.label}
@@ -114,13 +117,13 @@ export default function DashboardPage() {
             }}
             data-testid={`filter-${tab.value || "all"}`}
           >
-            {tab.label}
+            {t(tab.label)}
           </Button>
         ))}
       </div>
 
       {error && (
-        <Alert tone="error" title="Could not load your events">
+        <Alert tone="error" title={t("org.dashboard.loadFailedTitle")}>
           {error}
         </Alert>
       )}
@@ -128,24 +131,23 @@ export default function DashboardPage() {
       {loading && events.length === 0 ? (
         <div className="flex items-center gap-3 rounded-xl border border-border-subtle bg-surface p-8 text-sm text-foreground-muted">
           <Spinner />
-          Fetching your events from the API…
+          {t("org.dashboard.fetching")}
         </div>
       ) : events.length === 0 && !error && lifecycle ? (
         <p className="rounded-xl border border-dashed border-border-subtle bg-surface p-10 text-center text-sm text-foreground-muted">
-          No {LIFECYCLE_TABS.find((tab) => tab.value === lifecycle)?.label.toLowerCase()} events.
+          {t(LIFECYCLE_TABS.find((tab) => tab.value === lifecycle)?.empty ?? "org.dashboard.empty.all")}
         </p>
       ) : events.length === 0 && !error ? (
         <div className="rounded-xl border border-dashed border-border-subtle bg-surface p-12 text-center">
-          <h2 className="text-base font-semibold">No events yet</h2>
+          <h2 className="text-base font-semibold">{t("org.dashboard.noneHeading")}</h2>
           <p className="mx-auto mt-1 max-w-sm text-sm text-foreground-muted">
-            Create your first event to start issuing tickets. Free events cost nothing to
-            publish.
+            {t("org.dashboard.noneBody")}
           </p>
           <Link
             href="/events/new"
             className="mt-5 inline-flex items-center justify-center rounded-lg bg-brand px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-strong"
           >
-            Create your first event
+            {t("org.dashboard.createFirst")}
           </Link>
         </div>
       ) : (

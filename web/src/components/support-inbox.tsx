@@ -6,7 +6,13 @@ import { SupportThreadView } from "@/components/support-thread";
 import { Alert } from "@/components/ui/alert";
 import { Button, Spinner } from "@/components/ui/button";
 import { ApiError, api } from "@/lib/api";
-import { STATUS_LABELS, STATUS_STYLES, categoryLabel, formatMessageTime } from "@/lib/support";
+import { useT } from "@/lib/i18n/context";
+import {
+  STATUS_STYLES,
+  formatMessageTime,
+  supportCategoryLabel,
+  supportStatusLabel,
+} from "@/lib/support";
 import type { SupportCase } from "@/lib/types";
 
 /** How often the inbox re-checks for new cases while it is on screen. */
@@ -14,6 +20,7 @@ const POLL_INTERVAL_MS = 15_000;
 
 /** The organizer's support inbox for one event. */
 export function SupportInbox({ eventID }: { eventID: string }) {
+  const t = useT();
   const [cases, setCases] = useState<SupportCase[]>([]);
   const [openCaseID, setOpenCaseID] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -26,12 +33,12 @@ export function SupportInbox({ eventID }: { eventID: string }) {
         setError(null);
       } catch (cause) {
         if (cause instanceof DOMException && cause.name === "AbortError") return;
-        setError(cause instanceof ApiError ? cause.message : "Could not load support cases.");
+        setError(cause instanceof ApiError ? cause.message : t("org.inbox.loadFailed"));
       } finally {
         setLoading(false);
       }
     },
-    [eventID],
+    [eventID, t],
   );
 
   useEffect(() => {
@@ -54,17 +61,17 @@ export function SupportInbox({ eventID }: { eventID: string }) {
     <section className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold tracking-tight">Support</h2>
+          <h2 className="text-lg font-semibold tracking-tight">{t("orderSupport.heading")}</h2>
           <p className="mt-1 text-sm text-foreground-muted">
             {loading
-              ? "Loading…"
+              ? t("org.common.loading")
               : cases.length === 0
-                ? "No attendee has asked anything yet."
-                : `${cases.length} case${cases.length === 1 ? "" : "s"} · ${openCount} needing a reply`}
+                ? t("org.inbox.noneYet")
+                : `${cases.length === 1 ? t("org.inbox.caseOne") : t("org.inbox.caseMany", { count: cases.length })} · ${t("org.inbox.needReply", { count: openCount })}`}
           </p>
         </div>
         <Button variant="secondary" size="sm" onClick={() => void load()} disabled={loading}>
-          Refresh
+          {t("org.common.refresh")}
         </Button>
       </div>
 
@@ -73,11 +80,11 @@ export function SupportInbox({ eventID }: { eventID: string }) {
       {loading && cases.length === 0 ? (
         <div className="flex items-center gap-3 rounded-xl border border-border-subtle bg-surface p-6 text-sm text-foreground-muted">
           <Spinner />
-          Loading support cases…
+          {t("org.inbox.loading")}
         </div>
       ) : cases.length === 0 ? (
         <p className="rounded-xl border border-dashed border-border-subtle bg-surface p-6 text-center text-sm text-foreground-muted">
-          Questions attendees ask from their order page arrive here.
+          {t("org.inbox.empty")}
         </p>
       ) : (
         <ul className="space-y-2">
@@ -93,9 +100,9 @@ export function SupportInbox({ eventID }: { eventID: string }) {
                 <span className="min-w-0">
                   <span className="block truncate font-medium">{item.subject}</span>
                   <span className="text-xs text-foreground-muted">
-                    {item.case_number} · {categoryLabel(item.category)} · from{" "}
-                    {item.requester_name}
-                    {item.order_number ? ` · order ${item.order_number}` : ""}
+                    {item.case_number} · {supportCategoryLabel(t, item.category)} ·{" "}
+                    {t("supportThread.from", { name: item.requester_name })}
+                    {item.order_number ? ` · ${t("supportThread.order", { number: item.order_number })}` : ""}
                     {item.last_message_at
                       ? ` · ${formatMessageTime(item.last_message_at)}`
                       : ""}
@@ -104,7 +111,7 @@ export function SupportInbox({ eventID }: { eventID: string }) {
                 <span
                   className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_STYLES[item.status]}`}
                 >
-                  {STATUS_LABELS[item.status]}
+                  {supportStatusLabel(t, item.status)}
                 </span>
               </button>
 
