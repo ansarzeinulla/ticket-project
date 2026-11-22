@@ -1,4 +1,5 @@
 import type { Locale } from "./config";
+import { enAttendee, kkAttendee, ruAttendee } from "./messages/attendee";
 
 /**
  * The message catalogues for the customer-facing pages.
@@ -135,6 +136,7 @@ const en = {
     statusCancelled: "cancelled",
     statusRefunded: "refunded",
   },
+  ...enAttendee,
 };
 
 /** The shape every locale must satisfy, taken from English. */
@@ -275,6 +277,7 @@ const ru: Dictionary = {
     statusCancelled: "отменён",
     statusRefunded: "возвращён",
   },
+  ...ruAttendee,
 };
 
 const kk: Dictionary = {
@@ -399,6 +402,7 @@ const kk: Dictionary = {
     statusCancelled: "тоқтатылған",
     statusRefunded: "қайтарылған",
   },
+  ...kkAttendee,
 };
 
 const dictionaries: Record<Locale, Dictionary> = { kk, ru, en };

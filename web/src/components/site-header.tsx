@@ -5,22 +5,25 @@ import { usePathname, useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
+import type { MessageKey } from "@/lib/i18n/dictionaries";
+import { useT } from "@/lib/i18n/context";
 
 const links = [
-  { href: "/dashboard", label: "Events" },
-  { href: "/events/new", label: "Create event" },
+  { href: "/dashboard", label: "nav.events" },
+  { href: "/events/new", label: "nav.createEvent" },
   // SRS 4.9: an attendee reaches their own orders from their account, not only
   // from the emailed link. Every signed-in user is an attendee of something.
-  { href: "/orders", label: "My tickets" },
-] as const;
+  { href: "/orders", label: "nav.myTickets" },
+] as const satisfies readonly { href: string; label: MessageKey }[];
 
 /** Shown only to platform administrators (SRS 2.1). */
-const adminLink = { href: "/admin", label: "Administration" } as const;
+const adminLink = { href: "/admin", label: "nav.administration" } as const satisfies { href: string; label: MessageKey };
 
 export function SiteHeader() {
   const pathname = usePathname();
   const router = useRouter();
   const { user, logout } = useAuth();
+  const t = useT();
 
   function handleSignOut() {
     logout();
@@ -38,7 +41,7 @@ export function SiteHeader() {
           <span className="hidden font-semibold tracking-tight sm:inline">BiletFlow</span>
         </Link>
 
-        <nav className="flex items-center gap-1" aria-label="Main">
+        <nav className="flex items-center gap-1" aria-label={t("nav.main")}>
           {[...links, ...(user?.roles.includes("platform_admin") ? [adminLink] : [])].map((link) => {
             const active = pathname === link.href;
             return (
@@ -52,7 +55,7 @@ export function SiteHeader() {
                     : "text-foreground-muted hover:bg-surface-muted hover:text-foreground"
                 }`}
               >
-                {link.label}
+                {t(link.label)}
               </Link>
             );
           })}
@@ -72,7 +75,7 @@ export function SiteHeader() {
             </Link>
           )}
           <Button variant="secondary" size="sm" onClick={handleSignOut}>
-            Sign out
+            {t("nav.signOut")}
           </Button>
         </div>
       </div>
