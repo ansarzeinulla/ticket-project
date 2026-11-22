@@ -62,7 +62,9 @@ export function EventCard({
           <p className="mt-1 font-mono text-xs text-foreground-muted">/{event.slug}</p>
         </div>
 
-        <div className="flex shrink-0 flex-wrap gap-2">
+        {/* No shrink-0: on a phone the buttons wrap under the title instead of
+            pushing the card 145 px past the screen edge. */}
+        <div className="flex flex-wrap gap-2">
           <Link
             href={`/dashboard/events/${event.id}`}
             className="inline-flex items-center rounded-lg border border-border-subtle px-3 py-1.5 text-xs font-medium hover:bg-surface-muted"
