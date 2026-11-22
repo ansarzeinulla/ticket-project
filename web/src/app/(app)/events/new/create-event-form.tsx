@@ -13,6 +13,7 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { ApiError, api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { useT } from "@/lib/i18n/context";
 import {
   browserTimezone,
   defaultLocalInput,
@@ -25,6 +26,7 @@ import type { CreateEventInput } from "@/lib/types";
 export function CreateEventForm() {
   const router = useRouter();
   const { refresh } = useAuth();
+  const t = useT();
 
   const zones = useMemo(() => timezoneOptions(), []);
   const defaultZone = useMemo(() => {
@@ -61,7 +63,7 @@ export function CreateEventForm() {
     setFormError(null);
     setFieldErrors({});
 
-    const { errors, startsISO, endsISO } = validateEventForm(values, localInputToISO);
+    const { errors, startsISO, endsISO } = validateEventForm(values, localInputToISO, t);
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
       return;
@@ -99,11 +101,11 @@ export function CreateEventForm() {
         setFieldErrors(error.fields);
         setFormError(
           Object.keys(error.fields).length > 0
-            ? "Please correct the highlighted fields."
+            ? t("auth.common.fixFields")
             : error.message,
         );
       } else {
-        setFormError("Something went wrong. Please try again.");
+        setFormError(t("auth.common.genericError"));
       }
       setSubmitting(false);
     }
@@ -113,11 +115,11 @@ export function CreateEventForm() {
     <div className="mx-auto max-w-2xl space-y-6">
       <div>
         <Link href="/dashboard" className="text-sm text-foreground-muted hover:underline">
-          ← Back to events
+          {t("org.detail.back")}
         </Link>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight">Create an event</h1>
+        <h1 className="mt-2 text-2xl font-semibold tracking-tight">{t("org.titles.newEvent")}</h1>
         <p className="mt-1 text-sm text-foreground-muted">
-          Your event is saved as a draft. Publish it from the dashboard when it is ready.
+          {t("org.form.createSubtitle")}
         </p>
       </div>
 
@@ -138,13 +140,13 @@ export function CreateEventForm() {
 
         <div className="flex items-center gap-3 border-t border-border-subtle pt-5">
           <Button type="submit" loading={submitting}>
-            {submitting ? "Creating…" : "Create event"}
+            {submitting ? t("org.form.creating") : t("org.form.create")}
           </Button>
           <Link
             href="/dashboard"
             className="rounded-lg px-4 py-2.5 text-sm font-medium text-foreground-muted hover:bg-surface-muted"
           >
-            Cancel
+            {t("org.form.cancel")}
           </Link>
         </div>
       </form>

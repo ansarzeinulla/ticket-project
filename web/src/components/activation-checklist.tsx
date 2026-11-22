@@ -5,6 +5,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { ApiError, api } from "@/lib/api";
+import { useT } from "@/lib/i18n/context";
+import type { MessageKey } from "@/lib/i18n/dictionaries";
 import { formatKZT } from "@/lib/money";
 import type { Activation, ActivationStep, ActivationSubmission } from "@/lib/types";
 
@@ -17,36 +19,32 @@ import type { Activation, ActivationStep, ActivationSubmission } from "@/lib/typ
 const STEPS: {
   key: ActivationStep;
   field: keyof ActivationSubmission;
-  title: string;
-  detail: string;
+  title: MessageKey;
+  detail: MessageKey;
 }[] = [
   {
     key: "identity",
     field: "confirm_identity",
-    title: "Confirm your identity",
-    detail:
-      "A real platform would check a document or a company registration here. " +
-      "For this MVP, confirming stands in for that check.",
+    title: "org.activation.identityTitle",
+    detail: "org.activation.identityDetail",
   },
   {
     key: "payout",
     field: "confirm_payout",
-    title: "Confirm where payouts go",
-    detail:
-      "The account that would receive ticket revenue after the event, minus fees.",
+    title: "org.activation.payoutTitle",
+    detail: "org.activation.payoutDetail",
   },
   {
     key: "terms",
     field: "accept_terms",
-    title: "Accept the seller terms",
-    detail:
-      "Refund obligations, what you may sell, and what happens if an event is cancelled.",
+    title: "org.activation.termsTitle",
+    detail: "org.activation.termsDetail",
   },
   {
     key: "fee",
     field: "pay_activation_fee",
-    title: "Pay the activation fee",
-    detail: "Recorded as a simulated payment. No money moves anywhere.",
+    title: "org.activation.feeTitle",
+    detail: "org.activation.feeDetail",
   },
 ];
 
@@ -64,6 +62,7 @@ export function ActivationChecklist({
   eventID: string;
   onActivated?: () => void;
 }) {
+  const t = useT();
   const [activation, setActivation] = useState<Activation | null>(null);
   const [open, setOpen] = useState(false);
   const [checked, setChecked] = useState<Set<ActivationStep>>(new Set());
@@ -79,12 +78,12 @@ export function ActivationChecklist({
         setError(null);
       } catch (cause) {
         if (cause instanceof DOMException && cause.name === "AbortError") return;
-        setError(cause instanceof ApiError ? cause.message : "Could not load activation.");
+        setError(cause instanceof ApiError ? cause.message : t("org.activation.loadFailed"));
       } finally {
         setLoading(false);
       }
     },
-    [eventID],
+    [eventID, t],
   );
 
   useEffect(() => {
@@ -123,7 +122,7 @@ export function ActivationChecklist({
         onActivated?.();
       }
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : "Could not activate paid sales.");
+      setError(cause instanceof ApiError ? cause.message : t("org.activation.activateFailed"));
     } finally {
       setSubmitting(false);
     }
@@ -136,23 +135,23 @@ export function ActivationChecklist({
 
   if (activation.status === "suspended") {
     return (
-      <Alert tone="error" title="Paid sales suspended">
-        BiletFlow has suspended paid ticket sales for this event
-        {activation.suspension_reason ? `: ${activation.suspension_reason}` : "."} Free
-        registration is unaffected. Contact support to have this reviewed.
+      <Alert tone="error" title={t("org.activation.suspendedTitle")}>
+        {t("org.activation.suspendedBody")}
+        {activation.suspension_reason ? `: ${activation.suspension_reason}` : "."}{" "}
+        {t("org.activation.suspendedTail")}
       </Alert>
     );
   }
 
   if (activation.is_active) {
     return (
-      <Alert tone="success" title="Paid sales are active">
-        Activated on{" "}
-        {activation.activated_at
-          ? new Date(activation.activated_at).toLocaleDateString()
-          : "this event"}
-        . The simulated {formatKZT(activation.activation_fee_kzt)} activation fee was
-        recorded.
+      <Alert tone="success" title={t("org.activation.activeTitle")}>
+        {t("org.activation.activeBody", {
+          date: activation.activated_at
+            ? new Date(activation.activated_at).toLocaleDateString()
+            : t("org.activation.thisEvent"),
+          fee: formatKZT(activation.activation_fee_kzt),
+        })}
       </Alert>
     );
   }
@@ -164,20 +163,18 @@ export function ActivationChecklist({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="max-w-2xl">
           <p className="font-semibold text-foreground">
-            Your paid tickets are not on sale yet
+            {t("org.activation.pendingTitle")}
           </p>
           <p className="mt-1 text-sm text-foreground-muted">
-            This event has paid ticket types, so BiletFlow needs you to complete a short
-            activation checklist before the public can buy them. Free tickets, if you have
-            any, are unaffected.
+            {t("org.activation.pendingBody")}
           </p>
           <p className="mt-2 text-xs text-foreground-muted">
-            {done} of {STEPS.length} steps done
+            {t("org.activation.progress", { done, total: STEPS.length })}
           </p>
         </div>
 
         {!open && (
-          <Button onClick={() => setOpen(true)}>Activate paid sales</Button>
+          <Button onClick={() => setOpen(true)}>{t("org.activation.open")}</Button>
         )}
       </div>
 
@@ -203,18 +200,18 @@ export function ActivationChecklist({
                 />
                 <span className="min-w-0">
                   <span className="flex flex-wrap items-center gap-2 text-sm font-medium">
-                    {step.title}
+                    {t(step.title)}
                     {step.key === "fee" && (
                       <span className="text-xs font-normal text-foreground-muted">
-                        {formatKZT(activation.activation_fee_kzt)} · simulated
+                        {formatKZT(activation.activation_fee_kzt)} · {t("org.activation.simulated")}
                       </span>
                     )}
                     {complete && (
-                      <span className="text-xs font-normal text-success">done</span>
+                      <span className="text-xs font-normal text-success">{t("org.activation.done")}</span>
                     )}
                   </span>
                   <span className="mt-1 block text-xs text-foreground-muted">
-                    {step.detail}
+                    {t(step.detail)}
                   </span>
                 </span>
               </label>
@@ -226,14 +223,16 @@ export function ActivationChecklist({
           <div className="flex flex-wrap items-center gap-2">
             <Button onClick={() => void submit()} loading={submitting} disabled={checked.size === 0}>
               {checked.size === activation.outstanding.length
-                ? "Complete activation"
-                : `Save ${checked.size || "no"} step${checked.size === 1 ? "" : "s"}`}
+                ? t("org.activation.complete")
+                : checked.size === 1
+                  ? t("org.activation.saveOne")
+                  : t("org.activation.saveMany", { count: checked.size || "no" })}
             </Button>
             <Button variant="ghost" onClick={() => setOpen(false)} disabled={submitting}>
-              Close
+              {t("org.activation.close")}
             </Button>
             <span className="text-xs text-foreground-muted">
-              Nothing is charged. This is a simulated activation for an academic MVP.
+              {t("org.activation.note")}
             </span>
           </div>
         </div>

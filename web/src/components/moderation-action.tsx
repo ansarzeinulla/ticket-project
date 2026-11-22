@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api";
+import { useT } from "@/lib/i18n/context";
 
 /**
  * A moderation control that asks before it acts (SRS 4.12).
@@ -37,6 +38,7 @@ export function ModerationAction({
   onConfirm: (reason: string) => Promise<unknown>;
   onDone?: () => void;
 }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
@@ -52,7 +54,7 @@ export function ModerationAction({
       onDone?.();
     } catch (cause) {
       setError(
-        cause instanceof ApiError ? cause.message : "That did not work. Try again.",
+        cause instanceof ApiError ? cause.message : t("org.moderation.failed"),
       );
     } finally {
       setBusy(false);
@@ -73,14 +75,14 @@ export function ModerationAction({
 
       {withReason && (
         <label className="block text-xs">
-          <span className="text-foreground-muted">Reason (kept in the audit log)</span>
+          <span className="text-foreground-muted">{t("org.moderation.reason")}</span>
           <input
             type="text"
             value={reason}
             onChange={(event) => setReason(event.target.value)}
             maxLength={500}
             className="mt-1 w-full rounded-md border border-border-subtle bg-surface px-2 py-1 text-sm"
-            placeholder="Optional"
+            placeholder={t("org.moderation.optional")}
           />
         </label>
       )}
@@ -104,7 +106,7 @@ export function ModerationAction({
             setError(null);
           }}
         >
-          Cancel
+          {t("org.form.cancel")}
         </Button>
       </div>
     </div>

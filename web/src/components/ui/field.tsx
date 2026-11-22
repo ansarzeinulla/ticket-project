@@ -67,6 +67,8 @@ interface SelectFieldProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>,
   hint?: ReactNode;
   error?: string;
   options: readonly string[];
+  /** What each option shows; defaults to the value itself. */
+  optionLabel?: (option: string) => string;
 }
 
 export function SelectField({
@@ -74,6 +76,7 @@ export function SelectField({
   hint,
   error,
   options,
+  optionLabel,
   className,
   ...props
 }: SelectFieldProps) {
@@ -89,7 +92,7 @@ export function SelectField({
       >
         {options.map((option) => (
           <option key={option} value={option}>
-            {option}
+            {optionLabel ? optionLabel(option) : option}
           </option>
         ))}
       </select>
