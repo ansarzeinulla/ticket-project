@@ -7,6 +7,7 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { TextField } from "@/components/ui/field";
 import { ApiError, api } from "@/lib/api";
+import { useT } from "@/lib/i18n/context";
 
 /**
  * "Forgot password" (SRS 4.1).
@@ -17,6 +18,7 @@ import { ApiError, api } from "@/lib/api";
  * testing which addresses are registered.
  */
 export function ForgotPasswordForm() {
+  const t = useT();
   const [email, setEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [sent, setSent] = useState(false);
@@ -37,7 +39,7 @@ export function ForgotPasswordForm() {
         setFieldErrors(cause.fields);
         setError(Object.keys(cause.fields).length > 0 ? null : cause.message);
       } else {
-        setError("Something went wrong. Please try again.");
+        setError(t("auth.common.genericError"));
       }
     } finally {
       setSubmitting(false);
@@ -48,23 +50,22 @@ export function ForgotPasswordForm() {
     return (
       <>
         <div className="mb-6">
-          <h1 className="text-2xl font-semibold tracking-tight">Check your inbox</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{t("auth.forgot.sentHeading")}</h1>
         </div>
-        <Alert tone="success" title="Reset link sent">
-          If <span className="font-medium">{email.trim()}</span> has an account, a reset
-          code is on its way. It works once, and stops working after an hour.
+        <Alert tone="success" title={t("auth.forgot.sentTitle")}>
+          {t("auth.forgot.sentBodyBefore")}<span className="font-medium">{email.trim()}</span>
+          {t("auth.forgot.sentBodyAfter")}
         </Alert>
         <p className="mt-4 text-sm text-foreground-muted">
-          This MVP has no mail server: the message is printed to the API&apos;s console.
-          Copy the code from there and{" "}
+          {t("auth.forgot.consoleNote")}{" "}
           <Link href="/reset-password" className="font-medium text-brand hover:underline">
-            enter it here
+            {t("auth.forgot.enterHere")}
           </Link>
           .
         </p>
         <p className="mt-6 text-center text-sm text-foreground-muted">
           <Link href="/login" className="font-medium text-brand hover:underline">
-            Back to sign in
+            {t("auth.forgot.back")}
           </Link>
         </p>
       </>
@@ -74,9 +75,9 @@ export function ForgotPasswordForm() {
   return (
     <>
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Forgot your password?</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{t("auth.forgot.heading")}</h1>
         <p className="mt-1 text-sm text-foreground-muted">
-          Enter your email and we will send a code to set a new one.
+          {t("auth.forgot.subtitle")}
         </p>
       </div>
 
@@ -88,7 +89,7 @@ export function ForgotPasswordForm() {
 
       <form onSubmit={handleSubmit} className="space-y-4" noValidate>
         <TextField
-          label="Email"
+          label={t("auth.common.email")}
           type="email"
           name="email"
           autoComplete="email"
@@ -100,14 +101,14 @@ export function ForgotPasswordForm() {
         />
 
         <Button type="submit" loading={submitting} className="w-full">
-          Send reset code
+          {t("auth.forgot.submit")}
         </Button>
       </form>
 
       <p className="mt-6 text-center text-sm text-foreground-muted">
-        Remembered it?{" "}
+        {t("auth.forgot.remembered")}{" "}
         <Link href="/login" className="font-medium text-brand hover:underline">
-          Sign in
+          {t("auth.common.signIn")}
         </Link>
       </p>
     </>

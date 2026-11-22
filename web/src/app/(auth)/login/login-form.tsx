@@ -9,11 +9,13 @@ import { Button } from "@/components/ui/button";
 import { TextField } from "@/components/ui/field";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { useT } from "@/lib/i18n/context";
 
 export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { login } = useAuth();
+  const t = useT();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -46,11 +48,11 @@ export function LoginForm() {
         setFieldErrors(error.fields);
         setFormError(
           error.code === "invalid_credentials"
-            ? "Email or password is incorrect."
+            ? t("auth.login.invalid")
             : error.message,
         );
       } else {
-        setFormError("Something went wrong. Please try again.");
+        setFormError(t("auth.common.genericError"));
       }
       setSubmitting(false);
     }
@@ -59,9 +61,9 @@ export function LoginForm() {
   return (
     <>
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Sign in</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{t("auth.login.heading")}</h1>
         <p className="mt-1 text-sm text-foreground-muted">
-          Manage your events and tickets.
+          {t("auth.login.subtitle")}
         </p>
       </div>
 
@@ -73,7 +75,7 @@ export function LoginForm() {
 
       <form onSubmit={handleSubmit} className="space-y-4" noValidate>
         <TextField
-          label="Email"
+          label={t("auth.common.email")}
           type="email"
           name="email"
           autoComplete="email"
@@ -86,7 +88,7 @@ export function LoginForm() {
         />
 
         <TextField
-          label="Password"
+          label={t("auth.common.password")}
           type="password"
           name="password"
           autoComplete="current-password"
@@ -99,7 +101,7 @@ export function LoginForm() {
         />
 
         <Button type="submit" loading={submitting} className="w-full">
-          {submitting ? "Signing in…" : "Sign in"}
+          {submitting ? t("auth.login.submitting") : t("auth.login.submit")}
         </Button>
       </form>
 
@@ -108,14 +110,14 @@ export function LoginForm() {
           href="/forgot-password"
           className="font-medium text-foreground-muted hover:text-brand hover:underline"
         >
-          Forgot your password?
+          {t("auth.login.forgot")}
         </Link>
       </p>
 
       <p className="mt-4 text-center text-sm text-foreground-muted">
-        No account yet?{" "}
+        {t("auth.login.noAccount")}{" "}
         <Link href="/register" className="font-medium text-brand hover:underline">
-          Create one
+          {t("auth.login.createOne")}
         </Link>
       </p>
     </>

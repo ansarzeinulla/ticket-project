@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { TextField } from "@/components/ui/field";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { useT } from "@/lib/i18n/context";
 
 /** Matches the API's minimum; checked here so the error appears instantly. */
 const MIN_PASSWORD_LENGTH = 8;
@@ -16,6 +17,7 @@ const MIN_PASSWORD_LENGTH = 8;
 export function RegisterForm() {
   const router = useRouter();
   const { register } = useAuth();
+  const t = useT();
 
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -32,12 +34,12 @@ export function RegisterForm() {
 
     // Confirmation is a UI-only concern; the API never sees it.
     if (password !== confirm) {
-      setFieldErrors({ confirm: "The two passwords do not match." });
+      setFieldErrors({ confirm: t("auth.common.mismatch") });
       return;
     }
     if (password.length < MIN_PASSWORD_LENGTH) {
       setFieldErrors({
-        password: `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`,
+        password: t("auth.register.tooShort", { min: MIN_PASSWORD_LENGTH }),
       });
       return;
     }
@@ -57,13 +59,13 @@ export function RegisterForm() {
         setFieldErrors(error.fields);
         setFormError(
           error.code === "conflict"
-            ? "An account with this email already exists. Try signing in instead."
+            ? t("auth.register.exists")
             : error.fields && Object.keys(error.fields).length > 0
-              ? "Please correct the highlighted fields."
+              ? t("auth.common.fixFields")
               : error.message,
         );
       } else {
-        setFormError("Something went wrong. Please try again.");
+        setFormError(t("auth.common.genericError"));
       }
       setSubmitting(false);
     }
@@ -72,9 +74,9 @@ export function RegisterForm() {
   return (
     <>
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Create your account</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{t("auth.register.heading")}</h1>
         <p className="mt-1 text-sm text-foreground-muted">
-          Publishing events and issuing free tickets costs nothing.
+          {t("auth.register.subtitle")}
         </p>
       </div>
 
@@ -86,11 +88,11 @@ export function RegisterForm() {
 
       <form onSubmit={handleSubmit} className="space-y-4" noValidate>
         <TextField
-          label="Full name"
+          label={t("auth.register.fullName")}
           name="full_name"
           autoComplete="name"
           placeholder="Dana Amirova"
-          hint="Optional — we'll derive one from your email if you skip it."
+          hint={t("auth.register.fullNameHint")}
           value={fullName}
           error={fieldErrors.full_name}
           disabled={submitting}
@@ -98,7 +100,7 @@ export function RegisterForm() {
         />
 
         <TextField
-          label="Email"
+          label={t("auth.common.email")}
           type="email"
           name="email"
           autoComplete="email"
@@ -111,11 +113,11 @@ export function RegisterForm() {
         />
 
         <TextField
-          label="Password"
+          label={t("auth.common.password")}
           type="password"
           name="password"
           autoComplete="new-password"
-          placeholder="At least 8 characters"
+          placeholder={t("auth.common.minLength")}
           required
           minLength={MIN_PASSWORD_LENGTH}
           value={password}
@@ -125,7 +127,7 @@ export function RegisterForm() {
         />
 
         <TextField
-          label="Confirm password"
+          label={t("auth.register.confirm")}
           type="password"
           name="confirm_password"
           autoComplete="new-password"
@@ -137,14 +139,14 @@ export function RegisterForm() {
         />
 
         <Button type="submit" loading={submitting} className="w-full">
-          {submitting ? "Creating account…" : "Create account"}
+          {submitting ? t("auth.register.submitting") : t("auth.register.submit")}
         </Button>
       </form>
 
       <p className="mt-6 text-center text-sm text-foreground-muted">
-        Already registered?{" "}
+        {t("auth.register.already")}{" "}
         <Link href="/login" className="font-medium text-brand hover:underline">
-          Sign in
+          {t("auth.common.signIn")}
         </Link>
       </p>
     </>

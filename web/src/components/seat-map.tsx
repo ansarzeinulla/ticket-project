@@ -5,6 +5,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { ApiError, api } from "@/lib/api";
+import { useT } from "@/lib/i18n/context";
+import type { MessageKey } from "@/lib/i18n/dictionaries";
 import { formatKZT, formatTiyn, toTiyn } from "@/lib/money";
 import type { Seat, SeatMap as SeatMapData, SeatSection, SeatStatus } from "@/lib/types";
 
@@ -20,36 +22,36 @@ type SeatState = SeatStatus | "selected";
 
 const SEAT_STYLE: Record<
   SeatState,
-  { fill: string; stroke: string; label: string; symbol: string }
+  { fill: string; stroke: string; label: MessageKey; symbol: string }
 > = {
   available: {
     fill: "var(--color-surface)",
     stroke: "var(--color-brand)",
-    label: "Available",
+    label: "seatMap.available",
     symbol: "",
   },
   selected: {
     fill: "var(--color-brand)",
     stroke: "var(--color-brand-strong)",
-    label: "Selected",
+    label: "seatMap.selected",
     symbol: "✓",
   },
   held: {
     fill: "var(--color-warning-soft)",
     stroke: "var(--color-warning)",
-    label: "Held by someone",
+    label: "seatMap.held",
     symbol: "⏳",
   },
   sold: {
     fill: "var(--color-surface-muted)",
     stroke: "var(--color-border-subtle)",
-    label: "Sold",
+    label: "seatMap.sold",
     symbol: "×",
   },
   unavailable: {
     fill: "transparent",
     stroke: "var(--color-border-subtle)",
-    label: "Not for sale",
+    label: "seatMap.unavailable",
     symbol: "−",
   },
 };
@@ -79,6 +81,7 @@ export function SeatMapPicker({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [holding, setHolding] = useState(false);
+  const t = useT();
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -87,12 +90,12 @@ export function SeatMapPicker({
         setError(null);
       } catch (cause) {
         if (cause instanceof DOMException && cause.name === "AbortError") return;
-        setError(cause instanceof ApiError ? cause.message : "Could not load the seat map.");
+        setError(cause instanceof ApiError ? cause.message : t("seatMap.loadFailed"));
       } finally {
         setLoading(false);
       }
     },
-    [eventID],
+    [eventID, t],
   );
 
   useEffect(() => {
@@ -118,10 +121,10 @@ export function SeatMapPicker({
 
   const seatLabel = useCallback(
     (seat: Seat, section: SeatSection, row: string) =>
-      `${section.name}, row ${row}, seat ${seat.number}` +
-      (seat.accessible ? ", accessible" : "") +
+      t("seatMap.seatLabel", { section: section.name, row, seat: seat.number }) +
+      (seat.accessible ? t("seatMap.accessibleSuffix") : "") +
       (section.price_kzt ? `, ${formatKZT(section.price_kzt)}` : ""),
-    [],
+    [t],
   );
 
   function toggle(seat: Seat) {
@@ -148,7 +151,7 @@ export function SeatMapPicker({
       setError(
         cause instanceof ApiError
           ? cause.message
-          : "Could not reserve those seats. Try again.",
+          : t("seatMap.holdFailed"),
       );
       // Somebody else may have taken one while this browser was deciding, so
       // the map is re-read rather than left showing a seat that is now gone.
@@ -160,10 +163,10 @@ export function SeatMapPicker({
   }
 
   if (loading) {
-    return <p className="text-sm text-foreground-muted">Loading the seat map…</p>;
+    return <p className="text-sm text-foreground-muted">{t("seatMap.loading")}</p>;
   }
   if (!plan) {
-    return <Alert>{error ?? "No seat map for this event."}</Alert>;
+    return <Alert>{error ?? t("seatMap.none")}</Alert>;
   }
 
   const width = plan.max_x - plan.min_x + PADDING * 2;
@@ -174,14 +177,14 @@ export function SeatMapPicker({
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 id="seat-map-heading" className="text-lg font-semibold tracking-tight">
-            Choose your seats
+            {t("seatMap.heading")}
           </h2>
           <p className="mt-1 text-sm text-foreground-muted">
-            {plan.venue_name} · {plan.available_seats} of {plan.total_seats} seats free
+            {plan.venue_name} · {t("seatMap.free", { free: plan.available_seats, total: plan.total_seats })}
           </p>
         </div>
         <Button variant="secondary" size="sm" onClick={() => void load()}>
-          Refresh
+          {t("seatMap.refresh")}
         </Button>
       </div>
 
@@ -192,7 +195,7 @@ export function SeatMapPicker({
           viewBox={`${plan.min_x - PADDING} ${plan.min_y - PADDING} ${width} ${height}`}
           className="mx-auto block h-auto w-full max-w-2xl"
           role="group"
-          aria-label={`Seat map for ${plan.venue_name}`}
+          aria-label={t("seatMap.mapLabel", { venue: plan.venue_name })}
         >
           {/* The stage, so the map has an orientation. */}
           <rect
@@ -210,7 +213,7 @@ export function SeatMapPicker({
             fontSize={7}
             fill="var(--color-foreground-muted)"
           >
-            STAGE
+            {t("seatMap.stage")}
           </text>
 
           {plan.sections.map((section) =>
@@ -240,7 +243,7 @@ export function SeatMapPicker({
                       tabIndex={clickable ? 0 : -1}
                       aria-disabled={!clickable}
                       aria-pressed={state === "selected"}
-                      aria-label={`${seatLabel(seat, section, row.label)} — ${style.label}`}
+                      aria-label={`${seatLabel(seat, section, row.label)} — ${t(style.label)}`}
                       onKeyDown={(event) => {
                         if (event.key === "Enter" || event.key === " ") {
                           event.preventDefault();
@@ -291,13 +294,13 @@ export function SeatMapPicker({
                   {SEAT_STYLE[state].symbol}
                 </span>
               )}
-              {SEAT_STYLE[state].label}
+              {t(SEAT_STYLE[state].label)}
             </span>
           </li>
         ))}
         <li className="flex items-center gap-1.5">
           <span aria-hidden>♿</span>
-          <span>Accessible (dashed outline)</span>
+          <span>{t("seatMap.accessibleLegend")}</span>
         </li>
       </ul>
 
@@ -305,8 +308,10 @@ export function SeatMapPicker({
         <div>
           <p className="text-sm font-medium">
             {selected.length === 0
-              ? "No seats selected"
-              : `${selected.length} seat${selected.length === 1 ? "" : "s"} selected`}
+              ? t("seatMap.noneSelected")
+              : selected.length === 1
+                ? t("seatMap.selectedOne")
+                : t("seatMap.selectedMany", { count: selected.length })}
           </p>
           {selected.length > 0 && (
             <p className="mt-0.5 text-xs text-foreground-muted">
@@ -331,7 +336,7 @@ export function SeatMapPicker({
             loading={holding}
             onClick={() => void reserve()}
           >
-            Hold these seats
+            {t("seatMap.hold")}
           </Button>
         </div>
       </div>

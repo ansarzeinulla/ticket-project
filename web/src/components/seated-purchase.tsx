@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { SeatCheckout } from "@/components/seat-checkout";
 import { SeatMapPicker } from "@/components/seat-map";
+import { useT } from "@/lib/i18n/context";
 
 /**
  * The assigned-seating purchase flow (SRS 4.3.1, 4.6).
@@ -21,6 +22,7 @@ export function SeatedPurchase({
   eventID: string;
   eventSlug: string;
 }) {
+  const t = useT();
   const [orderID, setOrderID] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -31,13 +33,11 @@ export function SeatedPurchase({
         eventSlug={eventSlug}
         onExpired={() => {
           setOrderID(null);
-          setNotice(
-            "Your reservation ran out and the seats are back on sale. Please choose again.",
-          );
+          setNotice(t("seatCheckout.expiredNotice"));
         }}
         onCancelled={() => {
           setOrderID(null);
-          setNotice("Those seats are back on sale.");
+          setNotice(t("seatCheckout.releasedNotice"));
         }}
       />
     );
