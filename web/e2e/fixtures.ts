@@ -268,7 +268,7 @@ export async function signIn(page: Page, token: string) {
   // `url` and `path` are mutually exclusive in Playwright's cookie API; the
   // url form is enough, since the cookie lib.session.ts writes is path "/".
   await page.context().addCookies([
-    { name: "biletflow_token", value: token, url: BASE_URL },
+    { name: "biletflow_session", value: token, url: BASE_URL },
   ]);
 }
 
