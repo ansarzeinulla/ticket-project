@@ -121,6 +121,10 @@ export interface CreateEventInput {
   timezone: string;
   visibility?: EventVisibility;
   seating_mode?: SeatingMode;
+  /** A predefined layout from GET /venues; required for assigned seating. */
+  venue_id?: string;
+  registration_opens_at?: string;
+  registration_closes_at?: string;
   capacity?: number;
   refund_policy?: string;
   /** A URL returned by POST /uploads/images (SRS 4.2). */
@@ -262,6 +266,22 @@ export interface CheckoutResult {
   promo?: AppliedPromo;
 }
 
+export interface VenueLayoutSection {
+  name: string;
+  price_category: string;
+  seats: number;
+}
+
+/** A predefined seated venue (SRS 4.3.1); GET /venues. */
+export interface VenueLayout {
+  id: string;
+  name: string;
+  address: string;
+  city: string;
+  seats: number;
+  sections: VenueLayoutSection[];
+}
+
 export interface CreateTicketTypeInput {
   name: string;
   description?: string;
@@ -271,6 +291,8 @@ export interface CreateTicketTypeInput {
   sales_start_at?: string;
   sales_end_at?: string;
   is_hidden?: boolean;
+  /** Matches a seat section for assigned seating. */
+  price_category?: string;
 }
 
 export interface CheckoutInput {
@@ -391,6 +413,8 @@ export interface SupportThread {
 }
 
 export interface OpenCaseInput {
+  /** "organizer" asks BiletFlow itself rather than an event organizer. */
+  kind?: "attendee" | "organizer";
   category: string;
   subject: string;
   message: string;
@@ -447,6 +471,10 @@ export interface EventAnalytics {
   discounts_kzt: Money;
   refunds_kzt: Money;
   net_revenue_kzt: Money;
+  /** The processing fee BiletFlow charged (SRS 4.6). */
+  fees_kzt: Money;
+  /** Ticket money on non-refunded orders with the fee removed (SRS 4.6). */
+  estimated_payout_kzt: Money;
   orders_count: number;
   checked_in: number;
   absent: number;
@@ -698,6 +726,12 @@ export interface PlatformSetting {
   description?: string;
   updated_by?: string;
   updated_at: string;
+}
+
+/** A campaign in the platform-wide promo-code view (SRS 4.12). */
+export interface AdminCampaign extends Campaign {
+  event_title: string;
+  event_slug: string;
 }
 
 export interface PlatformSettingsResponse {

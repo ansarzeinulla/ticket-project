@@ -58,6 +58,22 @@ measured results are in [docs/verification/RESULTS.md](docs/verification/RESULTS
 
 ---
 
+## Backups and recovery
+
+The database is the only state that matters; uploads are re-creatable demo
+banners. Take a dump before anything risky, and restore it the same way:
+
+```bash
+make backup                                  # -> backups/biletflow-<time>.sql
+make restore FILE=backups/biletflow-<time>.sql
+```
+
+`backups/` is ignored by git, because a dump contains every account and order.
+The dump is plain SQL made with `--clean --if-exists`, so restoring replaces the
+current tables rather than merging into them. A real deployment would run the
+same dump on a schedule and copy it off the machine; this MVP documents the
+procedure but does not schedule it.
+
 ## Phase 1: Database & Docker Foundation
 
 ---

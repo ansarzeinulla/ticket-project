@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
+import { AddToCalendar } from "@/components/add-to-calendar";
 import { EventAnalyticsTracker } from "@/components/event-analytics-tracker";
 import { SeatedPurchase } from "@/components/seated-purchase";
 import { ApiError, api } from "@/lib/api";
@@ -112,6 +113,8 @@ export default async function PublicEventPage({
               </div>
             )}
           </dl>
+
+          <AddToCalendar event={event} t={t} />
         </header>
 
         {suspended && (

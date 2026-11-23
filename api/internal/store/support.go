@@ -199,9 +199,16 @@ func (s *SupportStore) ListForRequester(ctx context.Context, userID uuid.UUID) (
 	return s.list(ctx, `WHERE c.requester_user_id = $1`, userID)
 }
 
-// ListForEvent returns every case attached to an event - the organizer's inbox.
+// ListForEvent returns the attendee cases attached to an event - the
+// organizer's inbox. The organizer's own requests to BiletFlow are excluded:
+// they are answered by platform admins, not by the organizer.
 func (s *SupportStore) ListForEvent(ctx context.Context, eventID uuid.UUID) ([]SupportCase, error) {
-	return s.list(ctx, `WHERE c.event_id = $1`, eventID)
+	return s.list(ctx, `WHERE c.event_id = $1 AND c.kind = 'attendee'`, eventID)
+}
+
+// ListByKind returns every case of one kind - the platform admins' inbox.
+func (s *SupportStore) ListByKind(ctx context.Context, kind string) ([]SupportCase, error) {
+	return s.list(ctx, `WHERE c.kind = $1::support_case_kind`, kind)
 }
 
 // ListForOrder returns the cases opened against one order.

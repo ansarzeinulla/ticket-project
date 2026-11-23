@@ -13,6 +13,10 @@
 .env.*.local
 *.env.local
 
+# --- Database backups (make backup) -----------------------------------------
+# A dump holds every account and order, so it never goes into git.
+backups/
+
 # --- Dependencies -------------------------------------------------------------
 node_modules/
 

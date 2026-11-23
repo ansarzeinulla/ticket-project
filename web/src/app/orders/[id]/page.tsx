@@ -7,6 +7,7 @@ import { TicketCard } from "@/components/ticket-card";
 import { ApiError, api } from "@/lib/api";
 import { getTranslations } from "@/lib/i18n/server";
 import { orderStatusLabel } from "@/lib/order-status";
+import { AddToCalendar } from "@/components/add-to-calendar";
 import { formatKZT } from "@/lib/money";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -38,6 +39,10 @@ export default async function OrderConfirmationPage({
 
   const { order, items, tickets } = data;
 
+  // The event, for the calendar links. Public for a published event; if it is
+  // not readable any more, the confirmation simply goes without them.
+  const event = await api.getEvent(order.event_id).catch(() => null);
+
   return (
     <main className="mx-auto w-full max-w-2xl px-4 py-10 sm:px-6">
       <div className="rounded-2xl border border-border-subtle bg-surface p-6 sm:p-8">
@@ -57,6 +62,12 @@ export default async function OrderConfirmationPage({
             </p>
           </div>
         </div>
+
+        {event && (
+          <div className="mt-5">
+            <AddToCalendar event={event} t={t} />
+          </div>
+        )}
 
         <dl className="mt-6 grid gap-4 sm:grid-cols-2">
           <div>

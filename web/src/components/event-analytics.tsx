@@ -181,20 +181,36 @@ export function EventAnalyticsPanel({
             />
           </div>
 
-          {toTiyn(data.refunds_kzt) > 0 && (
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Stat
-                label={t("org.analytics.refunded")}
-                value={formatKZT(data.refunds_kzt)}
-                detail={t("org.analytics.refundedDetail")}
-              />
-              <Stat
-                label={t("org.analytics.net")}
-                value={formatKZT(data.net_revenue_kzt)}
-                detail={t("org.analytics.netDetail")}
-              />
-            </div>
-          )}
+          {/* SRS 4.6: "Organizers shall be able to view gross sales, fees,
+              refunds, and estimated payouts." All simulated - no money moves. */}
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Stat
+              label={t("orgSettings.fees")}
+              value={formatKZT(data.fees_kzt)}
+              detail={t("orgSettings.feesDetail")}
+              testID="stat-fees"
+            />
+            <Stat
+              label={t("orgSettings.payout")}
+              value={formatKZT(data.estimated_payout_kzt)}
+              detail={t("orgSettings.payoutDetail")}
+              testID="stat-payout"
+            />
+            {toTiyn(data.refunds_kzt) > 0 && (
+              <>
+                <Stat
+                  label={t("org.analytics.refunded")}
+                  value={formatKZT(data.refunds_kzt)}
+                  detail={t("org.analytics.refundedDetail")}
+                />
+                <Stat
+                  label={t("org.analytics.net")}
+                  value={formatKZT(data.net_revenue_kzt)}
+                  detail={t("org.analytics.netDetail")}
+                />
+              </>
+            )}
+          </div>
 
           <div>
             <h3 className="text-sm font-semibold">{t("org.analytics.byType")}</h3>

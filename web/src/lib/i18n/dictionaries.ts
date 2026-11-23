@@ -1,6 +1,10 @@
 import type { Locale } from "./config";
 import { enAttendee, kkAttendee, ruAttendee } from "./messages/attendee";
 import { enOrganizer, kkOrganizer, ruOrganizer } from "./messages/organizer";
+import { enAdminTools, kkAdminTools, ruAdminTools } from "./messages/admin-tools";
+import { enCalendar, kkCalendar, ruCalendar } from "./messages/calendar";
+import { enOrganizerSettings, kkOrganizerSettings, ruOrganizerSettings } from "./messages/organizer-settings";
+import { enPlatformSupport, kkPlatformSupport, ruPlatformSupport } from "./messages/platform-support";
 
 /**
  * The message catalogues for the customer-facing pages.
@@ -139,6 +143,10 @@ const en = {
   },
   ...enAttendee,
   ...enOrganizer,
+  ...enPlatformSupport,
+  ...enOrganizerSettings,
+  ...enAdminTools,
+  ...enCalendar,
 };
 
 /** The shape every locale must satisfy, taken from English. */
@@ -281,6 +289,10 @@ const ru: Dictionary = {
   },
   ...ruAttendee,
   ...ruOrganizer,
+  ...ruPlatformSupport,
+  ...ruOrganizerSettings,
+  ...ruAdminTools,
+  ...ruCalendar,
 };
 
 const kk: Dictionary = {
@@ -407,6 +419,10 @@ const kk: Dictionary = {
   },
   ...kkAttendee,
   ...kkOrganizer,
+  ...kkPlatformSupport,
+  ...kkOrganizerSettings,
+  ...kkAdminTools,
+  ...kkCalendar,
 };
 
 const dictionaries: Record<Locale, Dictionary> = { kk, ru, en };

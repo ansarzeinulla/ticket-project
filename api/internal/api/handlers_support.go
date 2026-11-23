@@ -32,6 +32,11 @@ var validSupportStatuses = map[string]bool{
 }
 
 type openCaseRequest struct {
+	// Kind is "attendee" (the default) or "organizer". An organizer case is a
+	// request to BiletFlow itself - account, activation, payment or a technical
+	// problem - and is answered by platform admins, not by an event organizer
+	// (SRS 4.13).
+	Kind     string  `json:"kind"`
 	Category string  `json:"category"`
 	Subject  string  `json:"subject"`
 	Message  string  `json:"message"`
@@ -82,9 +87,23 @@ func (s *Server) handleOpenCase(w http.ResponseWriter, r *http.Request) {
 		errs.add("message", msg)
 	}
 
+	kind := store.SupportKindAttendee
+	switch req.Kind {
+	case "", store.SupportKindAttendee:
+	case store.SupportKindOrganizer:
+		kind = store.SupportKindOrganizer
+		// A platform request is about the organizer's own account or event, not
+		// somebody's order: order and ticket context belongs to attendee cases.
+		if req.OrderID != nil || req.TicketID != nil {
+			errs.add("kind", "A request to BiletFlow cannot be attached to an order or ticket.")
+		}
+	default:
+		errs.add("kind", "Kind must be attendee or organizer.")
+	}
+
 	params := store.OpenCaseParams{
 		RequesterID: userID,
-		Kind:        store.SupportKindAttendee,
+		Kind:        kind,
 		Category:    req.Category,
 		Subject:     req.Subject,
 		Body:        req.Message,
@@ -92,7 +111,7 @@ func (s *Server) handleOpenCase(w http.ResponseWriter, r *http.Request) {
 
 	// The context is captured automatically wherever it is available (SRS 4.13),
 	// and an order carries its event and the ticket's event with it.
-	if req.OrderID != nil {
+	if kind == store.SupportKindAttendee && req.OrderID != nil {
 		orderID, err := uuid.Parse(*req.OrderID)
 		if err != nil {
 			errs.add("order_id", "The order id must be a UUID.")
@@ -117,7 +136,7 @@ func (s *Server) handleOpenCase(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if req.TicketID != nil {
+	if kind == store.SupportKindAttendee && req.TicketID != nil {
 		ticketID, err := uuid.Parse(*req.TicketID)
 		if err != nil {
 			errs.add("ticket_id", "The ticket id must be a UUID.")
@@ -141,6 +160,13 @@ func (s *Server) handleOpenCase(w http.ResponseWriter, r *http.Request) {
 			errs.add("event_id", "The event id must be a UUID.")
 		} else {
 			params.EventID = &eventID
+			// An organizer may only raise a platform request about their own event.
+			if kind == store.SupportKindOrganizer {
+				event, eventErr := s.events.GetByID(r.Context(), eventID)
+				if eventErr != nil || event.OrganizerID != userID {
+					errs.add("event_id", "You can only ask about an event you organize.")
+				}
+			}
 		}
 	}
 
@@ -170,6 +196,18 @@ func (s *Server) handleOpenCase(w http.ResponseWriter, r *http.Request) {
 // handleListMyCases returns the cases the caller opened.
 func (s *Server) handleListMyCases(w http.ResponseWriter, r *http.Request) {
 	cases, err := s.support.ListForRequester(r.Context(), mustUserID(r.Context()))
+	if err != nil {
+		httpx.WriteInternalError(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, caseListResponse{Cases: cases})
+}
+
+// handleListPlatformCases is the platform admins' inbox: every request an
+// organizer raised with BiletFlow itself (SRS 4.12 "review escalated support
+// cases", 4.13 organizer support cases).
+func (s *Server) handleListPlatformCases(w http.ResponseWriter, r *http.Request) {
+	cases, err := s.support.ListByKind(r.Context(), store.SupportKindOrganizer)
 	if err != nil {
 		httpx.WriteInternalError(w, r, err)
 		return
@@ -397,6 +435,17 @@ func (s *Server) loadCase(w http.ResponseWriter, r *http.Request) (store.Support
 
 	if claims != nil && claims.HasRole(store.RolePlatformAdmin) {
 		return supportCase, caseAccess{staff: true}, true
+	}
+
+	// An organizer case is answered by BiletFlow, so the organizer who opened
+	// it is the requester - never staff on it, even though the case may name
+	// their own event. Otherwise they would read the admins' internal notes.
+	if supportCase.Kind == store.SupportKindOrganizer {
+		if supportCase.RequesterID == userID {
+			return supportCase, caseAccess{staff: false}, true
+		}
+		httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound, "No support case with this id.")
+		return store.SupportCase{}, caseAccess{}, false
 	}
 
 	if supportCase.EventID != nil {
