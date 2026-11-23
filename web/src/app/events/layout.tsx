@@ -17,7 +17,9 @@ export default async function PublicLayout({ children }: { children: ReactNode }
   return (
     <div className="flex min-h-dvh flex-col">
       <header className="border-b border-border-subtle bg-surface">
-        <div className="mx-auto flex h-16 max-w-3xl items-center justify-between gap-4 px-4 sm:px-6">
+        {/* Wraps instead of overflowing: "Ұйымдастырушыларға" next to the switcher
+            is wider than a 375 px phone. */}
+        <div className="mx-auto flex min-h-16 max-w-3xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3 sm:px-6">
           <Link href="/" className="flex items-center gap-2">
             <span className="grid h-8 w-8 place-items-center rounded-lg bg-brand text-sm font-bold text-white">
               B
