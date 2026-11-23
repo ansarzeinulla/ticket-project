@@ -37,8 +37,10 @@ test("an attendee finds a free event in the catalogue and registers", async ({ p
   // The catalogue is ordered soonest-first, so this event is given a start
   // date early enough to land on the first page however many others exist.
   const { event, title } = await freeEvent("Catalogue Free Lecture", {
-    starts_at: "2026-10-01T15:00:00Z",
-    ends_at: "2026-10-01T19:00:00Z",
+    // Must stay in the future, and earlier than the other test events
+    // (2027-09-01), so it is on the first page of the catalogue.
+    starts_at: "2027-06-01T15:00:00Z",
+    ends_at: "2027-06-01T19:00:00Z",
   });
   const attendeeEmail = uniqueEmail("attendee");
 
