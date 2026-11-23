@@ -8,6 +8,7 @@ import { Spinner } from "@/components/ui/button";
 import { ApiError, api } from "@/lib/api";
 import { useT } from "@/lib/i18n/context";
 import { formatKZT } from "@/lib/money";
+import { orderStatusLabel } from "@/lib/order-status";
 import type { BuyerOrder } from "@/lib/types";
 
 /**
@@ -103,7 +104,7 @@ export default function MyOrdersPage() {
                   <div className="text-right">
                     <p className="font-semibold tabular-nums">{formatKZT(order.total_kzt)}</p>
                     <p className="mt-1 text-xs uppercase tracking-wide text-foreground-muted">
-                      {order.status}
+                      {orderStatusLabel(t, order.status)}
                     </p>
                   </div>
                 </div>

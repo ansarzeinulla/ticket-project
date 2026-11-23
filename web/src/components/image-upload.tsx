@@ -4,6 +4,7 @@ import { useRef, useState, type ChangeEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import { ApiError, api } from "@/lib/api";
+import { useT } from "@/lib/i18n/context";
 
 /** Mirrors the server's limit, so an oversized file is refused before it is
  *  sent rather than after a slow upload. The server enforces it regardless. */
@@ -27,6 +28,7 @@ export function ImageUpload({
   onChange: (url: string) => void;
   disabled?: boolean;
 }) {
+  const t = useT();
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,7 +40,7 @@ export function ImageUpload({
     if (!file) return;
 
     if (file.size > MAX_BYTES) {
-      setError("That image is larger than 5 MB.");
+      setError(t("org.upload.tooLarge"));
       return;
     }
 
@@ -51,7 +53,7 @@ export function ImageUpload({
       setError(
         cause instanceof ApiError
           ? cause.message
-          : "Could not upload that image. Try again.",
+          : t("org.upload.failed"),
       );
     } finally {
       setUploading(false);
@@ -60,7 +62,7 @@ export function ImageUpload({
 
   return (
     <div className="space-y-2">
-      <span className="block text-sm font-medium text-foreground">Event banner</span>
+      <span className="block text-sm font-medium text-foreground">{t("org.upload.label")}</span>
 
       {value ? (
         <div className="space-y-2">
@@ -72,7 +74,7 @@ export function ImageUpload({
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={value}
-            alt="The event banner as attendees will see it"
+            alt={t("org.upload.alt")}
             className="max-h-48 w-full rounded-lg border border-border-subtle object-cover"
           />
           <div className="flex gap-2">
@@ -83,7 +85,7 @@ export function ImageUpload({
               disabled={disabled || uploading}
               onClick={() => inputRef.current?.click()}
             >
-              Replace
+              {t("org.upload.replace")}
             </Button>
             <Button
               type="button"
@@ -92,14 +94,14 @@ export function ImageUpload({
               disabled={disabled || uploading}
               onClick={() => onChange("")}
             >
-              Remove
+              {t("org.upload.remove")}
             </Button>
           </div>
         </div>
       ) : (
         <div className="rounded-lg border border-dashed border-border-subtle px-4 py-6 text-center">
           <p className="text-sm text-foreground-muted">
-            A wide photograph works best on the public page.
+            {t("org.upload.tip")}
           </p>
           <Button
             type="button"
@@ -110,10 +112,10 @@ export function ImageUpload({
             disabled={disabled}
             onClick={() => inputRef.current?.click()}
           >
-            Choose an image
+            {t("org.upload.choose")}
           </Button>
           <p className="mt-2 text-xs text-foreground-muted">
-            JPEG, PNG, GIF or WebP · up to 5 MB
+            {t("org.upload.formats")}
           </p>
         </div>
       )}

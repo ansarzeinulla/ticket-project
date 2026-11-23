@@ -7,9 +7,11 @@ import { Button, Spinner } from "@/components/ui/button";
 import { TextField } from "@/components/ui/field";
 import { ApiError, api } from "@/lib/api";
 import { formatKZT } from "@/lib/money";
+import { useT } from "@/lib/i18n/context";
 import type { TicketType } from "@/lib/types";
 
 export function TicketTypeManager({ eventID }: { eventID: string }) {
+  const t = useT();
   const [types, setTypes] = useState<TicketType[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -30,11 +32,11 @@ export function TicketTypeManager({ eventID }: { eventID: string }) {
       setLoadError(null);
     } catch (cause) {
       if (cause instanceof DOMException && cause.name === "AbortError") return;
-      setLoadError(cause instanceof ApiError ? cause.message : "Could not load ticket types.");
+      setLoadError(cause instanceof ApiError ? cause.message : t("org.types.loadFailed"));
     } finally {
       setLoading(false);
     }
-  }, [eventID]);
+  }, [eventID, t]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -50,20 +52,20 @@ export function TicketTypeManager({ eventID }: { eventID: string }) {
     setFieldErrors({});
 
     const errors: Record<string, string> = {};
-    if (!name.trim()) errors.name = "Name is required.";
+    if (!name.trim()) errors.name = t("org.types.errName");
 
     const quantityValue = Number(quantity);
     if (!Number.isInteger(quantityValue) || quantityValue < 0) {
-      errors.quantity_total = "Quantity must be a whole number of zero or more.";
+      errors.quantity_total = t("org.types.errQuantity");
     }
     const maxValue = Number(maxPerOrder);
     if (!Number.isInteger(maxValue) || maxValue <= 0) {
-      errors.max_per_order = "The per-order limit must be at least 1.";
+      errors.max_per_order = t("org.types.errMax");
     }
     // Sent as a string so the decimal reaches PostgreSQL's numeric untouched.
     const priceValue = price.trim() === "" ? "0" : price.trim();
     if (!/^\d+(\.\d{1,2})?$/.test(priceValue)) {
-      errors.price_kzt = "Price must be a non-negative amount, such as 5000.";
+      errors.price_kzt = t("org.types.errPrice");
     }
 
     if (Object.keys(errors).length > 0) {
@@ -86,11 +88,11 @@ export function TicketTypeManager({ eventID }: { eventID: string }) {
         setFieldErrors(cause.fields);
         setFormError(
           Object.keys(cause.fields).length > 0
-            ? "Please correct the highlighted fields."
+            ? t("auth.common.fixFields")
             : cause.message,
         );
       } else {
-        setFormError("Could not create the ticket type.");
+        setFormError(t("org.types.createFailed"));
       }
     } finally {
       setSubmitting(false);
@@ -101,9 +103,9 @@ export function TicketTypeManager({ eventID }: { eventID: string }) {
     setBusyID(type.id);
     try {
       const updated = await api.updateTicketType(type.id, { is_hidden: !type.is_hidden });
-      setTypes((current) => current.map((t) => (t.id === updated.id ? updated : t)));
+      setTypes((current) => current.map((item) => (item.id === updated.id ? updated : item)));
     } catch (cause) {
-      setLoadError(cause instanceof ApiError ? cause.message : "The change failed.");
+      setLoadError(cause instanceof ApiError ? cause.message : t("org.types.changeFailed"));
     } finally {
       setBusyID(null);
     }
@@ -113,9 +115,9 @@ export function TicketTypeManager({ eventID }: { eventID: string }) {
     setBusyID(type.id);
     try {
       await api.deleteTicketType(type.id);
-      setTypes((current) => current.filter((t) => t.id !== type.id));
+      setTypes((current) => current.filter((item) => item.id !== type.id));
     } catch (cause) {
-      setLoadError(cause instanceof ApiError ? cause.message : "The ticket type could not be deleted.");
+      setLoadError(cause instanceof ApiError ? cause.message : t("org.types.deleteFailed"));
     } finally {
       setBusyID(null);
     }
@@ -124,10 +126,9 @@ export function TicketTypeManager({ eventID }: { eventID: string }) {
   return (
     <section className="space-y-4">
       <div>
-        <h2 className="text-lg font-semibold tracking-tight">Ticket types</h2>
+        <h2 className="text-lg font-semibold tracking-tight">{t("org.types.heading")}</h2>
         <p className="mt-1 text-sm text-foreground-muted">
-          Attendees choose from these on the public event page. A price of zero makes
-          the ticket free.
+          {t("org.types.subtitle")}
         </p>
       </div>
 
@@ -136,11 +137,11 @@ export function TicketTypeManager({ eventID }: { eventID: string }) {
       {loading ? (
         <div className="flex items-center gap-3 rounded-xl border border-border-subtle bg-surface p-6 text-sm text-foreground-muted">
           <Spinner />
-          Loading ticket types…
+          {t("org.types.loading")}
         </div>
       ) : types.length === 0 ? (
         <p className="rounded-xl border border-dashed border-border-subtle bg-surface p-6 text-center text-sm text-foreground-muted">
-          No ticket types yet. Add one below so attendees have something to buy.
+          {t("org.types.none")}
         </p>
       ) : (
         <ul className="space-y-2">
@@ -154,17 +155,17 @@ export function TicketTypeManager({ eventID }: { eventID: string }) {
                   <span className="font-medium">{type.name}</span>
                   {type.is_free && (
                     <span className="rounded-full bg-brand-soft px-2 py-0.5 text-xs font-medium text-brand-strong">
-                      Free
+                      {t("tickets.free")}
                     </span>
                   )}
                   {type.is_hidden && (
                     <span className="rounded-full bg-surface-muted px-2 py-0.5 text-xs font-medium text-foreground-muted">
-                      Hidden
+                      {t("org.types.hidden")}
                     </span>
                   )}
                 </div>
                 <p className="mt-0.5 text-sm text-foreground-muted">
-                  {formatKZT(type.price_kzt)} · max {type.max_per_order} per order
+                  {formatKZT(type.price_kzt)} · {t("org.types.maxPerOrderShort", { max: type.max_per_order })}
                 </p>
               </div>
 
@@ -176,11 +177,11 @@ export function TicketTypeManager({ eventID }: { eventID: string }) {
               */}
               <dl className="flex flex-wrap gap-x-6 gap-y-2 text-sm" data-testid="ticket-type-counts">
                 <div>
-                  <dt className="text-xs text-foreground-muted">Sold</dt>
+                  <dt className="text-xs text-foreground-muted">{t("org.analytics.colSold")}</dt>
                   <dd className="mt-0.5 font-medium">{type.quantity_sold}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-foreground-muted">Available</dt>
+                  <dt className="text-xs text-foreground-muted">{t("org.types.available")}</dt>
                   <dd
                     className={`mt-0.5 font-medium ${
                       type.quantity_remaining === 0 ? "text-danger" : ""
@@ -191,26 +192,26 @@ export function TicketTypeManager({ eventID }: { eventID: string }) {
                 </div>
                 {type.quantity_reserved > 0 && (
                   <div>
-                    <dt className="text-xs text-foreground-muted">Reserved</dt>
+                    <dt className="text-xs text-foreground-muted">{t("org.types.reserved")}</dt>
                     <dd className="mt-0.5 font-medium">{type.quantity_reserved}</dd>
                   </div>
                 )}
                 {type.quantity_refunded > 0 && (
                   <div>
-                    <dt className="text-xs text-foreground-muted">Refunded</dt>
+                    <dt className="text-xs text-foreground-muted">{t("org.analytics.refunded")}</dt>
                     <dd className="mt-0.5 font-medium">{type.quantity_refunded}</dd>
                   </div>
                 )}
                 {type.quantity_checked_in > 0 && (
                   <div>
-                    <dt className="text-xs text-foreground-muted">Checked in</dt>
+                    <dt className="text-xs text-foreground-muted">{t("org.analytics.checkedIn")}</dt>
                     <dd className="mt-0.5 font-medium text-success">
                       {type.quantity_checked_in}
                     </dd>
                   </div>
                 )}
                 <div>
-                  <dt className="text-xs text-foreground-muted">Total</dt>
+                  <dt className="text-xs text-foreground-muted">{t("seatCheckout.total")}</dt>
                   <dd className="mt-0.5 font-medium">{type.quantity_total}</dd>
                 </div>
               </dl>
@@ -223,7 +224,7 @@ export function TicketTypeManager({ eventID }: { eventID: string }) {
                   loading={busyID === type.id}
                   onClick={() => void toggleHidden(type)}
                 >
-                  {type.is_hidden ? "Show" : "Hide"}
+                  {type.is_hidden ? t("org.types.show") : t("org.types.hide")}
                 </Button>
                 {type.quantity_sold === 0 && (
                   <Button
@@ -232,7 +233,7 @@ export function TicketTypeManager({ eventID }: { eventID: string }) {
                     disabled={busyID !== null}
                     onClick={() => void remove(type)}
                   >
-                    Delete
+                    {t("org.types.delete")}
                   </Button>
                 )}
               </div>
@@ -246,15 +247,15 @@ export function TicketTypeManager({ eventID }: { eventID: string }) {
         noValidate
         className="space-y-4 rounded-xl border border-border-subtle bg-surface p-5"
       >
-        <h3 className="text-sm font-semibold">Add a ticket type</h3>
+        <h3 className="text-sm font-semibold">{t("org.types.addHeading")}</h3>
 
         {formError && <Alert tone="error">{formError}</Alert>}
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <TextField
-            label="Name"
+            label={t("org.types.name")}
             name="name"
-            placeholder="General Admission"
+            placeholder={t("org.types.namePlaceholder")}
             required
             value={name}
             error={fieldErrors.name}
@@ -262,18 +263,18 @@ export function TicketTypeManager({ eventID }: { eventID: string }) {
             onChange={(event) => setName(event.target.value)}
           />
           <TextField
-            label="Price (KZT)"
+            label={t("org.types.price")}
             name="price_kzt"
             inputMode="decimal"
             placeholder="5000"
-            hint="0 for a free ticket."
+            hint={t("org.types.priceHint")}
             value={price}
             error={fieldErrors.price_kzt}
             disabled={submitting}
             onChange={(event) => setPrice(event.target.value)}
           />
           <TextField
-            label="Quantity"
+            label={t("org.types.quantity")}
             name="quantity_total"
             type="number"
             min={0}
@@ -285,7 +286,7 @@ export function TicketTypeManager({ eventID }: { eventID: string }) {
             onChange={(event) => setQuantity(event.target.value)}
           />
           <TextField
-            label="Max per order"
+            label={t("org.types.maxPerOrder")}
             name="max_per_order"
             type="number"
             min={1}
@@ -298,7 +299,7 @@ export function TicketTypeManager({ eventID }: { eventID: string }) {
         </div>
 
         <Button type="submit" loading={submitting}>
-          {submitting ? "Adding…" : "Add ticket type"}
+          {submitting ? t("org.types.adding") : t("org.types.add")}
         </Button>
       </form>
     </section>

@@ -16,10 +16,11 @@ test("analytics report figures computed from the rows, not accumulated", async (
   await signIn(page, organizer.token);
   await page.goto(`/dashboard/events/${event.id}`);
 
-  // 3 tickets at 5 000 KZT.
+  // 3 tickets at 5 000 KZT. Gross revenue includes the 3.5% processing fee
+  // (7.md ANA-03), so it reads 15 525, not 15 000.
   await expect(page.getByTestId("stat-sold")).toContainText("3");
   await expect(page.getByTestId("stat-remaining")).toContainText("47");
-  await expect(page.getByTestId("stat-revenue")).toContainText("15 000");
+  await expect(page.getByTestId("stat-revenue")).toContainText("15 525");
   await expect(page.getByTestId("stat-checkedin")).toContainText("0");
 
   // SRS 4.15: "compare sales by ticket type".

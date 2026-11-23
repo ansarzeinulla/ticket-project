@@ -6,6 +6,7 @@ import { useEffect, type ReactNode } from "react";
 import { SiteHeader } from "@/components/site-header";
 import { Spinner } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
+import { useT } from "@/lib/i18n/context";
 
 /**
  * The signed-in shell.
@@ -16,6 +17,7 @@ import { useAuth } from "@/lib/auth-context";
  */
 export default function AppLayout({ children }: { children: ReactNode }) {
   const { status } = useAuth();
+  const t = useT();
   const router = useRouter();
 
   useEffect(() => {
@@ -27,7 +29,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       <div className="grid min-h-dvh place-items-center">
         <div className="flex items-center gap-3 text-sm text-foreground-muted">
           <Spinner />
-          {status === "loading" ? "Checking your session…" : "Redirecting to sign in…"}
+          {status === "loading" ? t("org.shell.checking") : t("org.shell.redirecting")}
         </div>
       </div>
     );

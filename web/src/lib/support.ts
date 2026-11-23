@@ -1,27 +1,34 @@
+import type { MessageKey } from "@/lib/i18n/dictionaries";
+import type { Translator } from "@/lib/i18n/translate";
 import type { SupportStatus } from "@/lib/types";
 
-/** Human labels for the support_case_category enum values. */
-export const CATEGORY_LABELS: Record<string, string> = {
-  ticket_delivery: "Ticket delivery",
-  payment: "Payment",
-  refund: "Refund",
-  seating: "Seating",
-  event_information: "Event information",
-  check_in: "Check-in",
-  account: "Account",
-  technical: "Technical problem",
+const CATEGORY_KEYS: Record<string, MessageKey> = {
+  ticket_delivery: "support.category.ticket_delivery",
+  payment: "support.category.payment",
+  refund: "support.category.refund",
+  seating: "support.category.seating",
+  event_information: "support.category.event_information",
+  check_in: "support.category.check_in",
+  account: "support.category.account",
+  technical: "support.category.technical",
 };
 
-export function categoryLabel(category: string): string {
-  return CATEGORY_LABELS[category] ?? category.replace(/_/g, " ");
+/** The category in the visitor's language; unknown values fall back to the raw name. */
+export function supportCategoryLabel(t: Translator, category: string): string {
+  const key = CATEGORY_KEYS[category];
+  return key ? t(key) : category.replace(/_/g, " ");
 }
 
-export const STATUS_LABELS: Record<SupportStatus, string> = {
-  open: "Open",
-  in_progress: "In progress",
-  waiting_for_customer: "Waiting for you",
-  resolved: "Resolved",
+const STATUS_KEYS: Record<SupportStatus, MessageKey> = {
+  open: "support.status.open",
+  in_progress: "support.status.in_progress",
+  waiting_for_customer: "support.status.waiting_for_customer",
+  resolved: "support.status.resolved",
 };
+
+export function supportStatusLabel(t: Translator, status: SupportStatus): string {
+  return t(STATUS_KEYS[status]);
+}
 
 /** Statuses an organizer can set, in the order they normally happen. */
 export const ORGANIZER_STATUSES: SupportStatus[] = [

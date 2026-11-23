@@ -8,6 +8,7 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { TextField } from "@/components/ui/field";
 import { ApiError, api } from "@/lib/api";
+import { useT } from "@/lib/i18n/context";
 
 /**
  * "Reset password" (SRS 4.1).
@@ -23,6 +24,7 @@ import { ApiError, api } from "@/lib/api";
 export function ResetPasswordForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const t = useT();
 
   const [token, setToken] = useState(searchParams.get("token") ?? "");
   const [password, setPassword] = useState("");
@@ -38,7 +40,7 @@ export function ResetPasswordForm() {
     // Checked here rather than at the API, which has no business knowing the
     // user typed it twice.
     if (password !== confirmation) {
-      setFieldErrors({ confirmation: "The two passwords do not match." });
+      setFieldErrors({ confirmation: t("auth.common.mismatch") });
       return;
     }
 
@@ -54,13 +56,13 @@ export function ResetPasswordForm() {
         setFieldErrors(cause.fields);
         setError(
           cause.code === "token_invalid"
-            ? "That code is invalid, expired or already used. Ask for a new one."
+            ? t("auth.reset.invalid")
             : Object.keys(cause.fields).length > 0
               ? null
               : cause.message,
         );
       } else {
-        setError("Something went wrong. Please try again.");
+        setError(t("auth.common.genericError"));
       }
       setSubmitting(false);
     }
@@ -70,14 +72,14 @@ export function ResetPasswordForm() {
     return (
       <>
         <div className="mb-6">
-          <h1 className="text-2xl font-semibold tracking-tight">Password changed</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{t("auth.reset.doneHeading")}</h1>
         </div>
         <Alert tone="success">
-          Your new password is in place. Sign in with it now.
+          {t("auth.reset.doneBody")}
         </Alert>
         <div className="mt-6">
           <Button className="w-full" onClick={() => router.push("/login")}>
-            Go to sign in
+            {t("auth.reset.goSignIn")}
           </Button>
         </div>
       </>
@@ -87,9 +89,9 @@ export function ResetPasswordForm() {
   return (
     <>
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Set a new password</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{t("auth.reset.heading")}</h1>
         <p className="mt-1 text-sm text-foreground-muted">
-          Paste the code from your email, then choose a new password.
+          {t("auth.reset.subtitle")}
         </p>
       </div>
 
@@ -101,29 +103,29 @@ export function ResetPasswordForm() {
 
       <form onSubmit={handleSubmit} className="space-y-4" noValidate>
         <TextField
-          label="Reset code"
+          label={t("auth.reset.code")}
           name="token"
           required
           value={token}
           error={fieldErrors.token}
-          hint="From the email. In this MVP it is printed to the API console."
+          hint={t("auth.reset.codeHint")}
           onChange={(event) => setToken(event.target.value)}
         />
 
         <TextField
-          label="New password"
+          label={t("auth.reset.newPassword")}
           type="password"
           name="password"
           autoComplete="new-password"
           required
           value={password}
           error={fieldErrors.password}
-          hint="At least 8 characters."
+          hint={t("auth.common.minLengthHint")}
           onChange={(event) => setPassword(event.target.value)}
         />
 
         <TextField
-          label="Confirm new password"
+          label={t("auth.reset.confirm")}
           type="password"
           name="confirmation"
           autoComplete="new-password"
@@ -134,14 +136,14 @@ export function ResetPasswordForm() {
         />
 
         <Button type="submit" loading={submitting} className="w-full">
-          Change password
+          {t("auth.reset.submit")}
         </Button>
       </form>
 
       <p className="mt-6 text-center text-sm text-foreground-muted">
-        Need a new code?{" "}
+        {t("auth.reset.needCode")}{" "}
         <Link href="/forgot-password" className="font-medium text-brand hover:underline">
-          Ask for one
+          {t("auth.reset.askOne")}
         </Link>
       </p>
     </>

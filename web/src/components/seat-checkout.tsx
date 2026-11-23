@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { TextField } from "@/components/ui/field";
 import { toAnalyticsValue, trackPurchase } from "@/lib/analytics";
 import { ApiError, api } from "@/lib/api";
+import { useT } from "@/lib/i18n/context";
 import { formatKZT } from "@/lib/money";
 import type { Hold } from "@/lib/types";
 
@@ -32,6 +33,7 @@ export function SeatCheckout({
   onCancelled: () => void;
 }) {
   const router = useRouter();
+  const t = useT();
 
   const [hold, setHold] = useState<Hold | null>(null);
   const [remaining, setRemaining] = useState<number | null>(null);
@@ -103,7 +105,7 @@ export function SeatCheckout({
         }
         setError(Object.keys(cause.fields).length > 0 ? null : cause.message);
       } else {
-        setError("Something went wrong. Please try again.");
+        setError(t("auth.common.genericError"));
       }
       setSubmitting(false);
     }
@@ -124,16 +126,16 @@ export function SeatCheckout({
   if (expired) {
     return (
       <div className="space-y-3 rounded-xl border border-border-subtle bg-surface p-5">
-        <Alert tone="info" title="Your reservation ran out">
-          The seats are back on sale. Pick them again to carry on.
+        <Alert tone="info" title={t("seatCheckout.expiredTitle")}>
+          {t("seatCheckout.expiredBody")}
         </Alert>
-        <Button onClick={onExpired}>Choose seats again</Button>
+        <Button onClick={onExpired}>{t("seatCheckout.chooseAgain")}</Button>
       </div>
     );
   }
 
   if (!hold) {
-    return <p className="text-sm text-foreground-muted">Checking your reservation…</p>;
+    return <p className="text-sm text-foreground-muted">{t("seatCheckout.checking")}</p>;
   }
 
   const minutes = Math.floor((remaining ?? 0) / 60);
@@ -143,9 +145,9 @@ export function SeatCheckout({
     <section className="space-y-4 rounded-xl border border-border-subtle bg-surface p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold tracking-tight">Your seats are held</h2>
+          <h2 className="text-lg font-semibold tracking-tight">{t("seatCheckout.heading")}</h2>
           <p className="mt-1 text-sm text-foreground-muted">
-            {hold.items.length} seat{hold.items.length === 1 ? "" : "s"} ·{" "}
+            {hold.items.length === 1 ? t("seatCheckout.seatOne") : t("seatCheckout.seatMany", { count: hold.items.length })} ·{" "}
             {hold.order_number}
           </p>
         </div>
@@ -156,23 +158,23 @@ export function SeatCheckout({
           role="timer"
           aria-live="off"
         >
-          {minutes}:{seconds} left
+          {t("seatCheckout.left", { time: `${minutes}:${seconds}` })}
         </p>
       </div>
 
       <dl className="space-y-1 text-sm">
         <div className="flex justify-between">
-          <dt className="text-foreground-muted">Tickets</dt>
+          <dt className="text-foreground-muted">{t("seatCheckout.tickets")}</dt>
           <dd className="tabular-nums">{formatKZT(hold.subtotal_kzt)}</dd>
         </div>
         <div className="flex justify-between">
-          <dt className="text-foreground-muted">Processing fee</dt>
+          <dt className="text-foreground-muted">{t("seatCheckout.fee")}</dt>
           <dd className="tabular-nums">
             {formatKZT(hold.estimated_processing_fee_kzt)}
           </dd>
         </div>
         <div className="flex justify-between border-t border-border-subtle pt-1 font-semibold">
-          <dt>Total</dt>
+          <dt>{t("seatCheckout.total")}</dt>
           <dd className="tabular-nums">{formatKZT(hold.estimated_total_kzt)}</dd>
         </div>
       </dl>
@@ -181,7 +183,7 @@ export function SeatCheckout({
 
       <form onSubmit={submit} className="space-y-3" noValidate>
         <TextField
-          label="Your name"
+          label={t("seatCheckout.name")}
           name="buyer_name"
           required
           value={name}
@@ -189,11 +191,11 @@ export function SeatCheckout({
           onChange={(event) => setName(event.target.value)}
         />
         <TextField
-          label="Email"
+          label={t("auth.common.email")}
           type="email"
           name="buyer_email"
           required
-          hint="Your tickets are sent here."
+          hint={t("seatCheckout.emailHint")}
           value={email}
           error={fieldErrors.buyer_email}
           onChange={(event) => setEmail(event.target.value)}
@@ -201,7 +203,7 @@ export function SeatCheckout({
 
         <div className="flex flex-wrap gap-2">
           <Button type="submit" loading={submitting}>
-            Pay {formatKZT(hold.estimated_total_kzt)} (simulated)
+            {t("seatCheckout.pay", { amount: formatKZT(hold.estimated_total_kzt) })}
           </Button>
           <Button
             type="button"
@@ -209,7 +211,7 @@ export function SeatCheckout({
             disabled={submitting}
             onClick={() => void cancel()}
           >
-            Release the seats
+            {t("seatCheckout.release")}
           </Button>
         </div>
       </form>

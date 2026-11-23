@@ -6,6 +6,7 @@ import { OrderSupport } from "@/components/order-support";
 import { TicketCard } from "@/components/ticket-card";
 import { ApiError, api } from "@/lib/api";
 import { getTranslations } from "@/lib/i18n/server";
+import { orderStatusLabel } from "@/lib/order-status";
 import { formatKZT } from "@/lib/money";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -70,7 +71,7 @@ export default async function OrderConfirmationPage({
             <dt className="text-xs text-foreground-muted">{t("order.status")}</dt>
             <dd className="mt-0.5">
               <span className="inline-flex rounded-full bg-success-soft px-2.5 py-0.5 text-xs font-medium capitalize text-success">
-                {order.status}
+                {orderStatusLabel(t, order.status)}
               </span>
             </dd>
           </div>

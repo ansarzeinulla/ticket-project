@@ -6,14 +6,16 @@ import { Alert } from "@/components/ui/alert";
 import { Button, Spinner } from "@/components/ui/button";
 import { SelectField, TextField } from "@/components/ui/field";
 import { ApiError, api } from "@/lib/api";
+import { useT } from "@/lib/i18n/context";
+import type { MessageKey } from "@/lib/i18n/dictionaries";
 import type { StaffMember } from "@/lib/types";
 
 const ROLES = ["event_admin", "support_staff", "manager"] as const;
 
-const ROLE_LABELS: Record<string, string> = {
-  event_admin: "Event admin — scans tickets at the gate",
-  support_staff: "Support staff — answers support cases",
-  manager: "Manager — full access to this event",
+const ROLE_LABELS: Record<string, MessageKey> = {
+  event_admin: "org.staff.roleEventAdmin",
+  support_staff: "org.staff.roleSupport",
+  manager: "org.staff.roleManager",
 };
 
 /**
@@ -26,6 +28,7 @@ const ROLE_LABELS: Record<string, string> = {
  * mobile app effectively unusable by anybody who was not already the organizer.
  */
 export function StaffManager({ eventID }: { eventID: string }) {
+  const t = useT();
   const [staff, setStaff] = useState<StaffMember[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -44,12 +47,12 @@ export function StaffManager({ eventID }: { eventID: string }) {
         setError(null);
       } catch (cause) {
         if (cause instanceof DOMException && cause.name === "AbortError") return;
-        setError(cause instanceof ApiError ? cause.message : "Could not load the staff list.");
+        setError(cause instanceof ApiError ? cause.message : t("org.staff.loadFailed"));
       } finally {
         setLoading(false);
       }
     },
-    [eventID],
+    [eventID, t],
   );
 
   useEffect(() => {
@@ -65,7 +68,7 @@ export function StaffManager({ eventID }: { eventID: string }) {
     setError(null);
 
     if (!email.trim()) {
-      setFieldErrors({ email: "Enter the email address of an existing account." });
+      setFieldErrors({ email: t("org.staff.emailRequired") });
       return;
     }
 
@@ -79,7 +82,7 @@ export function StaffManager({ eventID }: { eventID: string }) {
         setFieldErrors(cause.fields);
         if (Object.keys(cause.fields).length === 0) setError(cause.message);
       } else {
-        setError("Could not add this person.");
+        setError(t("org.staff.addFailed"));
       }
     } finally {
       setAdding(false);
@@ -93,7 +96,7 @@ export function StaffManager({ eventID }: { eventID: string }) {
       await api.revokeStaff(eventID, member.id);
       await load();
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : "Could not revoke this access.");
+      setError(cause instanceof ApiError ? cause.message : t("org.staff.revokeFailed"));
     } finally {
       setRevoking(null);
     }
@@ -104,9 +107,9 @@ export function StaffManager({ eventID }: { eventID: string }) {
   return (
     <section className="rounded-xl border border-border-subtle bg-surface p-5">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-base font-semibold">Gate staff</h2>
+        <h2 className="text-base font-semibold">{t("org.staff.heading")}</h2>
         <p className="text-xs text-foreground-muted">
-          Who can scan tickets for this event in the BiletFlow Scanner app.
+          {t("org.staff.subtitle")}
         </p>
       </div>
 
@@ -119,12 +122,11 @@ export function StaffManager({ eventID }: { eventID: string }) {
       <div className="mt-4">
         {loading ? (
           <p className="flex items-center gap-2 text-sm text-foreground-muted">
-            <Spinner aria-hidden /> Loading…
+            <Spinner aria-hidden /> {t("org.common.loading")}
           </p>
         ) : active.length === 0 ? (
           <p className="text-sm text-foreground-muted">
-            Nobody yet. You can always scan your own event; add somebody here to let
-            them work the door without your account.
+            {t("org.staff.none")}
           </p>
         ) : (
           <ul className="divide-y divide-border-subtle" data-testid="staff-list">
@@ -137,7 +139,7 @@ export function StaffManager({ eventID }: { eventID: string }) {
                   <div className="font-medium">{member.user_name}</div>
                   <p className="text-xs text-foreground-muted">{member.user_email}</p>
                   <p className="text-xs text-foreground-muted">
-                    {ROLE_LABELS[member.role] ?? member.role}
+                    {ROLE_LABELS[member.role] ? t(ROLE_LABELS[member.role]) : member.role}
                   </p>
                 </div>
                 <Button
@@ -148,7 +150,7 @@ export function StaffManager({ eventID }: { eventID: string }) {
                   onClick={() => revoke(member)}
                   data-testid={`revoke-${member.id}`}
                 >
-                  Revoke
+                  {t("org.staff.revoke")}
                 </Button>
               </li>
             ))}
@@ -159,20 +161,21 @@ export function StaffManager({ eventID }: { eventID: string }) {
       <form onSubmit={add} noValidate className="mt-5 space-y-4 border-t border-border-subtle pt-5">
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField
-            label="Email"
+            label={t("auth.common.email")}
             type="email"
             name="staff_email"
             placeholder="scanner@biletflow.kz"
-            hint="They need a BiletFlow account already."
+            hint={t("org.staff.emailHint")}
             value={email}
             error={fieldErrors.email}
             disabled={adding}
             onChange={(event) => setEmail(event.target.value)}
           />
           <SelectField
-            label="Role"
+            label={t("org.staff.role")}
             name="staff_role"
             options={ROLES}
+            optionLabel={(option) => (ROLE_LABELS[option] ? t(ROLE_LABELS[option]) : option)}
             value={role}
             error={fieldErrors.role}
             disabled={adding}
@@ -180,7 +183,7 @@ export function StaffManager({ eventID }: { eventID: string }) {
           />
         </div>
         <Button type="submit" size="sm" loading={adding} data-testid="add-staff">
-          Add to this event
+          {t("org.staff.add")}
         </Button>
       </form>
     </section>

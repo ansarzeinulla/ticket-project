@@ -8,6 +8,7 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { TextField } from "@/components/ui/field";
 import { ApiError, api } from "@/lib/api";
+import { useT } from "@/lib/i18n/context";
 
 /**
  * Email confirmation (SRS 4.1).
@@ -19,6 +20,7 @@ import { ApiError, api } from "@/lib/api";
 export function VerifyEmailView() {
   const searchParams = useSearchParams();
   const linkToken = searchParams.get("token");
+  const t = useT();
 
   const [token, setToken] = useState(linkToken ?? "");
   const [state, setState] = useState<"idle" | "working" | "done" | "failed">(
@@ -38,8 +40,8 @@ export function VerifyEmailView() {
         if (cancelled) return;
         setError(
           cause instanceof ApiError
-            ? "That confirmation code is invalid, expired or already used."
-            : "Something went wrong. Please try again.",
+            ? t("auth.verify.invalid")
+            : t("auth.common.genericError"),
         );
         setState("failed");
       }
@@ -48,7 +50,7 @@ export function VerifyEmailView() {
     return () => {
       cancelled = true;
     };
-  }, [linkToken]);
+  }, [linkToken, t]);
 
   async function submitTyped() {
     setState("working");
@@ -59,8 +61,8 @@ export function VerifyEmailView() {
     } catch (cause) {
       setError(
         cause instanceof ApiError
-          ? "That confirmation code is invalid, expired or already used."
-          : "Something went wrong. Please try again.",
+          ? t("auth.verify.invalid")
+          : t("auth.common.genericError"),
       );
       setState("failed");
     }
@@ -70,12 +72,12 @@ export function VerifyEmailView() {
     return (
       <>
         <div className="mb-6">
-          <h1 className="text-2xl font-semibold tracking-tight">Email confirmed</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{t("auth.verify.doneHeading")}</h1>
         </div>
-        <Alert tone="success">Your address is verified and your account is active.</Alert>
+        <Alert tone="success">{t("auth.verify.doneBody")}</Alert>
         <p className="mt-6 text-center text-sm text-foreground-muted">
           <Link href="/login" className="font-medium text-brand hover:underline">
-            Continue to sign in
+            {t("auth.verify.continue")}
           </Link>
         </p>
       </>
@@ -85,11 +87,11 @@ export function VerifyEmailView() {
   return (
     <>
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Confirm your email</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{t("auth.verify.heading")}</h1>
         <p className="mt-1 text-sm text-foreground-muted">
           {state === "working"
-            ? "Checking your code…"
-            : "Paste the code from your confirmation email."}
+            ? t("auth.verify.checking")
+            : t("auth.verify.subtitle")}
         </p>
       </div>
 
@@ -101,11 +103,11 @@ export function VerifyEmailView() {
 
       <div className="space-y-4">
         <TextField
-          label="Confirmation code"
+          label={t("auth.verify.code")}
           name="token"
           value={token}
           disabled={state === "working"}
-          hint="In this MVP it is printed to the API console."
+          hint={t("auth.verify.codeHint")}
           onChange={(event) => setToken(event.target.value)}
         />
         <Button
@@ -114,7 +116,7 @@ export function VerifyEmailView() {
           disabled={token.trim() === ""}
           onClick={() => void submitTyped()}
         >
-          Confirm email
+          {t("auth.verify.submit")}
         </Button>
       </div>
     </>

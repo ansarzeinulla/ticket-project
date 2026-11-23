@@ -9,10 +9,49 @@ import { Button } from "@/components/ui/button";
 import { ApiError, api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { formatKZT } from "@/lib/money";
+import { useT } from "@/lib/i18n/context";
+import type { MessageKey } from "@/lib/i18n/dictionaries";
+import type { Translator } from "@/lib/i18n/translate";
 import type { AdminSearchResponse } from "@/lib/types";
 
 /** How long to wait after a keystroke before searching. */
 const DEBOUNCE_MS = 300;
+
+const WORDS: Record<string, MessageKey> = {
+  pending_verification: "org.words.pending_verification",
+  active: "org.words.active",
+  suspended: "org.words.suspended",
+  deactivated: "org.words.deactivated",
+  draft: "org.words.draft",
+  published: "org.words.published",
+  unpublished: "org.words.unpublished",
+  cancelled: "org.words.cancelled",
+  completed: "org.words.completed",
+  upcoming: "org.words.upcoming",
+  pending: "org.words.pending",
+  awaiting_payment: "org.words.awaiting_payment",
+  paid: "org.words.paid",
+  refunded: "org.words.refunded",
+  partially_refunded: "org.words.partially_refunded",
+  expired: "org.words.expired",
+  failed: "org.words.failed",
+  succeeded: "org.words.succeeded",
+  not_started: "org.words.not_started",
+  in_progress: "org.words.in_progress",
+  ticket_order: "org.words.ticket_order",
+  paid_sales_activation: "org.words.paid_sales_activation",
+  attendee: "org.words.attendee",
+  organizer: "org.words.organizer",
+  event_admin: "org.words.event_admin",
+  support_staff: "org.words.support_staff",
+  platform_admin: "org.words.platform_admin",
+};
+
+/** A status or role in the reader's language; unknown values fall back to the raw name. */
+function word(t: Translator, value: string): string {
+  const key = WORDS[value];
+  return key ? t(key) : value.replace(/_/g, " ");
+}
 
 function formatDate(iso?: string): string {
   if (!iso) return "—";
@@ -33,6 +72,7 @@ function formatDate(iso?: string): string {
  */
 export function AdminPortal() {
   const { user } = useAuth();
+  const t = useT();
   const isAdmin = user?.roles.includes("platform_admin") ?? false;
 
   const [query, setQuery] = useState("");
@@ -49,12 +89,12 @@ export function AdminPortal() {
         setError(null);
       } catch (cause) {
         if (cause instanceof DOMException && cause.name === "AbortError") return;
-        setError(cause instanceof ApiError ? cause.message : "Could not search.");
+        setError(cause instanceof ApiError ? cause.message : t("org.attendees.searchFailed"));
       } finally {
         setLoading(false);
       }
     },
-    [],
+    [t],
   );
 
   // Debounced: an admin typing an email should not fire eight queries.
@@ -108,7 +148,7 @@ export function AdminPortal() {
       anchor.remove();
       URL.revokeObjectURL(url);
     } catch {
-      setDownloadError("Could not build the report. Try again.");
+      setDownloadError(t("org.admin.reportFailed"));
     } finally {
       setDownloading(false);
     }
@@ -117,12 +157,11 @@ export function AdminPortal() {
   if (!isAdmin) {
     return (
       <div className="space-y-4">
-        <h1 className="text-2xl font-semibold tracking-tight">Administration</h1>
-        <Alert tone="error" title="Not available to this account">
-          The administrative portal is restricted to BiletFlow platform
-          administrators. If you organize events, your own dashboard is{" "}
+        <h1 className="text-2xl font-semibold tracking-tight">{t("org.titles.admin")}</h1>
+        <Alert tone="error" title={t("org.admin.deniedTitle")}>
+          {t("org.admin.deniedBody")}{" "}
           <Link href="/dashboard" className="font-medium underline">
-            here
+            {t("org.admin.here")}
           </Link>
           .
         </Alert>
@@ -137,9 +176,9 @@ export function AdminPortal() {
     <div className="space-y-8">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Administration</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{t("org.titles.admin")}</h1>
           <p className="mt-1 text-sm text-foreground-muted">
-            Search users, events, orders and payments across the platform.
+            {t("org.admin.subtitle")}
           </p>
         </div>
         <div className="flex flex-col items-end gap-2">
@@ -149,10 +188,10 @@ export function AdminPortal() {
               className="inline-flex items-center rounded-lg border border-border-subtle px-3 py-2 text-sm font-medium hover:bg-surface-muted"
               data-testid="reports-link"
             >
-              Reported events
+              {t("org.titles.reports")}
             </Link>
             <Button onClick={() => void downloadReport()} loading={downloading}>
-              Export CSV report
+              {t("org.admin.export")}
             </Button>
           </div>
           {downloadError && <span className="text-xs text-danger">{downloadError}</span>}
@@ -162,12 +201,12 @@ export function AdminPortal() {
       {stats && (
         <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           {[
-            { label: "Users", value: String(stats.users) },
-            { label: "Events", value: String(stats.events) },
-            { label: "Published", value: String(stats.published_events) },
-            { label: "Tickets sold", value: String(stats.tickets_sold) },
-            { label: "Gross", value: formatKZT(stats.gross_revenue_kzt) },
-            { label: "Refunded", value: formatKZT(stats.refunded_kzt) },
+            { label: t("org.admin.users"), value: String(stats.users) },
+            { label: t("nav.events"), value: String(stats.events) },
+            { label: t("org.admin.published"), value: String(stats.published_events) },
+            { label: t("org.analytics.sold"), value: String(stats.tickets_sold) },
+            { label: t("org.admin.gross"), value: formatKZT(stats.gross_revenue_kzt) },
+            { label: t("org.analytics.refunded"), value: formatKZT(stats.refunded_kzt) },
           ].map((tile) => (
             <div
               key={tile.label}
@@ -182,11 +221,11 @@ export function AdminPortal() {
 
       {stats && (stats.suspended_events > 0 || stats.failed_payments > 0 ||
         stats.open_support_cases > 0) && (
-        <Alert tone="info" title="Needs attention">
+        <Alert tone="info" title={t("org.admin.attention")}>
           {[
-            stats.suspended_events > 0 && `${stats.suspended_events} suspended event(s)`,
-            stats.failed_payments > 0 && `${stats.failed_payments} failed payment(s)`,
-            stats.open_support_cases > 0 && `${stats.open_support_cases} open support case(s)`,
+            stats.suspended_events > 0 && t("org.admin.suspendedEvents", { count: stats.suspended_events }),
+            stats.failed_payments > 0 && t("org.admin.failedPayments", { count: stats.failed_payments }),
+            stats.open_support_cases > 0 && t("org.admin.openCases", { count: stats.open_support_cases }),
           ]
             .filter(Boolean)
             .join(" · ")}
@@ -195,18 +234,18 @@ export function AdminPortal() {
 
       <div>
         <label htmlFor="admin-search" className="block text-sm font-medium">
-          Search
+          {t("org.admin.search")}
         </label>
         <input
           id="admin-search"
           type="search"
           value={query}
-          placeholder="Email, name, event title, order number…"
+          placeholder={t("org.admin.searchPlaceholder")}
           onChange={(event) => setQuery(event.target.value)}
           className="mt-1.5 w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm"
         />
         <p className="mt-1 text-xs text-foreground-muted">
-          {loading ? "Searching…" : "One query, every kind of record."}
+          {loading ? t("org.attendees.searching") : t("org.admin.searchHint")}
         </p>
       </div>
 
@@ -214,8 +253,18 @@ export function AdminPortal() {
 
       {results && (
         <div className="space-y-8">
-          <Section title="Users" count={results.users.length}>
-            <Table columns={["Account", "Status", "Roles", "Events", "Orders", "Joined", "Action"]}>
+          <Section title={t("org.admin.users")} count={results.users.length}>
+            <Table
+              columns={[
+                t("org.admin.colAccount"),
+                t("org.orders.colStatus"),
+                t("org.admin.colRoles"),
+                t("nav.events"),
+                t("org.analytics.orders"),
+                t("org.admin.colJoined"),
+                t("org.orders.colAction"),
+              ]}
+            >
               {results.users.map((row) => (
                 <tr key={row.id} className="border-t border-border-subtle">
                   <td className="px-4 py-2">
@@ -225,23 +274,23 @@ export function AdminPortal() {
                   <td className="px-4 py-2">
                     <Pill value={row.status} />
                     {!row.email_verified && (
-                      <span className="ml-2 text-xs text-warning">unverified</span>
+                      <span className="ml-2 text-xs text-warning">{t("org.admin.unverified")}</span>
                     )}
                   </td>
                   <td className="px-4 py-2 text-xs">
-                    {row.roles.length > 0 ? row.roles.join(", ") : "—"}
+                    {row.roles.length > 0 ? row.roles.map((role) => word(t, role)).join(", ") : "—"}
                   </td>
                   <td className="px-4 py-2 tabular-nums">{row.event_count}</td>
                   <td className="px-4 py-2 tabular-nums">{row.order_count}</td>
                   <td className="px-4 py-2 text-xs">{formatDate(row.created_at)}</td>
                   <td className="px-4 py-2">
                     {row.id === user?.id ? (
-                      <span className="text-xs text-foreground-muted">You</span>
+                      <span className="text-xs text-foreground-muted">{t("org.admin.you")}</span>
                     ) : row.status === "suspended" ? (
                       <ModerationAction
-                        label="Restore"
-                        confirmLabel="Restore this account"
-                        consequence="They will be able to sign in again straight away. An account that never confirmed its address goes back to unverified rather than active."
+                        label={t("org.admin.restore")}
+                        confirmLabel={t("org.admin.restoreConfirm")}
+                        consequence={t("org.admin.restoreConsequence")}
                         tone="secondary"
                         withReason={false}
                         onConfirm={() => api.unsuspendUser(row.id)}
@@ -249,9 +298,9 @@ export function AdminPortal() {
                       />
                     ) : (
                       <ModerationAction
-                        label="Suspend"
-                        confirmLabel="Suspend this account"
-                        consequence="They are signed out on their very next request, and their events stop selling tickets. Tickets already sold stay valid."
+                        label={t("org.admin.suspend")}
+                        confirmLabel={t("org.admin.suspendUserConfirm")}
+                        consequence={t("org.admin.suspendUserConsequence")}
                         onConfirm={(reason) => api.suspendUser(row.id, reason)}
                         onDone={rerun}
                       />
@@ -262,8 +311,18 @@ export function AdminPortal() {
             </Table>
           </Section>
 
-          <Section title="Events" count={results.events.length}>
-            <Table columns={["Event", "Organizer", "Stage", "Activation", "Sold", "Revenue", "Action"]}>
+          <Section title={t("nav.events")} count={results.events.length}>
+            <Table
+              columns={[
+                t("org.admin.colEvent"),
+                t("org.admin.colOrganizer"),
+                t("org.admin.colStage"),
+                t("org.admin.colActivation"),
+                t("org.analytics.colSold"),
+                t("org.analytics.revenue"),
+                t("org.orders.colAction"),
+              ]}
+            >
               {results.events.map((row) => (
                 <tr key={row.id} className="border-t border-border-subtle">
                   <td className="px-4 py-2">
@@ -279,16 +338,16 @@ export function AdminPortal() {
                   <td className="px-4 py-2">
                     <Pill value={row.lifecycle} />
                   </td>
-                  <td className="px-4 py-2 text-xs">{row.activation_status}</td>
+                  <td className="px-4 py-2 text-xs">{word(t, row.activation_status)}</td>
                   <td className="px-4 py-2 tabular-nums">{row.tickets_sold}</td>
                   <td className="px-4 py-2 tabular-nums">{formatKZT(row.revenue_kzt)}</td>
                   <td className="px-4 py-2">
                     <div className="space-y-2">
                       {row.lifecycle === "suspended" || row.status === "suspended" ? (
                         <ModerationAction
-                          label="Lift suspension"
-                          confirmLabel="Lift the suspension"
-                          consequence="The event returns to unpublished, so the organizer has to publish it again deliberately before it can sell."
+                          label={t("org.admin.lift")}
+                          confirmLabel={t("org.admin.liftConfirm")}
+                          consequence={t("org.admin.liftConsequence")}
                           tone="secondary"
                           withReason={false}
                           onConfirm={() => api.unsuspendEvent(row.id)}
@@ -296,9 +355,9 @@ export function AdminPortal() {
                         />
                       ) : (
                         <ModerationAction
-                          label="Suspend"
-                          confirmLabel="Suspend this event"
-                          consequence="Checkout is refused immediately and the public page shows a notice. Tickets already sold stay valid, so paying attendees are not stranded."
+                          label={t("org.admin.suspend")}
+                          confirmLabel={t("org.admin.suspendEventConfirm")}
+                          consequence={t("org.admin.suspendEventConsequence")}
                           onConfirm={(reason) => api.suspendEvent(row.id, reason)}
                           onDone={rerun}
                         />
@@ -306,9 +365,9 @@ export function AdminPortal() {
 
                       {row.activation_status === "suspended" ? (
                         <ModerationAction
-                          label="Restore paid sales"
-                          confirmLabel="Restore paid sales"
-                          consequence="The event can take money again. Free registration was never affected."
+                          label={t("org.admin.restorePaid")}
+                          confirmLabel={t("org.admin.restorePaid")}
+                          consequence={t("org.admin.restorePaidConsequence")}
                           tone="secondary"
                           withReason={false}
                           onConfirm={() => api.restorePaidSales(row.id)}
@@ -316,9 +375,9 @@ export function AdminPortal() {
                         />
                       ) : row.activation_status === "active" ? (
                         <ModerationAction
-                          label="Stop paid sales"
-                          confirmLabel="Stop paid sales"
-                          consequence="Paid tickets stop selling; free registration carries on. Use this when the money is the problem and the event is not."
+                          label={t("org.admin.stopPaid")}
+                          confirmLabel={t("org.admin.stopPaid")}
+                          consequence={t("org.admin.stopPaidConsequence")}
                           onConfirm={(reason) => api.suspendPaidSales(row.id, reason)}
                           onDone={rerun}
                         />
@@ -330,8 +389,17 @@ export function AdminPortal() {
             </Table>
           </Section>
 
-          <Section title="Orders" count={results.orders.length}>
-            <Table columns={["Order", "Buyer", "Event", "Status", "Total", "Refunded"]}>
+          <Section title={t("org.analytics.orders")} count={results.orders.length}>
+            <Table
+              columns={[
+                t("org.orders.colOrder"),
+                t("org.admin.colBuyer"),
+                t("org.admin.colEvent"),
+                t("org.orders.colStatus"),
+                t("seatCheckout.total"),
+                t("org.analytics.refunded"),
+              ]}
+            >
               {results.orders.map((row) => (
                 <tr key={row.id} className="border-t border-border-subtle">
                   <td className="px-4 py-2 font-mono text-xs">{row.order_number}</td>
@@ -352,18 +420,26 @@ export function AdminPortal() {
             </Table>
           </Section>
 
-          <Section title="Payments" count={results.payments.length}>
-            <Table columns={["Purpose", "Reference", "Status", "Amount", "When"]}>
+          <Section title={t("org.admin.payments")} count={results.payments.length}>
+            <Table
+              columns={[
+                t("org.admin.colPurpose"),
+                t("org.admin.colReference"),
+                t("org.orders.colStatus"),
+                t("org.admin.colAmount"),
+                t("org.admin.colWhen"),
+              ]}
+            >
               {results.payments.map((row) => (
                 <tr key={row.id} className="border-t border-border-subtle">
-                  <td className="px-4 py-2 text-xs">{row.purpose}</td>
+                  <td className="px-4 py-2 text-xs">{word(t, row.purpose)}</td>
                   <td className="px-4 py-2 text-xs">
                     {row.order_number ?? row.event_title ?? "—"}
                   </td>
                   <td className="px-4 py-2">
                     <Pill value={row.status} />
                     {row.is_simulated && (
-                      <span className="ml-2 text-xs text-foreground-muted">simulated</span>
+                      <span className="ml-2 text-xs text-foreground-muted">{t("org.activation.simulated")}</span>
                     )}
                   </td>
                   <td className="px-4 py-2 tabular-nums">{formatKZT(row.amount_kzt)}</td>
@@ -404,10 +480,11 @@ const PILL_TONES: Record<string, string> = {
 };
 
 function Pill({ value }: { value: string }) {
+  const t = useT();
   const tone = PILL_TONES[value] ?? "bg-surface-muted text-foreground-muted";
   return (
     <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${tone}`}>
-      {value.replace(/_/g, " ")}
+      {word(t, value)}
     </span>
   );
 }
@@ -421,6 +498,7 @@ function Section({
   count: number;
   children: React.ReactNode;
 }) {
+  const t = useT();
   return (
     <section>
       <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground-muted">
@@ -429,7 +507,7 @@ function Section({
       <div className="mt-2">
         {count === 0 ? (
           <p className="rounded-lg border border-dashed border-border-subtle px-4 py-6 text-center text-sm text-foreground-muted">
-            Nothing matched.
+            {t("org.admin.nothing")}
           </p>
         ) : (
           children

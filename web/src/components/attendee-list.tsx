@@ -5,16 +5,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert } from "@/components/ui/alert";
 import { Button, Spinner } from "@/components/ui/button";
 import { ApiError, api } from "@/lib/api";
+import { useT } from "@/lib/i18n/context";
+import type { MessageKey } from "@/lib/i18n/dictionaries";
 import type { AttendeeTicket } from "@/lib/types";
 
 /** How long to wait after a keystroke before searching. */
 const DEBOUNCE_MS = 300;
 
-const STATUS_LABELS: Record<AttendeeTicket["status"], string> = {
-  valid: "Not yet in",
-  checked_in: "Checked in",
-  cancelled: "Cancelled",
-  refunded: "Refunded",
+const STATUS_LABELS: Record<AttendeeTicket["status"], MessageKey> = {
+  valid: "org.attendees.statusValid",
+  checked_in: "org.attendees.statusCheckedIn",
+  cancelled: "org.attendees.statusCancelled",
+  refunded: "org.attendees.statusRefunded",
 };
 
 const STATUS_TONES: Record<AttendeeTicket["status"], string> = {
@@ -38,6 +40,7 @@ const STATUS_TONES: Record<AttendeeTicket["status"], string> = {
  * overwrite a fast one for "anna" typed after it.
  */
 export function AttendeeList({ eventID }: { eventID: string }) {
+  const t = useT();
   const [query, setQuery] = useState("");
   const [attendees, setAttendees] = useState<AttendeeTicket[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -68,12 +71,12 @@ export function AttendeeList({ eventID }: { eventID: string }) {
       } catch (cause) {
         if (cause instanceof DOMException && cause.name === "AbortError") return;
         if (mine !== sequence.current) return;
-        setError(cause instanceof ApiError ? cause.message : "Could not search.");
+        setError(cause instanceof ApiError ? cause.message : t("org.attendees.searchFailed"));
       } finally {
         if (mine === sequence.current) setLoading(false);
       }
     },
-    [eventID],
+    [eventID, t],
   );
 
   useEffect(() => {
@@ -94,11 +97,11 @@ export function AttendeeList({ eventID }: { eventID: string }) {
     setNote(null);
     try {
       await api.checkInManually(eventID, attendee.ticket_id, "organizer dashboard");
-      setNote(`${attendee.attendee_name} is checked in.`);
+      setNote(t("org.attendees.admitted", { name: attendee.attendee_name }));
       await search(query);
     } catch (cause) {
       setError(
-        cause instanceof ApiError ? cause.message : "Could not check this person in.",
+        cause instanceof ApiError ? cause.message : t("org.attendees.admitFailed"),
       );
     } finally {
       setCheckingIn(null);
@@ -108,19 +111,19 @@ export function AttendeeList({ eventID }: { eventID: string }) {
   return (
     <section className="rounded-xl border border-border-subtle bg-surface p-5">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-base font-semibold">Attendees</h2>
+        <h2 className="text-base font-semibold">{t("org.attendees.heading")}</h2>
         <p className="text-xs text-foreground-muted">
-          Find somebody by name, email, ticket or order number.
+          {t("org.attendees.subtitle")}
         </p>
       </div>
 
       <label className="mt-3 block">
-        <span className="sr-only">Search attendees</span>
+        <span className="sr-only">{t("org.attendees.searchLabel")}</span>
         <input
           type="search"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Name, email, ticket or order number…"
+          placeholder={t("org.attendees.placeholder")}
           className="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm"
           data-testid="attendee-search"
         />
@@ -140,19 +143,19 @@ export function AttendeeList({ eventID }: { eventID: string }) {
       <div className="mt-3" aria-live="polite">
         {loading && (
           <p className="flex items-center gap-2 text-sm text-foreground-muted">
-            <Spinner aria-hidden /> Searching…
+            <Spinner aria-hidden /> {t("org.attendees.searching")}
           </p>
         )}
 
         {!loading && query.trim().length < 2 && (
           <p className="text-sm text-foreground-muted">
-            Type at least two characters to search.
+            {t("org.attendees.minChars")}
           </p>
         )}
 
         {!loading && attendees?.length === 0 && (
           <p className="text-sm text-foreground-muted" data-testid="attendee-empty">
-            Nobody on this event&rsquo;s list matches that.
+            {t("org.attendees.none")}
           </p>
         )}
 
@@ -170,7 +173,7 @@ export function AttendeeList({ eventID }: { eventID: string }) {
                     <span
                       className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_TONES[attendee.status]}`}
                     >
-                      {STATUS_LABELS[attendee.status]}
+                      {t(STATUS_LABELS[attendee.status])}
                     </span>
                   </div>
                   <p className="text-xs text-foreground-muted">{attendee.attendee_email}</p>
@@ -188,7 +191,7 @@ export function AttendeeList({ eventID }: { eventID: string }) {
                   onClick={() => admit(attendee)}
                   data-testid={`admit-${attendee.ticket_id}`}
                 >
-                  {attendee.status === "checked_in" ? "Already in" : "Check in"}
+                  {attendee.status === "checked_in" ? t("org.attendees.alreadyIn") : t("org.attendees.checkIn")}
                 </Button>
               </li>
             ))}

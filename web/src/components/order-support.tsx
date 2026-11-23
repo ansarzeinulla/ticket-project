@@ -9,7 +9,8 @@ import { Button, Spinner } from "@/components/ui/button";
 import { TextField } from "@/components/ui/field";
 import { ApiError, api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
-import { STATUS_LABELS, STATUS_STYLES, categoryLabel } from "@/lib/support";
+import { useT } from "@/lib/i18n/context";
+import { STATUS_STYLES, supportCategoryLabel, supportStatusLabel } from "@/lib/support";
 import type { SupportCase } from "@/lib/types";
 
 /**
@@ -28,6 +29,7 @@ export function OrderSupport({
   buyerEmail: string;
 }) {
   const { status: authStatus } = useAuth();
+  const t = useT();
 
   const [cases, setCases] = useState<SupportCase[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
@@ -60,12 +62,12 @@ export function OrderSupport({
           setCases([]);
           return;
         }
-        setError(cause instanceof ApiError ? cause.message : "Could not load your support cases.");
+        setError(cause instanceof ApiError ? cause.message : t("orderSupport.loadFailed"));
       } finally {
         setLoading(false);
       }
     },
-    [orderID, signedIn],
+    [orderID, signedIn, t],
   );
 
   useEffect(() => {
@@ -84,8 +86,8 @@ export function OrderSupport({
     setError(null);
 
     const errors: Record<string, string> = {};
-    if (!subject.trim()) errors.subject = "Give your question a short subject.";
-    if (!message.trim()) errors.message = "Describe the problem.";
+    if (!subject.trim()) errors.subject = t("orderSupport.subjectRequired");
+    if (!message.trim()) errors.message = t("orderSupport.messageRequired");
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
       return;
@@ -109,11 +111,11 @@ export function OrderSupport({
         setFieldErrors(cause.fields);
         setError(
           Object.keys(cause.fields).length > 0
-            ? "Please correct the highlighted fields."
+            ? t("auth.common.fixFields")
             : cause.message,
         );
       } else {
-        setError("The case could not be opened.");
+        setError(t("orderSupport.openFailed"));
       }
     } finally {
       setSubmitting(false);
@@ -123,10 +125,10 @@ export function OrderSupport({
   if (authStatus === "loading" || loading) {
     return (
       <section className="mt-8">
-        <h2 className="text-sm font-semibold">Need help?</h2>
+        <h2 className="text-sm font-semibold">{t("orderSupport.needHelp")}</h2>
         <div className="mt-2 flex items-center gap-3 text-sm text-foreground-muted">
           <Spinner />
-          Loading…
+          {t("orderSupport.loading")}
         </div>
       </section>
     );
@@ -136,16 +138,16 @@ export function OrderSupport({
   if (!signedIn) {
     return (
       <section className="mt-8 rounded-xl border border-border-subtle bg-surface p-5">
-        <h2 className="text-sm font-semibold">Need help with this order?</h2>
+        <h2 className="text-sm font-semibold">{t("orderSupport.guestHeading")}</h2>
         <p className="mt-1 text-sm text-foreground-muted">
-          Sign in with <span className="font-medium">{buyerEmail}</span> — the address
-          this order was bought under — to open a support case with the organizer.
+          {t("orderSupport.guestBefore")}<span className="font-medium">{buyerEmail}</span>
+          {t("orderSupport.guestAfter")}
         </p>
         <Link
           href={`/login?next=/orders/${orderID}`}
           className="mt-4 inline-flex rounded-lg bg-brand px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-strong"
         >
-          Sign in to get help
+          {t("orderSupport.guestSignIn")}
         </Link>
       </section>
     );
@@ -154,7 +156,7 @@ export function OrderSupport({
   if (openCaseID) {
     return (
       <section className="mt-8 space-y-3">
-        <h2 className="text-sm font-semibold">Support</h2>
+        <h2 className="text-sm font-semibold">{t("orderSupport.heading")}</h2>
         <SupportThreadView
           caseID={openCaseID}
           onClose={() => setOpenCaseID(null)}
@@ -171,10 +173,10 @@ export function OrderSupport({
   return (
     <section className="mt-8 space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-sm font-semibold">Support</h2>
+        <h2 className="text-sm font-semibold">{t("orderSupport.heading")}</h2>
         {!composing && (
           <Button size="sm" variant="secondary" onClick={() => setComposing(true)}>
-            Contact the organizer
+            {t("orderSupport.contact")}
           </Button>
         )}
       </div>
@@ -194,14 +196,16 @@ export function OrderSupport({
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-medium">{item.subject}</span>
                   <span className="text-xs text-foreground-muted">
-                    {item.case_number} · {categoryLabel(item.category)} ·{" "}
-                    {item.message_count} message{item.message_count === 1 ? "" : "s"}
+                    {item.case_number} · {supportCategoryLabel(t, item.category)} ·{" "}
+                    {item.message_count === 1
+                      ? t("orderSupport.messageOne")
+                      : t("orderSupport.messageMany", { count: item.message_count })}
                   </span>
                 </span>
                 <span
                   className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_STYLES[item.status]}`}
                 >
-                  {STATUS_LABELS[item.status]}
+                  {supportStatusLabel(t, item.status)}
                 </span>
               </button>
             </li>
@@ -215,12 +219,12 @@ export function OrderSupport({
           noValidate
           className="space-y-4 rounded-xl border border-border-subtle bg-surface p-5"
         >
-          <h3 className="text-sm font-semibold">Ask the organizer</h3>
+          <h3 className="text-sm font-semibold">{t("orderSupport.ask")}</h3>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <label htmlFor="support-category" className="block text-sm font-medium">
-                What is it about?
+                {t("orderSupport.category")}
               </label>
               <select
                 id="support-category"
@@ -232,16 +236,16 @@ export function OrderSupport({
               >
                 {categories.map((option) => (
                   <option key={option} value={option}>
-                    {categoryLabel(option)}
+                    {supportCategoryLabel(t, option)}
                   </option>
                 ))}
               </select>
             </div>
 
             <TextField
-              label="Subject"
+              label={t("orderSupport.subject")}
               name="subject"
-              placeholder="Parking"
+              placeholder={t("orderSupport.subjectPlaceholder")}
               required
               value={subject}
               error={fieldErrors.subject}
@@ -252,14 +256,14 @@ export function OrderSupport({
 
           <div className="space-y-1.5">
             <label htmlFor="support-message" className="block text-sm font-medium">
-              Your question
+              {t("orderSupport.question")}
             </label>
             <textarea
               id="support-message"
               rows={3}
               value={message}
               onChange={(event) => setMessage(event.target.value)}
-              placeholder="Where is parking?"
+              placeholder={t("orderSupport.questionPlaceholder")}
               disabled={submitting}
               className="w-full resize-y rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm placeholder:text-foreground-muted/70"
               data-testid="support-message"
@@ -271,7 +275,7 @@ export function OrderSupport({
 
           <div className="flex gap-3">
             <Button type="submit" loading={submitting} data-testid="support-submit">
-              Send to the organizer
+              {t("orderSupport.send")}
             </Button>
             <Button
               type="button"
@@ -279,7 +283,7 @@ export function OrderSupport({
               disabled={submitting}
               onClick={() => setComposing(false)}
             >
-              Cancel
+              {t("orderSupport.cancel")}
             </Button>
           </div>
         </form>
@@ -287,7 +291,7 @@ export function OrderSupport({
 
       {!composing && cases.length === 0 && (
         <p className="rounded-xl border border-dashed border-border-subtle bg-surface p-6 text-center text-sm text-foreground-muted">
-          Something wrong with this order? Message the organizer and they will reply here.
+          {t("orderSupport.empty")}
         </p>
       )}
     </section>

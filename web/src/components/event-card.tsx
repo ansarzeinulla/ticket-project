@@ -4,9 +4,10 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { StatusBadge } from "@/components/ui/status-badge";
+import { LIFECYCLE_LABELS, StatusBadge } from "@/components/ui/status-badge";
 import { ApiError, api } from "@/lib/api";
 import { formatInTimezone } from "@/lib/datetime";
+import { useT } from "@/lib/i18n/context";
 import type { BiletEvent } from "@/lib/types";
 
 export function EventCard({
@@ -16,6 +17,7 @@ export function EventCard({
   event: BiletEvent;
   onChanged: (updated: BiletEvent) => void;
 }) {
+  const t = useT();
   const [busy, setBusy] = useState<null | "publish" | "unpublish" | "cancel">(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
@@ -33,7 +35,7 @@ export function EventCard({
       onChanged(updated);
       setConfirmingCancel(false);
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : "The action failed.");
+      setError(cause instanceof ApiError ? cause.message : t("org.eventCard.actionFailed"));
     } finally {
       setBusy(null);
     }
@@ -54,25 +56,27 @@ export function EventCard({
             <h3 className="truncate text-base font-semibold">{event.title}</h3>
             <StatusBadge status={event.status} />
             <span className="rounded-full bg-surface-muted px-2 py-0.5 text-xs capitalize text-foreground-muted">
-              {event.lifecycle}
+              {t(LIFECYCLE_LABELS[event.lifecycle])}
             </span>
           </div>
           <p className="mt-1 font-mono text-xs text-foreground-muted">/{event.slug}</p>
         </div>
 
-        <div className="flex shrink-0 flex-wrap gap-2">
+        {/* No shrink-0: on a phone the buttons wrap under the title instead of
+            pushing the card 145 px past the screen edge. */}
+        <div className="flex flex-wrap gap-2">
           <Link
             href={`/dashboard/events/${event.id}`}
             className="inline-flex items-center rounded-lg border border-border-subtle px-3 py-1.5 text-xs font-medium hover:bg-surface-muted"
           >
-            Manage tickets
+            {t("org.eventCard.manage")}
           </Link>
           {event.status === "published" && (
             <Link
               href={`/events/${event.slug}`}
               className="inline-flex items-center rounded-lg border border-border-subtle px-3 py-1.5 text-xs font-medium hover:bg-surface-muted"
             >
-              Public page
+              {t("org.eventCard.publicPage")}
             </Link>
           )}
           <Link
@@ -80,7 +84,7 @@ export function EventCard({
             className="inline-flex items-center rounded-lg border border-border-subtle px-3 py-1.5 text-xs font-medium hover:bg-surface-muted"
             data-testid="edit-event"
           >
-            Edit
+            {t("org.eventCard.edit")}
           </Link>
           {canPublish && (
             <Button
@@ -89,7 +93,7 @@ export function EventCard({
               disabled={busy !== null}
               onClick={() => run("publish")}
             >
-              Publish
+              {t("org.eventCard.publish")}
             </Button>
           )}
           {canUnpublish && (
@@ -101,7 +105,7 @@ export function EventCard({
               onClick={() => run("unpublish")}
               data-testid="unpublish-event"
             >
-              Unpublish
+              {t("org.eventCard.unpublish")}
             </Button>
           )}
           {canCancel && !confirmingCancel && (
@@ -111,7 +115,7 @@ export function EventCard({
               disabled={busy !== null}
               onClick={() => setConfirmingCancel(true)}
             >
-              Cancel event
+              {t("org.eventCard.cancel")}
             </Button>
           )}
         </div>
@@ -126,9 +130,8 @@ export function EventCard({
       {confirmingCancel && (
         <div className="mt-4 space-y-2 rounded-lg border border-danger/30 bg-danger-soft/40 p-3">
           <p className="text-sm">
-            Cancelling <strong>{event.title}</strong> is final. Every ticket holder is
-            emailed, their tickets stop working, and the event cannot be published
-            again. To take the page down temporarily, use Unpublish instead.
+            {t("org.eventCard.cancelWarnBefore")}<strong>{event.title}</strong>
+            {t("org.eventCard.cancelWarnAfter")}
           </p>
           <div className="flex gap-2">
             <Button
@@ -138,10 +141,10 @@ export function EventCard({
               disabled={busy !== null}
               onClick={() => run("cancel")}
             >
-              Cancel this event
+              {t("org.eventCard.cancelConfirm")}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setConfirmingCancel(false)}>
-              Keep it
+              {t("org.eventCard.keep")}
             </Button>
           </div>
         </div>
@@ -149,20 +152,20 @@ export function EventCard({
 
       <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm sm:grid-cols-4">
         <div>
-          <dt className="text-xs text-foreground-muted">Starts</dt>
+          <dt className="text-xs text-foreground-muted">{t("org.eventCard.starts")}</dt>
           <dd className="mt-0.5">{formatInTimezone(event.starts_at, event.timezone)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-foreground-muted">Ends</dt>
+          <dt className="text-xs text-foreground-muted">{t("org.eventCard.ends")}</dt>
           <dd className="mt-0.5">{formatInTimezone(event.ends_at, event.timezone)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-foreground-muted">Timezone</dt>
+          <dt className="text-xs text-foreground-muted">{t("org.eventCard.timezone")}</dt>
           <dd className="mt-0.5">{event.timezone}</dd>
         </div>
         <div>
-          <dt className="text-xs text-foreground-muted">Capacity</dt>
-          <dd className="mt-0.5">{event.capacity ?? "Unlimited"}</dd>
+          <dt className="text-xs text-foreground-muted">{t("org.eventCard.capacity")}</dt>
+          <dd className="mt-0.5">{event.capacity ?? t("org.eventCard.unlimited")}</dd>
         </div>
       </dl>
 

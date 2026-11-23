@@ -5,12 +5,13 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { Alert } from "@/components/ui/alert";
 import { Button, Spinner } from "@/components/ui/button";
 import { ApiError, api } from "@/lib/api";
+import { useT } from "@/lib/i18n/context";
 import {
   ORGANIZER_STATUSES,
-  STATUS_LABELS,
   STATUS_STYLES,
-  categoryLabel,
   formatMessageTime,
+  supportCategoryLabel,
+  supportStatusLabel,
 } from "@/lib/support";
 import type { SupportThread as Thread, SupportStatus } from "@/lib/types";
 
@@ -33,6 +34,7 @@ export function SupportThreadView({
   onChanged?: (thread: Thread) => void;
   onClose?: () => void;
 }) {
+  const t = useT();
   const [thread, setThread] = useState<Thread | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -60,12 +62,12 @@ export function SupportThreadView({
         adopt(await api.getSupportThread(caseID, signal));
       } catch (cause) {
         if (cause instanceof DOMException && cause.name === "AbortError") return;
-        setError(cause instanceof ApiError ? cause.message : "Could not load the conversation.");
+        setError(cause instanceof ApiError ? cause.message : t("supportThread.loadFailed"));
       } finally {
         setLoading(false);
       }
     },
-    [caseID, adopt],
+    [caseID, adopt, t],
   );
 
   useEffect(() => {
@@ -96,7 +98,7 @@ export function SupportThreadView({
       setReply("");
       setInternalNote(false);
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : "The message could not be sent.");
+      setError(cause instanceof ApiError ? cause.message : t("supportThread.sendFailed"));
     } finally {
       setSending(false);
     }
@@ -107,7 +109,7 @@ export function SupportThreadView({
     try {
       adopt(await api.setSupportCaseStatus(caseID, status));
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : "The status could not be changed.");
+      setError(cause instanceof ApiError ? cause.message : t("supportThread.statusFailed"));
     } finally {
       setBusyStatus(false);
     }
@@ -117,13 +119,13 @@ export function SupportThreadView({
     return (
       <div className="flex items-center gap-3 rounded-xl border border-border-subtle bg-surface p-6 text-sm text-foreground-muted">
         <Spinner />
-        Loading the conversation…
+        {t("supportThread.loading")}
       </div>
     );
   }
 
   if (!thread) {
-    return <Alert tone="error">{error ?? "This conversation could not be loaded."}</Alert>;
+    return <Alert tone="error">{error ?? t("supportThread.notLoaded")}</Alert>;
   }
 
   const { case: supportCase, messages, can_moderate: canModerate } = thread;
@@ -138,19 +140,19 @@ export function SupportThreadView({
               className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_STYLES[supportCase.status]}`}
               data-testid="case-status"
             >
-              {STATUS_LABELS[supportCase.status]}
+              {supportStatusLabel(t, supportCase.status)}
             </span>
           </div>
           <p className="mt-1 text-xs text-foreground-muted">
-            {supportCase.case_number} · {categoryLabel(supportCase.category)}
-            {supportCase.order_number ? ` · order ${supportCase.order_number}` : ""}
-            {canModerate ? ` · from ${supportCase.requester_name}` : ""}
+            {supportCase.case_number} · {supportCategoryLabel(t, supportCase.category)}
+            {supportCase.order_number ? ` · ${t("supportThread.order", { number: supportCase.order_number })}` : ""}
+            {canModerate ? ` · ${t("supportThread.from", { name: supportCase.requester_name })}` : ""}
           </p>
         </div>
 
         {onClose && (
           <Button size="sm" variant="ghost" onClick={onClose}>
-            Close
+            {t("supportThread.close")}
           </Button>
         )}
       </div>
@@ -176,7 +178,7 @@ export function SupportThreadView({
                   {message.sender_name}
                   {message.is_internal_note && (
                     <span className="ml-2 font-normal text-warning">
-                      internal note — not shown to the attendee
+                      {t("supportThread.internalBadge")}
                     </span>
                   )}
                 </span>
@@ -192,7 +194,7 @@ export function SupportThreadView({
 
       {canModerate && (
         <div className="flex flex-wrap items-center gap-2 border-t border-border-subtle pt-4">
-          <span className="text-xs text-foreground-muted">Set status:</span>
+          <span className="text-xs text-foreground-muted">{t("supportThread.setStatus")}</span>
           {ORGANIZER_STATUSES.map((status) => (
             <Button
               key={status}
@@ -202,7 +204,7 @@ export function SupportThreadView({
               onClick={() => void changeStatus(status)}
               data-testid={`set-status-${status}`}
             >
-              {STATUS_LABELS[status]}
+              {supportStatusLabel(t, status)}
             </Button>
           ))}
         </div>
@@ -210,14 +212,14 @@ export function SupportThreadView({
 
       <form onSubmit={handleReply} className="space-y-2 border-t border-border-subtle pt-4">
         <label htmlFor={`reply-${caseID}`} className="text-sm font-medium">
-          {canModerate ? "Reply to the attendee" : "Add a message"}
+          {canModerate ? t("supportThread.replyLabel") : t("supportThread.addLabel")}
         </label>
         <textarea
           id={`reply-${caseID}`}
           rows={3}
           value={reply}
           onChange={(event) => setReply(event.target.value)}
-          placeholder={canModerate ? "Parking is in Zone B" : "Describe the problem…"}
+          placeholder={canModerate ? t("supportThread.replyPlaceholder") : t("supportThread.addPlaceholder")}
           disabled={sending}
           className="w-full resize-y rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm placeholder:text-foreground-muted/70"
           data-testid="reply-input"
@@ -225,7 +227,7 @@ export function SupportThreadView({
 
         <div className="flex flex-wrap items-center gap-3">
           <Button type="submit" loading={sending} disabled={!reply.trim()} data-testid="reply-send">
-            Send
+            {t("supportThread.send")}
           </Button>
 
           {canModerate && (
@@ -236,7 +238,7 @@ export function SupportThreadView({
                 onChange={(event) => setInternalNote(event.target.checked)}
                 disabled={sending}
               />
-              Internal note (the attendee will not see this)
+              {t("supportThread.internalToggle")}
             </label>
           )}
         </div>

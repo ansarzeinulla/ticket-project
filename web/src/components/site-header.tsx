@@ -5,22 +5,25 @@ import { usePathname, useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
+import type { MessageKey } from "@/lib/i18n/dictionaries";
+import { useT } from "@/lib/i18n/context";
 
 const links = [
-  { href: "/dashboard", label: "Events" },
-  { href: "/events/new", label: "Create event" },
+  { href: "/dashboard", label: "nav.events" },
+  { href: "/events/new", label: "nav.createEvent" },
   // SRS 4.9: an attendee reaches their own orders from their account, not only
   // from the emailed link. Every signed-in user is an attendee of something.
-  { href: "/orders", label: "My tickets" },
-] as const;
+  { href: "/orders", label: "nav.myTickets" },
+] as const satisfies readonly { href: string; label: MessageKey }[];
 
 /** Shown only to platform administrators (SRS 2.1). */
-const adminLink = { href: "/admin", label: "Administration" } as const;
+const adminLink = { href: "/admin", label: "nav.administration" } as const satisfies { href: string; label: MessageKey };
 
 export function SiteHeader() {
   const pathname = usePathname();
   const router = useRouter();
   const { user, logout } = useAuth();
+  const t = useT();
 
   function handleSignOut() {
     logout();
@@ -30,15 +33,20 @@ export function SiteHeader() {
 
   return (
     <header className="border-b border-border-subtle bg-surface">
-      <div className="mx-auto flex h-16 max-w-6xl items-center gap-6 px-4 sm:px-6">
-        <Link href="/dashboard" className="flex items-center gap-2">
+      <div className="mx-auto flex h-16 max-w-6xl items-center gap-3 px-4 sm:gap-6 sm:px-6">
+        <Link href="/dashboard" className="flex shrink-0 items-center gap-2">
           <span className="grid h-8 w-8 place-items-center rounded-lg bg-brand text-sm font-bold text-white">
             B
           </span>
           <span className="hidden font-semibold tracking-tight sm:inline">BiletFlow</span>
         </Link>
 
-        <nav className="flex items-center gap-1" aria-label="Main">
+        {/* The nav scrolls sideways on a phone instead of pushing the page wider:
+            with the admin link, or in Kazakh and Russian, it does not fit 375 px. */}
+        <nav
+          className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
+          aria-label={t("nav.main")}
+        >
           {[...links, ...(user?.roles.includes("platform_admin") ? [adminLink] : [])].map((link) => {
             const active = pathname === link.href;
             return (
@@ -46,19 +54,19 @@ export function SiteHeader() {
                 key={link.href}
                 href={link.href}
                 aria-current={active ? "page" : undefined}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                className={`shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
                   active
                     ? "bg-brand-soft text-brand-strong"
                     : "text-foreground-muted hover:bg-surface-muted hover:text-foreground"
                 }`}
               >
-                {link.label}
+                {t(link.label)}
               </Link>
             );
           })}
         </nav>
 
-        <div className="ml-auto flex items-center gap-3">
+        <div className="ml-auto flex shrink-0 items-center gap-3">
           {user && (
             // The name is the link to the profile: it is where somebody looks
             // for "my account" without being told to.
@@ -72,7 +80,7 @@ export function SiteHeader() {
             </Link>
           )}
           <Button variant="secondary" size="sm" onClick={handleSignOut}>
-            Sign out
+            {t("nav.signOut")}
           </Button>
         </div>
       </div>
