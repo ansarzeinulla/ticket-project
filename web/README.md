@@ -27,12 +27,12 @@ npm install
 npm run dev
 ```
 
-| Command         | What it does                          |
-| --------------- | ------------------------------------- |
-| `npm run dev`   | Dev server on <http://localhost:3000> |
-| `npm run build` | Production build                      |
-| `npm run start` | Serve the production build            |
-| `npm run lint`  | ESLint                                |
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Dev server on <http://localhost:3000> |
+| `npm run build` | Production build |
+| `npm run start` | Serve the production build |
+| `npm run lint` | ESLint |
 
 ### Configuration
 
@@ -49,16 +49,16 @@ value is inlined into the client bundle.
 
 ## Pages
 
-| Route                    | Auth       | What it does                                      |
-| ------------------------ | ---------- | ------------------------------------------------- |
-| `/`                      | –          | Redirects to `/dashboard` or `/login`             |
-| `/register`              | –          | Create an account, then straight to the dashboard |
-| `/login`                 | –          | Sign in, honouring `?next=`                       |
-| `/dashboard`             | required   | Your events, with publish and cancel              |
-| `/dashboard/events/[id]` | required   | One event, with its ticket types                  |
-| `/events/new`            | required   | Create-event form                                 |
-| `/events/[slug]`         | **public** | Attendee event page and ticket selector           |
-| `/orders/[id]`           | **public** | Order confirmation, QR codes and PDF downloads    |
+| Route | Auth | What it does |
+| --- | --- | --- |
+| `/` | – | Redirects to `/dashboard` or `/login` |
+| `/register` | – | Create an account, then straight to the dashboard |
+| `/login` | – | Sign in, honouring `?next=` |
+| `/dashboard` | required | Your events, with publish and cancel |
+| `/dashboard/events/[id]` | required | One event, with its ticket types |
+| `/events/new` | required | Create-event form |
+| `/events/[slug]` | **public** | Attendee event page and ticket selector |
+| `/orders/[id]` | **public** | Order confirmation, QR codes and PDF downloads |
 
 `/events/[slug]` and `/orders/[id]` are deliberately outside the auth gate —
 buying a ticket must work without an account. The proxy matcher lists
@@ -112,9 +112,9 @@ try {
   await api.createEvent(payload);
 } catch (error) {
   if (error instanceof ApiError) {
-    error.status; // 422
-    error.code; // "validation_failed"
-    error.fields; // { ends_at: "End time must be after the start time." }
+    error.status;   // 422
+    error.code;     // "validation_failed"
+    error.fields;   // { ends_at: "End time must be after the start time." }
   }
 }
 ```
@@ -128,7 +128,7 @@ A 401 clears the stored token, so a rejected session cannot linger.
 
 In a cookie (`biletflow_token`), not `localStorage` — for one concrete reason:
 `proxy.ts` runs on the server and can only read cookies. Route protection
-therefore happens _before_ the page renders, rather than flashing a dashboard
+therefore happens *before* the page renders, rather than flashing a dashboard
 and then bouncing to `/login`. The cookie's lifetime is set from the API's own
 `expires_at`, so both expire together.
 
@@ -140,7 +140,7 @@ neither exists yet, so this is a documented Phase 3 trade-off, not an oversight.
 
 ### Two gates, not one
 
-`proxy.ts` is an _optimistic_ check: it can see that a token cookie exists, not
+`proxy.ts` is an *optimistic* check: it can see that a token cookie exists, not
 whether the token is still valid. `AuthProvider` does the real verification with
 `GET /auth/me` and signs the user out when the API rejects it — which also
 catches an account suspended after the token was issued. The `(app)` layout
@@ -162,8 +162,8 @@ back in each event's own zone, so what you typed is what you see.
 ## Notes on the implementation
 
 - **The dashboard reads `GET /api/v1/events/mine`, not `GET /api/v1/events`.**
-  The latter is the public catalogue: it returns only _published, publicly
-  visible_ events, so a freshly created draft would be missing from the very
+  The latter is the public catalogue: it returns only *published, publicly
+  visible* events, so a freshly created draft would be missing from the very
   dashboard that just created it. `/events/mine` is the organizer-scoped
   endpoint built for exactly this in Phase 2.
 - **New events are drafts.** Publishing is a separate, explicit action from the
@@ -177,6 +177,7 @@ back in each event's own zone, so what you typed is what you see.
   cookie and redirects without a client round-trip.
 - `useSearchParams` in the login form sits behind a `Suspense` boundary, so the
   route is not forced into full client-side rendering.
+
 
 ---
 
@@ -212,6 +213,7 @@ This path is exercised by a real race in the browser, not just in theory: sell
 the last tickets from another client while a checkout dialog is open, press pay,
 and the message above is what appears.
 
+
 ---
 
 ## Ticket delivery (Phase 5)
@@ -233,6 +235,7 @@ to the `next/image` rule, and it is marked as such in `ticket-card.tsx`.
 Both the preview and the PDF are generated by the API from the same token with
 the same encoder, so what a viewer sees on screen and what is printed can never
 drift apart.
+
 
 ---
 
@@ -268,6 +271,7 @@ basket.
 `promo_*` errors from checkout, drops the discount and shows the real price
 rather than a total that can no longer be honoured.
 
+
 ---
 
 ## Support chat (Phase 8)
@@ -294,6 +298,7 @@ A suspended event still resolves publicly — people already hold links to it �
 but the ticket selector is not rendered at all and a red banner explains that
 sales are paused and existing tickets remain valid. The organizer sees the same
 news on their own event page.
+
 
 ## Analytics and history (Phase 9)
 
@@ -331,6 +336,7 @@ The dashboard tabs — All, Upcoming, Active, Completed, Cancelled, Drafts — p
 `lifecycle` to `GET /events/mine`. The badge on each card comes from the same
 server-derived value as the filter, so a card can never be labelled differently
 from the tab it appears under.
+
 
 ## Refunds and activation (Phase 10)
 
@@ -370,6 +376,7 @@ anyway, and a selector that lets somebody build a basket it will reject is worse
 than one showing only what can be bought. If the event has a free tier, that
 stays bookable and the banner says so.
 
+
 ## The admin portal, recovery pages and uploads (Phase 12)
 
 ### /admin
@@ -377,7 +384,7 @@ stays bookable and the banner says so.
 Restricted to `platform_admin`. The route is in `proxy.ts`'s matcher, but only
 for the token cookie: a route matcher cannot read a role out of a cookie, and
 pretending otherwise would be security theatre. The portal itself checks the
-role to decide what to _render_, and the API enforces it on every request. An
+role to decide what to *render*, and the API enforces it on every request. An
 organizer who navigates there is told plainly that it is not for them.
 
 Searching is debounced by 300 ms, so typing an email is one request rather than
@@ -420,6 +427,7 @@ a plain `<img>` rather than `next/image`: the URL points at the API's upload
 route, which is not a configured image domain, and optimising a banner an
 organizer just uploaded buys nothing here.
 
+
 ## The session no longer lives in JavaScript (Phase 13, SRS 7)
 
 The JWT used to sit in a cookie readable by `document.cookie`. Any injected
@@ -437,9 +445,8 @@ browser  ->  /api/proxy/<path>    (route handler)  ->  Go API
 On a signed-in page, `document.cookie`, `localStorage` and `sessionStorage` are
 all empty. `SameSite=Strict` because every request the app makes is
 same-origin, so nothing legitimate needs the cookie on a cross-site navigation
-
 - which removes CSRF as a category rather than mitigating it. The cost is that
-  following a link from an email lands signed-out on the first click.
+following a link from an email lands signed-out on the first click.
 
 The proxy forwards an **allowlist** of headers in each direction. Wholesale
 forwarding would let a page smuggle its own `Authorization` or `Cookie`
@@ -478,7 +485,9 @@ Two things this cost to get right, both found by looking at the rendered page:
 
 ## Languages (SRS 8, §685)
 
-The customer-facing pages ship in **Kazakh (default), Russian and English**. A
+The whole web app ships in **Kazakh (default), Russian and English**: the
+customer-facing pages, the sign-in pages, the organizer dashboard and the admin
+console. A
 saved choice (the `biletflow_locale` cookie) wins; failing that the server reads
 `Accept-Language`; failing both it falls to Kazakh, because the platform is
 Kazakhstani and that is the right default here rather than English.
@@ -492,11 +501,11 @@ server-rendered half and there is no flash of the wrong language. The switcher
 writes the cookie through `/api/locale` and calls `router.refresh()`, which
 re-renders the Server Components too.
 
-The message catalogues live in `lib/i18n/dictionaries.ts`. English defines the
+The message catalogues live in `lib/i18n/dictionaries.ts`, which also spreads in
+`lib/i18n/messages/attendee.ts` (sign-in pages, header, seat map, support) and
+`lib/i18n/messages/organizer.ts` (dashboard and admin). English defines the
 `Dictionary` type, so a missing Kazakh or Russian string is a compile error, not
 a blank the visitor finds. Money and dates are never translated as words — they
 are formatted by `lib/money.ts` and `lib/datetime.ts`, which already localise
 them, and organizer-entered content (event titles, descriptions, ticket names,
-refund policies) is shown as stored rather than machine-translated. The
-organizer dashboard and admin console stay in English: SRS §685 scopes the
-requirement to the customer-facing interface.
+refund policies) is shown as stored rather than machine-translated.
