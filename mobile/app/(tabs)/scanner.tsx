@@ -10,10 +10,11 @@ import {
   View,
 } from "react-native";
 
-import { ApiError, api } from "../lib/api";
-import { useAuth } from "../lib/auth-context";
-import { radius, theme } from "../lib/theme";
-import type { ScannableEvent } from "../lib/types";
+import { ApiError, api } from "../../lib/api";
+import { useAuth } from "../../lib/auth-context";
+import { useT } from "../../lib/i18n/context";
+import { radius, theme } from "../../lib/theme";
+import type { ScannableEvent } from "../../lib/types";
 
 /** Renders a start time in the event's own timezone, not the phone's. */
 function formatStart(event: ScannableEvent): string {
@@ -28,7 +29,9 @@ function formatStart(event: ScannableEvent): string {
   }
 }
 
-export default function EventsScreen() {
+/** The gate: events this account may scan (SRS 4.8). Signing out lives on the Account tab. */
+export default function ScannerTab() {
+  const t = useT();
   const { user, signOut } = useAuth();
 
   const [events, setEvents] = useState<ScannableEvent[]>([]);
@@ -43,15 +46,15 @@ export default function EventsScreen() {
     } catch (cause) {
       if (cause instanceof ApiError && cause.isSessionExpired) {
         await signOut();
-        router.replace("/login");
+        router.push("/login");
         return;
       }
-      setError(cause instanceof ApiError ? cause.message : "Could not load your events.");
+      setError(cause instanceof ApiError ? cause.message : t("app.scanner.loadFailed"));
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [signOut]);
+  }, [signOut, t]);
 
   // Re-fetch whenever the screen comes back into view, so the counts are fresh
   // after a shift at the gate.
@@ -61,16 +64,11 @@ export default function EventsScreen() {
     }, [load]),
   );
 
-  async function handleSignOut() {
-    await signOut();
-    router.replace("/login");
-  }
-
   if (loading) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator color={theme.brand} size="large" />
-        <Text style={styles.muted}>Loading your events…</Text>
+        <Text style={styles.muted}>{t("app.scanner.loading")}</Text>
       </View>
     );
   }
@@ -79,12 +77,9 @@ export default function EventsScreen() {
     <View style={styles.flex}>
       <View style={styles.header}>
         <View style={styles.headerText}>
-          <Text style={styles.who}>{user?.full_name ?? "Event Admin"}</Text>
+          <Text style={styles.who}>{user?.full_name ?? t("app.scanner.viaAdmin")}</Text>
           <Text style={styles.muted}>{user?.email}</Text>
         </View>
-        <Pressable onPress={handleSignOut} hitSlop={12} testID="sign-out">
-          <Text style={styles.signOut}>Sign out</Text>
-        </Pressable>
       </View>
 
       {error && (
@@ -109,11 +104,8 @@ export default function EventsScreen() {
         }
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>No events to scan</Text>
-            <Text style={styles.muted}>
-              An organizer needs to assign you as an Event Admin before an event
-              appears here. Pull down to refresh.
-            </Text>
+            <Text style={styles.emptyTitle}>{t("app.scanner.emptyTitle")}</Text>
+            <Text style={styles.muted}>{t("app.scanner.emptyBody")}</Text>
           </View>
         }
         renderItem={({ item }) => {
@@ -130,7 +122,7 @@ export default function EventsScreen() {
                 </Text>
                 <View style={styles.badge}>
                   <Text style={styles.badgeText}>
-                    {item.access_via === "organizer" ? "Organizer" : "Event Admin"}
+                    {item.access_via === "organizer" ? t("app.scanner.viaOrganizer") : t("app.scanner.viaAdmin")}
                   </Text>
                 </View>
               </View>
@@ -143,15 +135,15 @@ export default function EventsScreen() {
               <View style={styles.stats}>
                 <View style={styles.stat}>
                   <Text style={styles.statValue}>{item.stats.checked_in}</Text>
-                  <Text style={styles.statLabel}>Checked in</Text>
+                  <Text style={styles.statLabel}>{t("app.scanner.checkedIn")}</Text>
                 </View>
                 <View style={styles.stat}>
                   <Text style={styles.statValue}>{remaining}</Text>
-                  <Text style={styles.statLabel}>Expected</Text>
+                  <Text style={styles.statLabel}>{t("app.scanner.expected")}</Text>
                 </View>
                 <View style={styles.stat}>
                   <Text style={styles.statValue}>{item.stats.issued}</Text>
-                  <Text style={styles.statLabel}>Tickets</Text>
+                  <Text style={styles.statLabel}>{t("app.scanner.tickets")}</Text>
                 </View>
               </View>
 
@@ -166,7 +158,7 @@ export default function EventsScreen() {
                   testID={`find-attendee-${item.id}`}
                   style={({ pressed }) => [styles.secondary, pressed && styles.cardPressed]}
                 >
-                  <Text style={styles.secondaryText}>Find by name</Text>
+                  <Text style={styles.secondaryText}>{t("app.scanner.findByName")}</Text>
                 </Pressable>
                 {/*
                   Offline check-in (SRS 4.8): download the roster now, then work
@@ -177,7 +169,7 @@ export default function EventsScreen() {
                   testID={`offline-${item.id}`}
                   style={({ pressed }) => [styles.secondary, pressed && styles.cardPressed]}
                 >
-                  <Text style={styles.secondaryText}>Offline mode</Text>
+                  <Text style={styles.secondaryText}>{t("app.scanner.offlineMode")}</Text>
                 </Pressable>
               </View>
             </Pressable>
@@ -218,7 +210,6 @@ const styles = StyleSheet.create({
   },
   headerText: { flexShrink: 1 },
   who: { color: theme.text, fontSize: 15, fontWeight: "600" },
-  signOut: { color: theme.brand, fontSize: 14, fontWeight: "600" },
   muted: { color: theme.textMuted, fontSize: 13 },
   list: { padding: 16, gap: 12, flexGrow: 1 },
   card: {

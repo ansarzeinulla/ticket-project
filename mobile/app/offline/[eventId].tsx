@@ -16,6 +16,7 @@ import {
 import { ScanResultOverlay, type ScanOutcome } from "../../components/ScanResultOverlay";
 import { ApiError, api } from "../../lib/api";
 import { useAuth } from "../../lib/auth-context";
+import { useT } from "../../lib/i18n/context";
 import { pendingCount, rosterStats, saveRoster, undoLocalCheckIn } from "../../lib/offline-db";
 import { syncPending, verifyOffline } from "../../lib/offline";
 import { radius, theme } from "../../lib/theme";
@@ -35,6 +36,7 @@ const SAME_CODE_COOLDOWN_MS = 3000;
  */
 export default function OfflineScannerScreen() {
   const { eventId } = useLocalSearchParams<{ eventId: string }>();
+  const t = useT();
   const { user, signOut } = useAuth();
   const { online } = useConnectivity();
 
@@ -82,16 +84,16 @@ export default function OfflineScannerScreen() {
       // device, which is the whole point of having downloaded it.
       setRosterError(
         cause instanceof ApiError && cause.isNetworkError
-          ? "Offline - using the roster already on this device."
+          ? t("app.scanner.rosterOffline")
           : cause instanceof ApiError
             ? cause.message
-            : "Could not download the roster.",
+            : t("app.scanner.rosterFailed"),
       );
     } finally {
       await refreshCounts();
       setLoadingRoster(false);
     }
-  }, [eventId, refreshCounts, signOut]);
+  }, [eventId, refreshCounts, signOut, t]);
 
   useEffect(() => {
     void downloadRoster();
@@ -106,12 +108,12 @@ export default function OfflineScannerScreen() {
         const summary = await syncPending(eventId, deviceLabel);
         if (summary) {
           setSyncNote(
-            `Synced ${summary.recorded} admission${summary.recorded === 1 ? "" : "s"}` +
-              (summary.rejected > 0 ? `, ${summary.rejected} refused by the server` : "") +
+            (summary.recorded === 1 ? t("app.scanner.syncedOne") : t("app.scanner.syncedMany", { count: summary.recorded })) +
+              (summary.rejected > 0 ? t("app.scanner.syncRejected", { count: summary.rejected }) : "") +
               ".",
           );
         } else if (!silent) {
-          setSyncNote("Nothing to sync.");
+          setSyncNote(t("app.scanner.nothingToSync"));
         }
       } catch (cause) {
         if (cause instanceof ApiError && cause.isSessionExpired) {
@@ -122,8 +124,8 @@ export default function OfflineScannerScreen() {
         if (!silent) {
           setSyncNote(
             cause instanceof ApiError && cause.isNetworkError
-              ? "Still offline. The queue is safe and will sync when you reconnect."
-              : "Sync failed. The queue is kept; try again.",
+              ? t("app.scanner.stillOffline")
+              : t("app.scanner.syncFailed"),
           );
         }
       } finally {
@@ -131,7 +133,7 @@ export default function OfflineScannerScreen() {
         setSyncing(false);
       }
     },
-    [eventId, deviceLabel, syncing, refreshCounts, signOut],
+    [eventId, deviceLabel, syncing, refreshCounts, signOut, t],
   );
 
   // The moment the network comes back, drain the queue without being asked.
@@ -192,8 +194,8 @@ export default function OfflineScannerScreen() {
           case "already_checked_in":
             showOutcome({
               kind: "denied",
-              title: "Already used",
-              message: "This ticket has already been scanned at this door.",
+              title: t("app.scanner.alreadyUsed"),
+              message: t("app.scanner.alreadyUsedDoor"),
               attendeeName: result.entry.attendee_name,
               stats: counter,
             });
@@ -201,8 +203,8 @@ export default function OfflineScannerScreen() {
           case "not_valid":
             showOutcome({
               kind: "denied",
-              title: result.reason === "refunded" ? "Refunded" : "Cancelled",
-              message: `This ticket is ${result.reason} and is not valid for entry.`,
+              title: result.reason === "refunded" ? t("org.attendees.statusRefunded") : t("org.attendees.statusCancelled"),
+              message: result.reason === "refunded" ? t("app.scanner.notValidRefunded") : t("app.scanner.notValidCancelled"),
               attendeeName: result.entry.attendee_name,
               stats: counter,
             });
@@ -210,10 +212,8 @@ export default function OfflineScannerScreen() {
           default:
             showOutcome({
               kind: "denied",
-              title: "Invalid",
-              message:
-                "This code does not match any ticket in the downloaded roster " +
-                "for this event.",
+              title: t("app.scanner.invalid"),
+              message: t("app.scanner.notInRoster"),
               stats: counter,
             });
         }
@@ -221,7 +221,7 @@ export default function OfflineScannerScreen() {
         inFlight.current = false;
       }
     },
-    [eventId, deviceLabel, showOutcome, refreshCounts],
+    [eventId, deviceLabel, showOutcome, refreshCounts, t],
   );
 
   const handleBarcode = useCallback(
@@ -261,14 +261,11 @@ export default function OfflineScannerScreen() {
     return (
       <View style={styles.centered}>
         <Stack.Screen options={{ title: "Offline check-in" }} />
-        <Text style={styles.permissionTitle}>No roster on this device</Text>
-        <Text style={styles.muted}>
-          Connect to the internet once to download the guest list, then this door
-          works with no network at all.
-        </Text>
+        <Text style={styles.permissionTitle}>{t("app.scanner.noRosterTitle")}</Text>
+        <Text style={styles.muted}>{t("app.scanner.noRosterBody")}</Text>
         {rosterError && <Text style={styles.muted}>{rosterError}</Text>}
         <Pressable style={styles.primaryButton} onPress={() => void downloadRoster()}>
-          <Text style={styles.primaryButtonText}>Download roster</Text>
+          <Text style={styles.primaryButtonText}>{t("app.scanner.downloadRoster")}</Text>
         </Pressable>
       </View>
     );
@@ -278,16 +275,13 @@ export default function OfflineScannerScreen() {
     return (
       <View style={styles.centered}>
         <Stack.Screen options={{ title: "Offline check-in" }} />
-        <Text style={styles.permissionTitle}>Camera access needed</Text>
-        <Text style={styles.muted}>
-          The offline gate reads the same ticket QR codes; it just checks them
-          against the roster on this device.
-        </Text>
+        <Text style={styles.permissionTitle}>{t("app.scanner.cameraTitle")}</Text>
+        <Text style={styles.muted}>{t("app.scanner.offlineCameraBody")}</Text>
         <Pressable style={styles.primaryButton} onPress={requestPermission}>
-          <Text style={styles.primaryButtonText}>Allow camera</Text>
+          <Text style={styles.primaryButtonText}>{t("app.scanner.allowCamera")}</Text>
         </Pressable>
         <Pressable onPress={() => setManualOpen(true)}>
-          <Text style={styles.link}>Enter a code by hand instead</Text>
+          <Text style={styles.link}>{t("app.scanner.typeInstead")}</Text>
         </Pressable>
         {manualOpen && (
           <ManualEntry
@@ -315,13 +309,13 @@ export default function OfflineScannerScreen() {
       <View style={styles.topBar} pointerEvents="box-none">
         <View style={[styles.pill, online ? styles.pillOnline : styles.pillOffline]}>
           <Text style={styles.pillText}>
-            {online ? "● Online" : "● Offline"}
+            {online ? t("app.scanner.online") : t("app.scanner.offlinePill")}
           </Text>
         </View>
         {pending > 0 && (
           <View style={[styles.pill, styles.pillPending]}>
             <Text style={styles.pillText}>
-              {pending} to sync{syncing ? "…" : ""}
+              {t("app.scanner.toSync", { count: pending })}{syncing ? "…" : ""}
             </Text>
           </View>
         )}
@@ -329,18 +323,18 @@ export default function OfflineScannerScreen() {
 
       <View style={styles.overlay} pointerEvents="box-none">
         <View style={styles.reticle} />
-        <Text style={styles.hint}>Working offline · checking against the roster</Text>
+        <Text style={styles.hint}>{t("app.scanner.workingOffline")}</Text>
       </View>
 
       <View style={styles.bottomBar} pointerEvents="box-none">
         <Text style={styles.counter} testID="offline-counter">
-          {stats.checkedIn} of {stats.total} checked in
+          {t("app.scanner.counter", { checked: stats.checkedIn, issued: stats.total })}
         </Text>
         {syncNote && <Text style={styles.syncNote}>{syncNote}</Text>}
 
         <View style={styles.buttonRow}>
           <Pressable style={styles.manualButton} onPress={() => setManualOpen(true)}>
-            <Text style={styles.manualButtonText}>Enter code by hand</Text>
+            <Text style={styles.manualButtonText}>{t("app.scanner.enterCode")}</Text>
           </Pressable>
           <Pressable
             style={[styles.manualButton, pending === 0 && styles.disabled]}
@@ -349,7 +343,7 @@ export default function OfflineScannerScreen() {
             testID="sync-now"
           >
             <Text style={styles.manualButtonText}>
-              {syncing ? "Syncing…" : "Sync now"}
+              {syncing ? t("app.scanner.syncing") : t("app.scanner.syncNow")}
             </Text>
           </Pressable>
         </View>
@@ -387,14 +381,12 @@ function ManualEntry({
   onSubmit: () => void;
   onCancel: () => void;
 }) {
+  const t = useT();
   return (
     <View style={styles.sheet}>
       <ScrollView keyboardShouldPersistTaps="handled">
-        <Text style={styles.sheetTitle}>Enter the ticket code</Text>
-        <Text style={styles.muted}>
-          The QR token on the ticket, starting with TKT_. It is checked against
-          the roster on this device.
-        </Text>
+        <Text style={styles.sheetTitle}>{t("app.scanner.manualTitle")}</Text>
+        <Text style={styles.muted}>{t("app.scanner.offlineManualBody")}</Text>
         <TextInput
           style={styles.sheetInput}
           value={value}
@@ -412,10 +404,10 @@ function ManualEntry({
             style={[styles.primaryButton, styles.primaryButtonInRow]}
             onPress={onSubmit}
           >
-            <Text style={styles.primaryButtonText}>Check in</Text>
+            <Text style={styles.primaryButtonText}>{t("app.scanner.checkIn")}</Text>
           </Pressable>
           <Pressable style={styles.secondaryButton} onPress={onCancel}>
-            <Text style={styles.secondaryButtonText}>Cancel</Text>
+            <Text style={styles.secondaryButtonText}>{t("app.scanner.cancel")}</Text>
           </Pressable>
         </View>
       </ScrollView>

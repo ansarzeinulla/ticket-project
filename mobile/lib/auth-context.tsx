@@ -8,9 +8,9 @@ import {
   type ReactNode,
 } from "react";
 
-import { ApiError, api } from "./api";
+import { ApiError, api } from "./client";
+import type { User } from "./models";
 import { clearSession, loadEmail, loadToken, saveSession } from "./session";
-import type { User } from "./types";
 
 type Status = "loading" | "signedIn" | "signedOut";
 
@@ -19,6 +19,9 @@ interface AuthValue {
   status: Status;
   lastEmail: string | null;
   signIn: (email: string, password: string) => Promise<User>;
+  register: (input: { email: string; password: string; full_name?: string }) => Promise<User>;
+  /** Re-read the account, e.g. after creating an event grants the organizer role. */
+  refresh: () => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -66,12 +69,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signIn = useCallback(async (email: string, password: string) => {
-    const response = await api.login(email, password);
+    const response = await api.login({ email, password });
     await saveSession(response.access_token, response.user.email);
     setUser(response.user);
     setLastEmail(response.user.email);
     setStatus("signedIn");
     return response.user;
+  }, []);
+
+  const register = useCallback(
+    async (input: { email: string; password: string; full_name?: string }) => {
+      const response = await api.register(input);
+      await saveSession(response.access_token, response.user.email);
+      setUser(response.user);
+      setLastEmail(response.user.email);
+      setStatus("signedIn");
+      return response.user;
+    },
+    [],
+  );
+
+  const refresh = useCallback(async () => {
+    try {
+      setUser(await api.me());
+    } catch (error) {
+      if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+        await clearSession();
+        setUser(null);
+        setStatus("signedOut");
+      }
+    }
   }, []);
 
   const signOut = useCallback(async () => {
@@ -81,8 +108,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<AuthValue>(
-    () => ({ user, status, lastEmail, signIn, signOut }),
-    [user, status, lastEmail, signIn, signOut],
+    () => ({ user, status, lastEmail, signIn, register, refresh, signOut }),
+    [user, status, lastEmail, signIn, register, refresh, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

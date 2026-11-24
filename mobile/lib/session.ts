@@ -1,4 +1,4 @@
-import * as SecureStore from "expo-secure-store";
+import { deletePref, getPref, setPref } from "./prefs";
 
 /**
  * The access token lives in the device keychain / keystore, not in plain
@@ -9,27 +9,19 @@ const TOKEN_KEY = "biletflow.access_token";
 const EMAIL_KEY = "biletflow.email";
 
 export async function saveSession(token: string, email: string): Promise<void> {
-  await SecureStore.setItemAsync(TOKEN_KEY, token);
-  await SecureStore.setItemAsync(EMAIL_KEY, email);
+  await setPref(TOKEN_KEY, token);
+  await setPref(EMAIL_KEY, email);
 }
 
-export async function loadToken(): Promise<string | null> {
-  try {
-    return await SecureStore.getItemAsync(TOKEN_KEY);
-  } catch {
-    return null;
-  }
+export function loadToken(): Promise<string | null> {
+  return getPref(TOKEN_KEY);
 }
 
-export async function loadEmail(): Promise<string | null> {
-  try {
-    return await SecureStore.getItemAsync(EMAIL_KEY);
-  } catch {
-    return null;
-  }
+export function loadEmail(): Promise<string | null> {
+  return getPref(EMAIL_KEY);
 }
 
 export async function clearSession(): Promise<void> {
-  await SecureStore.deleteItemAsync(TOKEN_KEY);
-  await SecureStore.deleteItemAsync(EMAIL_KEY);
+  await deletePref(TOKEN_KEY);
+  await deletePref(EMAIL_KEY);
 }
