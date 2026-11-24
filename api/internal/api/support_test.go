@@ -459,3 +459,67 @@ func TestSupportCategoriesAreServed(t *testing.T) {
 		}
 	}
 }
+
+// TestOrganizerPlatformSupportCase covers SRS 4.13's second kind of case: an
+// organizer asks BiletFlow itself, and only platform admins answer.
+func TestOrganizerPlatformSupportCase(t *testing.T) {
+	c := newClient(t)
+	organizer := c.register("platformcaseorg")
+	other := c.register("platformcaseother")
+	admin := c.register("platformcaseadmin")
+	c.makePlatformAdmin(admin.ID)
+	eventID, _, _ := c.sellableEvent(organizer.Token, "Platform Case Gala", "5000", 10)
+
+	opened := c.post("/api/v1/support/cases", organizer.Token, map[string]any{
+		"kind": "organizer", "category": "payment", "event_id": eventID.String(),
+		"subject": "Activation fee", "message": "I paid the activation fee twice.",
+	})
+	requireStatus(t, opened, http.StatusCreated)
+	caseID := supportCase(opened)["id"].(string)
+	if supportCase(opened)["kind"] != "organizer" {
+		t.Fatalf("kind = %v, want organizer", supportCase(opened)["kind"])
+	}
+
+	// Someone else's event is refused, and so is order context.
+	requireStatus(t, c.post("/api/v1/support/cases", other.Token, map[string]any{
+		"kind": "organizer", "category": "payment", "event_id": eventID.String(),
+		"subject": "x", "message": "y",
+	}), http.StatusUnprocessableEntity)
+	requireStatus(t, c.post("/api/v1/support/cases", organizer.Token, map[string]any{
+		"kind": "organizer", "category": "payment", "order_id": uuid.NewString(),
+		"subject": "x", "message": "y",
+	}), http.StatusUnprocessableEntity)
+
+	// It is not in the event's attendee inbox, and the organizer is not staff on it.
+	inbox := c.get("/api/v1/events/"+eventID.String()+"/support/cases", organizer.Token)
+	requireStatus(t, inbox, http.StatusOK)
+	if n := len(inbox.Body["cases"].([]any)); n != 0 {
+		t.Fatalf("event inbox has %d cases, want 0", n)
+	}
+	mine := c.get("/api/v1/support/cases/"+caseID, organizer.Token)
+	requireStatus(t, mine, http.StatusOK)
+	if mine.Body["can_moderate"] != false {
+		t.Fatal("the requesting organizer must not moderate their own platform case")
+	}
+	requireStatus(t, c.patch("/api/v1/support/cases/"+caseID, organizer.Token,
+		map[string]any{"status": "resolved"}), http.StatusForbidden)
+
+	// Strangers cannot see it; the admin inbox lists it and the admin can answer.
+	requireStatus(t, c.get("/api/v1/support/cases/"+caseID, other.Token), http.StatusNotFound)
+	requireStatus(t, c.get("/api/v1/admin/support/cases", organizer.Token), http.StatusForbidden)
+	adminInbox := c.get("/api/v1/admin/support/cases", admin.Token)
+	requireStatus(t, adminInbox, http.StatusOK)
+	found := false
+	for _, item := range adminInbox.Body["cases"].([]any) {
+		if item.(map[string]any)["id"] == caseID {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("the platform inbox does not list the organizer's case")
+	}
+	requireStatus(t, c.post("/api/v1/support/cases/"+caseID+"/messages", admin.Token,
+		map[string]any{"message": "Refunded the duplicate fee."}), http.StatusCreated)
+	requireStatus(t, c.patch("/api/v1/support/cases/"+caseID, admin.Token,
+		map[string]any{"status": "resolved"}), http.StatusOK)
+}

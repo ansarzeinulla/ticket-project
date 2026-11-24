@@ -19,7 +19,7 @@ import { LIFECYCLE_LABELS, StatusBadge } from "@/components/ui/status-badge";
 import { ApiError, api } from "@/lib/api";
 import { formatInTimezone } from "@/lib/datetime";
 import { useT } from "@/lib/i18n/context";
-import type { BiletEvent, TicketType } from "@/lib/types";
+import type { BiletEvent, TicketType, VenueLayoutSection } from "@/lib/types";
 
 export function EventDetail({ eventID }: { eventID: string }) {
   // Bumped when something elsewhere on the page changes the figures - a
@@ -29,6 +29,7 @@ export function EventDetail({ eventID }: { eventID: string }) {
 
   const router = useRouter();
   const t = useT();
+  const [sections, setSections] = useState<VenueLayoutSection[]>([]);
 
   const [event, setEvent] = useState<BiletEvent | null>(null);
   const [ticketTypes, setTicketTypes] = useState<TicketType[]>([]);
@@ -44,6 +45,13 @@ export function EventDetail({ eventID }: { eventID: string }) {
       ]);
       setEvent(loaded);
       setTicketTypes(types);
+      // A seated event's ticket types are matched to its venue's sections.
+      if (loaded.seating_mode === "assigned_seating" && loaded.venue_id) {
+        const venues = await api.listVenues(signal);
+        setSections(venues.find((venue) => venue.id === loaded.venue_id)?.sections ?? []);
+      } else {
+        setSections([]);
+      }
       setError(null);
     } catch (cause) {
       if (cause instanceof DOMException && cause.name === "AbortError") return;
@@ -118,6 +126,15 @@ export function EventDetail({ eventID }: { eventID: string }) {
               {t("org.detail.duplicate")}
             </Button>
           </div>
+          {event.status !== "published" && (
+            <Link
+              href={`/dashboard/events/${event.id}/preview`}
+              className="inline-flex items-center rounded-lg border border-border-subtle px-3 py-1.5 text-xs font-medium hover:bg-surface-muted"
+              data-testid="preview-event"
+            >
+              {t("orgSettings.preview")}
+            </Link>
+          )}
         </div>
 
         {event.duplicated_from_event_id && (
@@ -197,13 +214,18 @@ export function EventDetail({ eventID }: { eventID: string }) {
         so leaving this panel showing the pre-refund "sold" would contradict
         the numbers directly above it.
       */}
-      <TicketTypeManager key={`types-${refreshKey}`} eventID={event.id} />
+      <TicketTypeManager
+        key={`types-${refreshKey}`}
+        eventID={event.id}
+        timezone={event.timezone}
+        sections={sections}
+      />
 
       <AttendeeList key={`attendees-${refreshKey}`} eventID={event.id} />
 
       <StaffManager eventID={event.id} />
 
-      <CampaignManager eventID={event.id} />
+      <CampaignManager eventID={event.id} timezone={event.timezone} ticketTypes={ticketTypes} />
 
       <SupportInbox eventID={event.id} />
 

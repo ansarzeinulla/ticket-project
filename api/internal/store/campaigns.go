@@ -390,3 +390,48 @@ func CampaignLink(webBaseURL, eventSlug, qrToken string) string {
 	base := strings.TrimRight(webBaseURL, "/")
 	return fmt.Sprintf("%s/events/%s?c=%s", base, eventSlug, qrToken)
 }
+
+// AdminCampaign is one campaign in the platform-wide promo-code view, with the
+// event it belongs to.
+type AdminCampaign struct {
+	Campaign
+	EventTitle string `json:"event_title"`
+	EventSlug  string `json:"event_slug"`
+}
+
+// ListAll returns the most recent campaigns across every event, with their
+// sales figures - the platform admins' view of promo-code activity (SRS 4.12).
+func (s *CampaignStore) ListAll(ctx context.Context, limit int) ([]AdminCampaign, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT `+campaignColumns+`
+		  FROM campaigns c JOIN promo_codes p ON p.campaign_id = c.id
+		 ORDER BY c.created_at DESC
+		 LIMIT $1`, limit)
+	if err != nil {
+		return nil, mapError(err)
+	}
+	defer rows.Close()
+
+	campaigns := []AdminCampaign{}
+	for rows.Next() {
+		c, err := scanCampaign(rows)
+		if err != nil {
+			return nil, err
+		}
+		campaigns = append(campaigns, AdminCampaign{Campaign: c})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, mapError(err)
+	}
+
+	for i := range campaigns {
+		if err := s.hydrate(ctx, &campaigns[i].Campaign); err != nil {
+			return nil, err
+		}
+		if err := s.pool.QueryRow(ctx, `SELECT title, slug FROM events WHERE id = $1`,
+			campaigns[i].EventID).Scan(&campaigns[i].EventTitle, &campaigns[i].EventSlug); err != nil {
+			return nil, mapError(err)
+		}
+	}
+	return campaigns, nil
+}

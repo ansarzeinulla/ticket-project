@@ -13,7 +13,7 @@ DB_NAME := $(if $(DB_NAME),$(DB_NAME),biletflow)
 .PHONY: help up down reset wait logs status psql schema seed test tables pgadmin \
 	api-build api-run api-test api-test-v api-smoke api-check api-fmt \
 	web-install web-dev web-build web-lint web-typecheck web-test web-e2e web-check \
-	scan-install scan-dev scan-check verify
+	scan-install scan-dev scan-check verify backup restore
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -52,6 +52,18 @@ schema: ## Re-apply db/init by hand (the scripts are idempotent)
 	$(PSQL) -f /docker-entrypoint-initdb.d/01_extensions.sql
 	$(PSQL) -f /docker-entrypoint-initdb.d/02_schema.sql
 	@echo "schema applied"
+
+backup: ## Dump the database to backups/biletflow-<time>.sql (NFR: backups)
+	@mkdir -p backups
+	$(COMPOSE) exec -T db pg_dump -U $(DB_USER) -d $(DB_NAME) --clean --if-exists --no-owner \
+		> backups/biletflow-$$(date +%Y%m%d-%H%M%S).sql
+	@ls -1t backups/*.sql | head -1
+
+restore: ## Restore a dump: make restore FILE=backups/<file>.sql
+	@test -n "$(FILE)" || (echo "usage: make restore FILE=backups/<file>.sql"; exit 1)
+	@test -f "$(FILE)" || (echo "no such file: $(FILE)"; exit 1)
+	$(PSQL) -q < $(FILE)
+	@echo "restored $(FILE)"
 
 seed: ## Load the demo dataset (safe to run repeatedly)
 	$(PSQL) -q -f /opt/biletflow/seed/01_demo_data.sql

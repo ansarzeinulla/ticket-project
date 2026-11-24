@@ -657,3 +657,33 @@ func indexOf(haystack, needle string) int {
 	}
 	return -1
 }
+
+// TestAdminSeesPromoCodeActivity: platform admins review promo codes across
+// every event, with their redemptions (SRS 4.12); organizers cannot.
+func TestAdminSeesPromoCodeActivity(t *testing.T) {
+	c := newClient(t)
+	organizer := c.register("admincampaignsorg")
+	admin := c.register("admincampaignsadmin")
+	c.makePlatformAdmin(admin.ID)
+	eventID, _, ticketTypeID := c.sellableEvent(organizer.Token, "Promo Watch Night", "5000", 20)
+	campaignID, _ := c.createCampaign(organizer.Token, eventID, map[string]any{
+		"name": "Watched", "code": "WATCHED10", "discount_type": "percentage", "discount_value": "10",
+	})
+	requireStatus(t, c.buyWithPromo(eventID, ticketTypeID, 1, "watched@example.kz",
+		map[string]any{"promo_code": "WATCHED10"}), http.StatusCreated)
+
+	requireStatus(t, c.get("/api/v1/admin/campaigns", organizer.Token), http.StatusForbidden)
+	res := c.get("/api/v1/admin/campaigns", admin.Token)
+	requireStatus(t, res, http.StatusOK)
+	for _, item := range res.Body["campaigns"].([]any) {
+		row := item.(map[string]any)
+		if row["id"] != campaignID.String() {
+			continue
+		}
+		if row["event_title"] != "Promo Watch Night" || row["redemption_count"] != float64(1) {
+			t.Fatalf("row = %v", row)
+		}
+		return
+	}
+	t.Fatal("the campaign is not in the admin view")
+}

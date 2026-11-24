@@ -103,7 +103,8 @@ test("an internal note never reaches the attendee", async ({ browser }) => {
   await organizerPage.getByTestId("inbox-case").first().click();
 
   await organizerPage.getByTestId("reply-input").fill("Checking with finance, do not send.");
-  await organizerPage.getByRole("checkbox").check();
+  // Named: the event page also has campaign ticket-type checkboxes.
+  await organizerPage.getByRole("checkbox", { name: /Internal note/ }).check();
   await organizerPage.getByTestId("reply-send").click();
   await expect(organizerPage.getByTestId("case-messages")).toContainText("finance");
 

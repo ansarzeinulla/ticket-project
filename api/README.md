@@ -120,11 +120,12 @@ Create Event saves `{{eventId}}`.
 | `POST` | `/api/v1/events/{id}/promo/preview` | optional | Price a promo code against a basket |
 | `GET` | `/api/v1/support/categories` | – | Issue categories for the picker |
 | `GET` | `/api/v1/support/cases` | Bearer | Cases this account opened |
-| `POST` | `/api/v1/support/cases` | Bearer | Open a case on an order or ticket |
+| `POST` | `/api/v1/support/cases` | Bearer | Open a case on an order or ticket; `"kind": "organizer"` asks BiletFlow itself |
 | `GET` | `/api/v1/support/cases/{id}` | Bearer | One thread |
 | `POST` | `/api/v1/support/cases/{id}/messages` | Bearer | Reply |
 | `PATCH` | `/api/v1/support/cases/{id}` | Bearer | Change status (organizer only) |
-| `GET` | `/api/v1/events/{id}/support/cases` | Bearer | The organizer's inbox |
+| `GET` | `/api/v1/events/{id}/support/cases` | Bearer | The organizer's inbox (attendee cases) |
+| `GET` | `/api/v1/admin/support/cases` | **Admin** | Organizer requests to BiletFlow |
 | `POST` | `/api/v1/admin/events/{id}/suspend` | **Admin** | Stop an event selling |
 | `POST` | `/api/v1/admin/events/{id}/unsuspend` | **Admin** | Lift a suspension |
 | `GET` | `/api/v1/events/{id}/analytics` | Bearer | Sales, revenue and attendance |
@@ -145,6 +146,7 @@ Create Event saves `{{eventId}}`.
 | `POST` | `/api/v1/uploads/images` | Bearer | Upload an event banner |
 | `GET` | `/uploads/{file}` | – | Serve an uploaded banner |
 | `GET` | `/api/v1/admin/search` | **Admin** | Users, events, orders, payments |
+| `GET` | `/api/v1/admin/campaigns` | **Admin** | Promo-code activity across every event |
 | `GET` | `/api/v1/admin/reports/events.csv` | **Admin** | Operational report |
 | `POST` | `/api/v1/events/{id}/holds` | optional | Reserve a basket for 15 minutes |
 | `GET` | `/api/v1/orders/{id}/hold` | optional | Read a basket back |
@@ -152,6 +154,7 @@ Create Event saves `{{eventId}}`.
 | `POST` | `/api/v1/orders/{id}/confirm` | optional | Pay for a held basket |
 | `GET` | `/api/v1/events/{id}/calendar.ics` | – | iCalendar export (id or slug) |
 | `GET` | `/api/v1/events/{id}/seats` | optional | Interactive seat map with live states |
+| `GET` | `/api/v1/venues` | Bearer | Predefined seated layouts and their sections |
 | `GET` | `/api/v1/events/{id}/roster` | Bearer | Hashed guest list for offline scanning |
 | `POST` | `/api/v1/events/{id}/check-in/sync` | Bearer | Reconcile admissions made offline |
 

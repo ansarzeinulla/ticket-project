@@ -6,15 +6,26 @@ import { Alert } from "@/components/ui/alert";
 import { Button, Spinner } from "@/components/ui/button";
 import { SelectField, TextField } from "@/components/ui/field";
 import { ApiError, api, campaignQRURL } from "@/lib/api";
+import { localInputToISO } from "@/lib/datetime";
 import { formatKZT } from "@/lib/money";
 import { useT } from "@/lib/i18n/context";
 import type { MessageKey } from "@/lib/i18n/dictionaries";
-import type { Campaign, DiscountType } from "@/lib/types";
+import type { Campaign, DiscountType, TicketType } from "@/lib/types";
 
 const DISCOUNT_TYPES = ["percentage", "fixed_amount"] as const;
 
 /** The organizer's promo-code and campaign-QR workspace for one event. */
-export function CampaignManager({ eventID }: { eventID: string }) {
+export function CampaignManager({
+  eventID,
+  timezone,
+  ticketTypes = [],
+}: {
+  eventID: string;
+  /** Validity dates are typed in the event's own timezone. */
+  timezone: string;
+  /** For restricting a code to some ticket types (SRS 4.14). */
+  ticketTypes?: TicketType[];
+}) {
   const t = useT();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
@@ -25,6 +36,9 @@ export function CampaignManager({ eventID }: { eventID: string }) {
   const [discountType, setDiscountType] = useState<DiscountType>("percentage");
   const [discountValue, setDiscountValue] = useState("20");
   const [maxRedemptions, setMaxRedemptions] = useState("");
+  const [startsAt, setStartsAt] = useState("");
+  const [endsAt, setEndsAt] = useState("");
+  const [onlyTypes, setOnlyTypes] = useState<string[]>([]);
 
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -76,6 +90,12 @@ export function CampaignManager({ eventID }: { eventID: string }) {
       }
     }
 
+    const startsISO = startsAt ? localInputToISO(startsAt, timezone) : null;
+    const endsISO = endsAt ? localInputToISO(endsAt, timezone) : null;
+    if (startsISO && endsISO && new Date(endsISO) <= new Date(startsISO)) {
+      errors.ends_at = t("orgSettings.errCampaignOrder");
+    }
+
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
       return;
@@ -90,11 +110,17 @@ export function CampaignManager({ eventID }: { eventID: string }) {
         // Sent as a string so the decimal reaches numeric(14,2) untouched.
         discount_value: discountValue.trim(),
         ...(limit !== undefined ? { max_redemptions: limit } : {}),
+        ...(startsISO ? { starts_at: startsISO } : {}),
+        ...(endsISO ? { ends_at: endsISO } : {}),
+        ...(onlyTypes.length > 0 ? { ticket_type_ids: onlyTypes } : {}),
       });
       setCampaigns((current) => [created, ...current]);
       setName("");
       setCode("");
       setMaxRedemptions("");
+      setStartsAt("");
+      setEndsAt("");
+      setOnlyTypes([]);
     } catch (cause) {
       if (cause instanceof ApiError) {
         setFieldErrors(cause.fields);
@@ -343,6 +369,57 @@ export function CampaignManager({ eventID }: { eventID: string }) {
             onChange={(event) => setMaxRedemptions(event.target.value)}
           />
         </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <TextField
+            label={t("orgSettings.campaignStarts")}
+            name="starts_at"
+            type="datetime-local"
+            hint={t("orgSettings.campaignDatesHint")}
+            value={startsAt}
+            error={fieldErrors.starts_at}
+            disabled={submitting}
+            onChange={(event) => setStartsAt(event.target.value)}
+          />
+          <TextField
+            label={t("orgSettings.campaignEnds")}
+            name="ends_at"
+            type="datetime-local"
+            value={endsAt}
+            error={fieldErrors.ends_at}
+            disabled={submitting}
+            onChange={(event) => setEndsAt(event.target.value)}
+          />
+        </div>
+
+        {ticketTypes.length > 0 && (
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium">{t("orgSettings.campaignTypes")}</legend>
+            <p className="text-xs text-foreground-muted">{t("orgSettings.campaignTypesHint")}</p>
+            <div className="flex flex-wrap gap-x-5 gap-y-2">
+              {ticketTypes.map((type) => (
+                <label key={type.id} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={onlyTypes.includes(type.id)}
+                    disabled={submitting}
+                    onChange={(event) =>
+                      setOnlyTypes((current) =>
+                        event.target.checked
+                          ? [...current, type.id]
+                          : current.filter((id) => id !== type.id),
+                      )
+                    }
+                  />
+                  {type.name}
+                </label>
+              ))}
+            </div>
+            {fieldErrors.ticket_type_ids && (
+              <p className="text-xs text-danger">{fieldErrors.ticket_type_ids}</p>
+            )}
+          </fieldset>
+        )}
 
         <Button type="submit" loading={submitting}>
           {submitting ? t("org.form.creating") : t("org.campaigns.create")}

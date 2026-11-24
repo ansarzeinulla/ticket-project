@@ -202,6 +202,8 @@ func (s *Server) Handler() http.Handler {
 	// Public: an attendee sees what is left before deciding, and before
 	// signing in.
 	mux.HandleFunc("GET /api/v1/events/{id}/seats", s.optionalAuth(s.handleEventSeatMap))
+	// The layouts an organizer can pick when creating a seated event.
+	mux.HandleFunc("GET /api/v1/venues", s.requireAuth(s.handleListVenues))
 
 	// --- cart holds (SRS 4.6, 4.3.1) ----------------------------------------
 	// Anonymous, like checkout: an attendee picks seats before signing in, and
@@ -271,6 +273,7 @@ func (s *Server) Handler() http.Handler {
 	// SRS 4.13: "Authorized staff shall be able to assign a case."
 	mux.HandleFunc("POST /api/v1/support/cases/{id}/assign", s.requireAuth(s.handleAssignCase))
 	mux.HandleFunc("GET /api/v1/events/{id}/support/cases", s.requireAuth(s.handleListEventCases))
+	mux.HandleFunc("GET /api/v1/admin/support/cases", s.requirePlatformAdmin(s.handleListPlatformCases))
 
 	// --- platform moderation (SRS 4.12) -------------------------------------
 	mux.HandleFunc("POST /api/v1/admin/events/{id}/suspend",
@@ -305,6 +308,7 @@ func (s *Server) Handler() http.Handler {
 		s.requirePlatformAdmin(s.handleUpdateSetting))
 
 	mux.HandleFunc("GET /api/v1/admin/search", s.requirePlatformAdmin(s.handleAdminSearch))
+	mux.HandleFunc("GET /api/v1/admin/campaigns", s.requirePlatformAdmin(s.handleAdminCampaigns))
 	mux.HandleFunc("GET /api/v1/admin/reports/events.csv",
 		s.requirePlatformAdmin(s.handleAdminReport))
 

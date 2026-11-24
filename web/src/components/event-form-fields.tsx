@@ -1,12 +1,17 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
 import { ImageUpload } from "@/components/image-upload";
 import { SelectField, TextAreaField, TextField } from "@/components/ui/field";
+import { api } from "@/lib/api";
 import { slugify } from "@/lib/datetime";
+import type { VenueLayout } from "@/lib/types";
 import { useT } from "@/lib/i18n/context";
 import type { Translator } from "@/lib/i18n/translate";
 
 export const VISIBILITIES = ["public", "unlisted", "private"] as const;
+export const SEATING_MODES = ["general_admission", "assigned_seating"] as const;
 
 /**
  * The editable shape of an event, as the two forms hold it in state.
@@ -29,6 +34,12 @@ export interface EventFormValues {
   venueName: string;
   venueAddress: string;
   visibility: string;
+  /** SRS 4.2: "Define registration opening and closing times." Optional. */
+  registrationOpensAt: string;
+  registrationClosesAt: string;
+  /** SRS 4.3.1: general admission, or a predefined seated venue. */
+  seatingMode: string;
+  venueID: string;
 }
 
 /**
@@ -61,6 +72,19 @@ export function EventFormFields({
   optionalOpen?: boolean;
 }) {
   const t = useT();
+  const [venues, setVenues] = useState<VenueLayout[]>([]);
+
+  // The seated layouts are only needed once the organizer picks assigned
+  // seating, but they are small and fetching up front keeps the picker instant.
+  useEffect(() => {
+    const controller = new AbortController();
+    api
+      .listVenues(controller.signal)
+      .then(setVenues)
+      .catch(() => setVenues([]));
+    return () => controller.abort();
+  }, []);
+
   const slugPreview = values.slug.trim()
     ? slugify(values.slug)
     : slugify(values.title) || "your-event";
@@ -162,6 +186,59 @@ export function EventFormFields({
         <summary className="cursor-pointer text-sm font-medium">{t("org.form.optional")}</summary>
 
         <div className="mt-4 space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <TextField
+              label={t("orgSettings.registrationOpens")}
+              type="datetime-local"
+              name="registration_opens_at"
+              hint={t("orgSettings.registrationHint")}
+              value={values.registrationOpensAt}
+              error={fieldErrors.registration_opens_at}
+              disabled={disabled}
+              onChange={(event) => onChange("registrationOpensAt", event.target.value)}
+            />
+            <TextField
+              label={t("orgSettings.registrationCloses")}
+              type="datetime-local"
+              name="registration_closes_at"
+              value={values.registrationClosesAt}
+              error={fieldErrors.registration_closes_at}
+              disabled={disabled}
+              onChange={(event) => onChange("registrationClosesAt", event.target.value)}
+            />
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <SelectField
+              label={t("orgSettings.seating")}
+              name="seating_mode"
+              options={SEATING_MODES}
+              optionLabel={(option) => t(`orgSettings.seatingModes.${option as (typeof SEATING_MODES)[number]}`)}
+              value={values.seatingMode}
+              error={fieldErrors.seating_mode}
+              disabled={disabled}
+              onChange={(event) => onChange("seatingMode", event.target.value)}
+            />
+            {values.seatingMode === "assigned_seating" && (
+              <SelectField
+                label={t("orgSettings.venueLayout")}
+                name="venue_id"
+                options={["", ...venues.map((venue) => venue.id)]}
+                optionLabel={(option) => {
+                  const venue = venues.find((item) => item.id === option);
+                  return venue
+                    ? t("orgSettings.venueOption", { name: venue.name, seats: venue.seats })
+                    : t("orgSettings.chooseVenue");
+                }}
+                value={values.venueID}
+                error={fieldErrors.venue_id}
+                disabled={disabled}
+                hint={t("orgSettings.venueHint")}
+                onChange={(event) => onChange("venueID", event.target.value)}
+              />
+            )}
+          </div>
+
           <ImageUpload
             value={values.coverImageURL}
             onChange={(url) => onChange("coverImageURL", url)}
@@ -247,7 +324,13 @@ export function validateEventForm(
   values: EventFormValues,
   toISO: (local: string, zone: string) => string | null,
   t: Translator,
-): { errors: Record<string, string>; startsISO: string | null; endsISO: string | null } {
+): {
+  errors: Record<string, string>;
+  startsISO: string | null;
+  endsISO: string | null;
+  registrationOpensISO: string | null;
+  registrationClosesISO: string | null;
+} {
   const errors: Record<string, string> = {};
   if (!values.title.trim()) errors.title = t("org.form.errTitle");
 
@@ -270,5 +353,23 @@ export function validateEventForm(
     }
   }
 
-  return { errors, startsISO, endsISO };
+  // Optional registration window, read in the event's timezone like the dates.
+  const registrationOpensISO = values.registrationOpensAt
+    ? toISO(values.registrationOpensAt, values.timezone)
+    : null;
+  const registrationClosesISO = values.registrationClosesAt
+    ? toISO(values.registrationClosesAt, values.timezone)
+    : null;
+  if (
+    registrationOpensISO &&
+    registrationClosesISO &&
+    new Date(registrationClosesISO) <= new Date(registrationOpensISO)
+  ) {
+    errors.registration_closes_at = t("orgSettings.errRegistrationOrder");
+  }
+  if (values.seatingMode === "assigned_seating" && !values.venueID) {
+    errors.venue_id = t("orgSettings.errVenue");
+  }
+
+  return { errors, startsISO, endsISO, registrationOpensISO, registrationClosesISO };
 }

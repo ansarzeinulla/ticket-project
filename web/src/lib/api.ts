@@ -7,6 +7,8 @@
  */
 
 import type {
+  AdminCampaign,
+  VenueLayout,
   AcceptedResponse,
   Activation,
   BuyerOrderListResponse,
@@ -460,6 +462,12 @@ export const api = {
   },
 
   /** POST /events/{id}/ticket-types */
+  /** GET /venues - the predefined seated layouts (SRS 4.3.1). */
+  async listVenues(signal?: AbortSignal): Promise<VenueLayout[]> {
+    const data = await request<{ venues: VenueLayout[] }>("/venues", { signal });
+    return data.venues;
+  },
+
   async createTicketType(eventID: string, input: CreateTicketTypeInput): Promise<TicketType> {
     const data = await request<TicketTypeResponse>(`/events/${eventID}/ticket-types`, {
       method: "POST",
@@ -642,6 +650,12 @@ export const api = {
     return data.cases;
   },
 
+  /** GET /admin/support/cases - organizer requests to BiletFlow (platform admins). */
+  async platformSupportCases(signal?: AbortSignal): Promise<SupportCase[]> {
+    const data = await request<{ cases: SupportCase[] }>("/admin/support/cases", { signal });
+    return data.cases;
+  },
+
   /** GET /events/{id}/support/cases - the organizer's inbox for one event. */
   async eventSupportCases(eventID: string, signal?: AbortSignal): Promise<SupportCase[]> {
     const data = await request<{ cases: SupportCase[] }>(
@@ -787,6 +801,12 @@ export const api = {
       method: "POST",
       body: { reason, details },
     });
+  },
+
+  /** GET /admin/campaigns - promo-code activity across every event (SRS 4.12). */
+  async adminCampaigns(signal?: AbortSignal): Promise<AdminCampaign[]> {
+    const data = await request<{ campaigns: AdminCampaign[] }>("/admin/campaigns", { signal });
+    return data.campaigns;
   },
 
   /** GET /admin/settings - the configurable platform values (SRS 4.12). */

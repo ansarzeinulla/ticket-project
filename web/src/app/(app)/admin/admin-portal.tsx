@@ -182,13 +182,32 @@ export function AdminPortal() {
           </p>
         </div>
         <div className="flex flex-col items-end gap-2">
-          <div className="flex gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
             <Link
               href="/admin/reports"
               className="inline-flex items-center rounded-lg border border-border-subtle px-3 py-2 text-sm font-medium hover:bg-surface-muted"
               data-testid="reports-link"
             >
               {t("org.titles.reports")}
+            </Link>
+            <Link
+              href="/admin/support"
+              className="inline-flex items-center rounded-lg border border-border-subtle px-3 py-2 text-sm font-medium hover:bg-surface-muted"
+              data-testid="support-inbox-link"
+            >
+              {t("platformInbox.link")}
+            </Link>
+            <Link
+              href="/admin/campaigns"
+              className="inline-flex items-center rounded-lg border border-border-subtle px-3 py-2 text-sm font-medium hover:bg-surface-muted"
+            >
+              {t("adminTools.campaignsLink")}
+            </Link>
+            <Link
+              href="/admin/settings"
+              className="inline-flex items-center rounded-lg border border-border-subtle px-3 py-2 text-sm font-medium hover:bg-surface-muted"
+            >
+              {t("adminTools.settingsLink")}
             </Link>
             <Button onClick={() => void downloadReport()} loading={downloading}>
               {t("org.admin.export")}

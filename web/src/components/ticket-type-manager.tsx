@@ -4,13 +4,24 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 
 import { Alert } from "@/components/ui/alert";
 import { Button, Spinner } from "@/components/ui/button";
-import { TextField } from "@/components/ui/field";
+import { SelectField, TextField } from "@/components/ui/field";
 import { ApiError, api } from "@/lib/api";
+import { localInputToISO } from "@/lib/datetime";
 import { formatKZT } from "@/lib/money";
 import { useT } from "@/lib/i18n/context";
-import type { TicketType } from "@/lib/types";
+import type { TicketType, VenueLayoutSection } from "@/lib/types";
 
-export function TicketTypeManager({ eventID }: { eventID: string }) {
+export function TicketTypeManager({
+  eventID,
+  timezone,
+  sections = [],
+}: {
+  eventID: string;
+  /** Sales times are typed in the event's own timezone, like its dates. */
+  timezone: string;
+  /** The seat sections of an assigned-seating event's venue (SRS 4.3.1). */
+  sections?: VenueLayoutSection[];
+}) {
   const t = useT();
   const [types, setTypes] = useState<TicketType[]>([]);
   const [loading, setLoading] = useState(true);
@@ -20,6 +31,10 @@ export function TicketTypeManager({ eventID }: { eventID: string }) {
   const [price, setPrice] = useState("5000");
   const [quantity, setQuantity] = useState("5");
   const [maxPerOrder, setMaxPerOrder] = useState("10");
+  const [description, setDescription] = useState("");
+  const [salesStart, setSalesStart] = useState("");
+  const [salesEnd, setSalesEnd] = useState("");
+  const [section, setSection] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -68,6 +83,16 @@ export function TicketTypeManager({ eventID }: { eventID: string }) {
       errors.price_kzt = t("org.types.errPrice");
     }
 
+    const salesStartISO = salesStart ? localInputToISO(salesStart, timezone) : null;
+    const salesEndISO = salesEnd ? localInputToISO(salesEnd, timezone) : null;
+    if (salesStartISO && salesEndISO && new Date(salesEndISO) <= new Date(salesStartISO)) {
+      errors.sales_end_at = t("orgSettings.errSalesOrder");
+    }
+    if (sections.length > 0 && !section) {
+      errors.price_category = t("orgSettings.errSection");
+    }
+    const chosen = sections.find((item) => item.name === section);
+
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
       return;
@@ -76,6 +101,10 @@ export function TicketTypeManager({ eventID }: { eventID: string }) {
     setSubmitting(true);
     try {
       const created = await api.createTicketType(eventID, {
+        ...(description.trim() ? { description: description.trim() } : {}),
+        ...(salesStartISO ? { sales_start_at: salesStartISO } : {}),
+        ...(salesEndISO ? { sales_end_at: salesEndISO } : {}),
+        ...(chosen ? { price_category: chosen.price_category } : {}),
         name: name.trim(),
         price_kzt: priceValue,
         quantity_total: quantityValue,
@@ -83,6 +112,10 @@ export function TicketTypeManager({ eventID }: { eventID: string }) {
       });
       setTypes((current) => [...current, created]);
       setName("");
+      setDescription("");
+      setSalesStart("");
+      setSalesEnd("");
+      setSection("");
     } catch (cause) {
       if (cause instanceof ApiError) {
         setFieldErrors(cause.fields);
@@ -167,6 +200,9 @@ export function TicketTypeManager({ eventID }: { eventID: string }) {
                 <p className="mt-0.5 text-sm text-foreground-muted">
                   {formatKZT(type.price_kzt)} · {t("org.types.maxPerOrderShort", { max: type.max_per_order })}
                 </p>
+                {type.description && (
+                  <p className="mt-0.5 text-xs text-foreground-muted">{type.description}</p>
+                )}
               </div>
 
               {/*
@@ -251,6 +287,28 @@ export function TicketTypeManager({ eventID }: { eventID: string }) {
 
         {formError && <Alert tone="error">{formError}</Alert>}
 
+        {sections.length > 0 && (
+          <SelectField
+            label={t("orgSettings.section")}
+            name="price_category"
+            options={["", ...sections.map((item) => item.name)]}
+            optionLabel={(option) => {
+              const item = sections.find((entry) => entry.name === option);
+              return item
+                ? t("orgSettings.sectionOption", { name: item.name, seats: item.seats })
+                : t("orgSettings.chooseSection");
+            }}
+            hint={t("orgSettings.sectionHint")}
+            value={section}
+            error={fieldErrors.price_category}
+            disabled={submitting}
+            onChange={(event) => {
+              setSection(event.target.value);
+              // Seats are priced by matching the ticket type to the section's name.
+              if (event.target.value) setName(event.target.value);
+            }}
+          />
+        )}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <TextField
             label={t("org.types.name")}
@@ -298,6 +356,36 @@ export function TicketTypeManager({ eventID }: { eventID: string }) {
           />
         </div>
 
+        <div className="grid gap-4 sm:grid-cols-3">
+          <TextField
+            label={t("orgSettings.ticketDescription")}
+            name="description"
+            placeholder={t("orgSettings.ticketDescriptionPlaceholder")}
+            value={description}
+            error={fieldErrors.description}
+            disabled={submitting}
+            onChange={(event) => setDescription(event.target.value)}
+          />
+          <TextField
+            label={t("orgSettings.salesStart")}
+            name="sales_start_at"
+            type="datetime-local"
+            hint={t("orgSettings.salesHint")}
+            value={salesStart}
+            error={fieldErrors.sales_start_at}
+            disabled={submitting}
+            onChange={(event) => setSalesStart(event.target.value)}
+          />
+          <TextField
+            label={t("orgSettings.salesEnd")}
+            name="sales_end_at"
+            type="datetime-local"
+            value={salesEnd}
+            error={fieldErrors.sales_end_at}
+            disabled={submitting}
+            onChange={(event) => setSalesEnd(event.target.value)}
+          />
+        </div>
         <Button type="submit" loading={submitting}>
           {submitting ? t("org.types.adding") : t("org.types.add")}
         </Button>
