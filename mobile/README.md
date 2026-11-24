@@ -1,8 +1,10 @@
-# BiletFlow Scanner — Phases 6 & 12
+# BiletFlow mobile app
 
-React Native / Expo app for Event Admins to check attendees in at the entrance.
+React Native / Expo app with everything the website does — for attendees,
+organizers and platform admins — plus the gate scanner for Event Admins.
+Kazakh, Russian and English, like the website.
 
-Expo SDK 57, React Native 0.86, expo-router, expo-camera.
+Expo SDK 57, React Native 0.86, expo-router, expo-camera, expo-image-picker.
 
 ---
 
@@ -46,13 +48,29 @@ Use the "Enter a code by hand" path, or run on a physical device.
 
 ---
 
-## The three screens
+## What is in the app
 
-| Screen | What it does |
-| --- | --- |
-| `/login` | Event Admin sign-in; shows the resolved API host |
-| `/events` | The events this account may scan, with live check-in counts |
-| `/scan/[eventId]` | Camera scanner, full-screen result, manual entry |
+The tabs follow the website's sections. Every screen uses the website's own
+translations (`lib/i18n`, copied from `web/src/lib/i18n`), plus a few app-only
+strings in `lib/i18n/messages/mobile.ts`.
+
+| Tab / screen | Website equivalent | What it does |
+| --- | --- | --- |
+| Explore, `/event/[slug]` | `/events`, `/events/[slug]` | Catalogue, event page, calendar links, general-admission checkout with promo codes and campaign links (`?c=CMP_…`), seat map with seat hold and countdown |
+| My tickets, `/order/[id]` | `/orders`, `/orders/[id]` | Orders, tickets with QR and PDF, order support |
+| `/support/[id]` | support thread | Conversation, replies, internal notes and status for staff |
+| Organize, `/event-form`, `/manage/[id]/…` | `/dashboard`, `/events/new`, `/dashboard/events/[id]` | Dashboard by lifecycle; create/edit with banner upload; publish, unpublish, cancel, duplicate, preview; paid-sales activation; analytics, orders and refunds, ticket types, attendees and manual check-in, staff, campaigns with QR, support inbox, timeline |
+| `/profile`, `/platform-support` | `/dashboard/profile`, `/dashboard/support` | Organizer profile, payout accounts, password; requests to BiletFlow |
+| Administration, `/admin/…` | `/admin/…` | Search, stats, moderation, CSV report (share sheet), reports queue, platform inbox, campaigns, settings |
+| Account, `/login`, `/register`, `/forgot-password`, `/reset-password`, `/verify-email` | `(auth)` pages | Language, sign in/out, account pages |
+| Scanner, `/scan`, `/attendees`, `/offline` | — (app only) | The gate: events you may scan, camera scanner, find by name, offline mode |
+
+The client (`lib/client.ts`) has the same functions and paths as
+`web/src/lib/api.ts`; it sends the token as a bearer header because the app has
+no cookie proxy in front of the API. Dates are typed as `YYYY-MM-DD HH:MM` in
+the event's own timezone.
+
+### The gate scanner
 
 An Event Admin sees **only** the events an organizer assigned them to
 (SRS 4.8). The list comes from `GET /events/scannable`, which returns events
@@ -131,20 +149,30 @@ nothing to act on:
 
 ```
 app/
-├── _layout.tsx           AuthProvider + navigation stack
-├── index.tsx             session gate → /login or /events
-├── login.tsx             Event Admin sign-in
-├── events.tsx            event selector with live counts
-└── scan/[eventId].tsx    camera, manual entry, result handling
-components/
-└── ScanResultOverlay.tsx the full-screen green / red result
+├── _layout.tsx           I18nProvider + AuthProvider + navigation stack
+├── index.tsx             opens the Explore tab
+├── (tabs)/               explore, tickets, organize, scanner, admin, account
+├── event/[slug].tsx      event page and checkout
+├── order/[id].tsx        order confirmation and tickets
+├── support/[id].tsx      a support conversation
+├── event-form.tsx        create / edit an event
+├── manage/[id]/          the organizer's event screens
+├── admin/                reports, support, campaigns, settings
+├── profile.tsx, platform-support.tsx
+├── login.tsx, register.tsx, forgot-password.tsx, reset-password.tsx, verify-email.tsx
+├── scan/[eventId].tsx    camera, manual entry, result handling
+├── attendees/[eventId].tsx  find by name at the gate
+└── offline/[eventId].tsx    offline check-in
+components/               ui kit, checkouts, support thread, scanner overlay
 lib/
-├── api.ts                the only place that talks to the Go API
+├── client.ts             the website's API functions, bearer-token transport
+├── api.ts, types.ts      the scanner's own endpoints
+├── models.ts, money.ts, datetime.ts   shared with web/src/lib
+├── i18n/                 kk / ru / en
 ├── config.ts             API host resolution
-├── session.ts            keychain-backed token storage
-├── auth-context.tsx      session restore and sign-in
-├── theme.ts              high-contrast palette
-└── types.ts              mirrors of the Go response structs
+├── session.ts, prefs.ts  keychain-backed token (localStorage in a browser)
+├── auth-context.tsx      session restore, sign-in, register
+└── theme.ts              high-contrast palette
 ```
 
 ## Finding an attendee by name (Phase 12, SRS 4.8)
