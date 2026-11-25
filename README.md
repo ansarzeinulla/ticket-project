@@ -338,6 +338,8 @@ email is sent.
 
 `deploy/oracle/` runs the whole platform on one free Oracle Cloud server, over
 HTTPS, with one command: see [deploy/oracle/README.md](deploy/oracle/README.md).
+On a VPS with [Dokploy](https://dokploy.com), `deploy/dokploy/` does the same as
+one Compose service: see [deploy/dokploy/README.md](deploy/dokploy/README.md).
 
 ### Email
 

@@ -1,0 +1,134 @@
+# BiletFlow on Dokploy (BF-100). In Dokploy: a Compose service from this repo,
+# Compose Path "./deploy/dokploy/docker-compose.yml", and the environment
+# variables below. Dokploy's Traefik serves it on https://$DOMAIN; the labels
+# send /api/v1, /media, /uploads and /health to the API and the rest to the
+# website. See deploy/dokploy/README.md.
+#
+# Environment (Dokploy → the service → Environment):
+#   DOMAIN=biletflow.example.kz        required, pointed at the VPS
+#   POSTGRES_PASSWORD=<random>         required
+#   JWT_SECRET=<random, 32+ chars>     required
+#   SMTP_HOST / SMTP_PORT / SMTP_USERNAME / SMTP_PASSWORD / MAIL_FROM   optional (Gmail)
+
+name: biletflow
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: biletflow
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: biletflow
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+      TZ: UTC
+      PGTZ: UTC
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ../../db/init:/docker-entrypoint-initdb.d:ro
+      - ../../db/seed:/opt/biletflow/seed:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U biletflow -d biletflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  # Runs once per deploy: applies schema changes (the scripts are safe to
+  # repeat) and loads the demo data into an empty database. Never on a filled one.
+  seed:
+    image: postgres:17-alpine
+    restart: "no"
+    environment:
+      PGHOST: db
+      PGUSER: biletflow
+      PGDATABASE: biletflow
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - ../../db/init:/opt/biletflow/init:ro
+      - ../../db/seed:/opt/biletflow/seed:ro
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        psql -q -v ON_ERROR_STOP=1 -f /opt/biletflow/init/01_extensions.sql
+        psql -q -v ON_ERROR_STOP=1 -f /opt/biletflow/init/02_schema.sql > /dev/null
+        if [ "$$(psql -tAc 'SELECT count(*) FROM events')" = "0" ]; then
+          echo "loading the demo data"
+          psql -q -v ON_ERROR_STOP=1 -f /opt/biletflow/seed/01_demo_data.sql
+          psql -q -v ON_ERROR_STOP=1 -f /opt/biletflow/seed/02_catalogue.sql
+        else
+          echo "data already present - left as it is"
+        fi
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    build:
+      context: ../../api
+    restart: unless-stopped
+    environment:
+      BILETFLOW_ENV: production
+      API_HOST: 0.0.0.0
+      API_PORT: 8080
+      DATABASE_URL: postgres://biletflow:${POSTGRES_PASSWORD}@db:5432/biletflow?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      WEB_BASE_URL: https://${DOMAIN:?set DOMAIN}
+      API_BASE_URL: https://${DOMAIN:?set DOMAIN}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      TZ: UTC
+    volumes:
+      - uploads:/app/data
+    networks: [default, dokploy-network]
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      - traefik.http.routers.biletflow-api.rule=Host(`${DOMAIN}`) && (PathPrefix(`/api/v1`) || PathPrefix(`/media`) || PathPrefix(`/uploads`) || Path(`/health`))
+      - traefik.http.routers.biletflow-api.entrypoints=websecure
+      - traefik.http.routers.biletflow-api.tls.certresolver=letsencrypt
+      - traefik.http.routers.biletflow-api.priority=100
+      - traefik.http.services.biletflow-api.loadbalancer.server.port=8080
+
+  web:
+    build:
+      context: ../../web
+      args:
+        NEXT_PUBLIC_API_BASE_URL: https://${DOMAIN:?set DOMAIN}/api/v1
+    restart: unless-stopped
+    environment:
+      # Server-side rendering reaches the API inside the network, not through Traefik.
+      API_INTERNAL_BASE_URL: http://api:8080/api/v1
+    networks: [default, dokploy-network]
+    depends_on:
+      api:
+        condition: service_healthy
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      - traefik.http.routers.biletflow-web.rule=Host(`${DOMAIN}`)
+      - traefik.http.routers.biletflow-web.entrypoints=websecure
+      - traefik.http.routers.biletflow-web.tls.certresolver=letsencrypt
+      - traefik.http.routers.biletflow-web.priority=10
+      - traefik.http.services.biletflow-web.loadbalancer.server.port=3000
+      # Plain http:// is sent to https://.
+      - traefik.http.routers.biletflow-http.rule=Host(`${DOMAIN}`)
+      - traefik.http.routers.biletflow-http.entrypoints=web
+      - traefik.http.routers.biletflow-http.middlewares=biletflow-https
+      - traefik.http.middlewares.biletflow-https.redirectscheme.scheme=https
+
+volumes:
+  pgdata:
+  uploads:
+
+networks:
+  dokploy-network:
+    external: true
