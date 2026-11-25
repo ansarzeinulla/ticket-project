@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"image"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -18,6 +19,8 @@ import (
 	_ "image/png"
 
 	_ "golang.org/x/image/webp"
+
+	"github.com/biletflow/api/internal/media"
 
 	"github.com/biletflow/api/internal/httpx"
 )
@@ -245,6 +248,27 @@ func (s *Server) uploadsHandler() http.Handler {
 			// reused, so a long cache is safe and saves re-fetching a poster on
 			// every page view.
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			fileServer.ServeHTTP(w, r)
+		}))
+}
+
+// mediaHandler serves the demo catalogue's posters, which are compiled into
+// the binary (internal/media). Like uploads, a name with a separator is refused
+// before it reaches the file system.
+func (s *Server) mediaHandler() http.Handler {
+	fileServer := http.FileServer(http.FS(media.Files))
+	return http.StripPrefix(media.URLPrefix, http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			name := strings.TrimPrefix(r.URL.Path, "/")
+			if name == "" || strings.ContainsAny(name, `/\`) || name == "." || name == ".." {
+				httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound, "No such file.")
+				return
+			}
+			if _, err := fs.Stat(media.Files, name); err != nil {
+				httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound, "No such file.")
+				return
+			}
+			w.Header().Set("Cache-Control", "public, max-age=86400")
 			fileServer.ServeHTTP(w, r)
 		}))
 }

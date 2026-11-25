@@ -1,9 +1,12 @@
 import { Stack, router } from "expo-router";
 import { useState } from "react";
 
-import { Banner, Button, Field, Muted, Row, Screen, Title } from "../components/ui";
+import { StyleSheet, View } from "react-native";
+
+import { Banner, Button, Field, Muted, Screen, Title } from "../components/ui";
 import { useAuth } from "../lib/auth-context";
 import { ApiError } from "../lib/client";
+import { theme } from "../lib/theme";
 import { useT } from "../lib/i18n/context";
 
 const MIN_PASSWORD_LENGTH = 8;
@@ -53,7 +56,7 @@ export default function RegisterScreen() {
 
   return (
     <Screen>
-      <Stack.Screen options={{ title: t("auth.register.title") }} />
+      <Stack.Screen options={{ title: "" }} />
       <Title>{t("auth.register.heading")}</Title>
       <Muted>{t("auth.register.subtitle")}</Muted>
       {error ? <Banner tone="error">{error}</Banner> : null}
@@ -67,10 +70,14 @@ export default function RegisterScreen() {
         onPress={() => void submit()}
         testID="register-submit"
       />
-      <Row>
-        <Muted>{t("auth.register.already")}</Muted>
-        <Button small variant="secondary" title={t("auth.common.signIn")} onPress={() => router.replace("/login")} />
-      </Row>
+      <View style={styles.divider} />
+      <Muted style={styles.center}>{t("auth.register.already")}</Muted>
+      <Button variant="outline" title={t("auth.common.signIn")} onPress={() => router.replace("/login")} />
     </Screen>
   );
 }
+
+const styles = StyleSheet.create({
+  divider: { height: StyleSheet.hairlineWidth, backgroundColor: theme.border, marginVertical: 8 },
+  center: { textAlign: "center" },
+});

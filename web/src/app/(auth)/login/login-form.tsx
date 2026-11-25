@@ -30,7 +30,7 @@ export function LoginForm() {
   const nextParam = searchParams.get("next");
   const destination = nextParam && nextParam.startsWith("/") && !nextParam.startsWith("//")
     ? nextParam
-    : "/dashboard";
+    : "/";
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -61,7 +61,7 @@ export function LoginForm() {
   return (
     <>
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">{t("auth.login.heading")}</h1>
+        <h1 className="text-3xl font-bold">{t("auth.login.heading")}</h1>
         <p className="mt-1 text-sm text-foreground-muted">
           {t("auth.login.subtitle")}
         </p>

@@ -6,10 +6,10 @@ import { useAuth } from "../lib/auth-context";
 import { ApiError, api } from "../lib/client";
 import { useT } from "../lib/i18n/context";
 import type { MessageKey } from "../lib/i18n/dictionaries";
-import type { Hold, Seat, SeatMap } from "../lib/models";
+import type { Hold, PromoPreview, Seat, SeatMap } from "../lib/models";
 import { formatKZT, formatTiyn, toTiyn } from "../lib/money";
 import { radius, theme } from "../lib/theme";
-import { Banner, Button, Card, Field, Heading, Loading, Muted, Row } from "./ui";
+import { Banner, Button, Card, Check, Field, Heading, Loading, Muted, Row } from "./ui";
 
 type SeatState = Seat["status"] | "selected";
 
@@ -17,7 +17,7 @@ type SeatState = Seat["status"] | "selected";
 const STATE: Record<SeatState, { fill: string; border: string; symbol: string; label: MessageKey }> = {
   available: { fill: theme.surfaceAlt, border: theme.brand, symbol: "", label: "seatMap.available" },
   selected: { fill: theme.brand, border: theme.brand, symbol: "✓", label: "seatMap.selected" },
-  held: { fill: "#3a2a10", border: theme.warning, symbol: "⏳", label: "seatMap.held" },
+  held: { fill: "#fef3c7", border: theme.warning, symbol: "⏳", label: "seatMap.held" },
   sold: { fill: theme.surface, border: theme.border, symbol: "×", label: "seatMap.sold" },
   unavailable: { fill: "transparent", border: theme.border, symbol: "−", label: "seatMap.unavailable" },
 };
@@ -27,7 +27,7 @@ const STATE: Record<SeatState, { fill: string; border: string; symbol: string; l
  * hold runs out - the website's seat map and seat checkout. The server holds
  * the seats atomically, so two people cannot buy the same one.
  */
-export function SeatedCheckout({ eventID }: { eventID: string }) {
+export function SeatedCheckout({ eventID, campaignToken }: { eventID: string; campaignToken?: string }) {
   const t = useT();
   const [orderID, setOrderID] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -36,6 +36,8 @@ export function SeatedCheckout({ eventID }: { eventID: string }) {
     return (
       <HeldSeats
         orderID={orderID}
+        eventID={eventID}
+        campaignToken={campaignToken}
         onEnded={(message) => {
           setOrderID(null);
           setNotice(message);
@@ -194,16 +196,74 @@ function SeatPicker({
   );
 }
 
-function HeldSeats({ orderID, onEnded }: { orderID: string; onEnded: (message: string) => void }) {
+function HeldSeats({
+  orderID,
+  eventID,
+  campaignToken,
+  onEnded,
+}: {
+  orderID: string;
+  eventID: string;
+  campaignToken?: string;
+  onEnded: (message: string) => void;
+}) {
   const t = useT();
   const { user } = useAuth();
   const [hold, setHold] = useState<Hold | null>(null);
   const [remaining, setRemaining] = useState<number | null>(null);
   const [name, setName] = useState(user?.full_name ?? "");
   const [email, setEmail] = useState(user?.email ?? "");
+  // A signed-in buyer's own details, locked unless they buy for somebody else (BF-100).
+  const [useAccount, setUseAccount] = useState(true);
+  const locked = Boolean(user && useAccount);
+  // The account can arrive after the first render; fill in once it does.
+  useEffect(() => {
+    if (user && useAccount) {
+      setName(user.full_name);
+      setEmail(user.email);
+    }
+  }, [user, useAccount]);
+  const chooseAccount = (on: boolean) => {
+    setUseAccount(on);
+    setName(on && user ? user.full_name : "");
+    setEmail(on && user ? user.email : "");
+  };
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // A promo code, or the campaign from a scanned QR, priced against the held seats (SRS 4.14).
+  const [promo, setPromo] = useState<PromoPreview | null>(null);
+  const [code, setCode] = useState("");
+  const [promoError, setPromoError] = useState<string | null>(null);
+  const [checkingPromo, setCheckingPromo] = useState(false);
+
+  const items = useMemo(() => {
+    const byType = new Map<string, number>();
+    for (const item of hold?.items ?? []) byType.set(item.ticket_type_id, (byType.get(item.ticket_type_id) ?? 0) + item.quantity);
+    return [...byType.entries()].map(([ticket_type_id, quantity]) => ({ ticket_type_id, quantity }));
+  }, [hold]);
+
+  const preview = useCallback(
+    async (input: { code?: string; campaign_token?: string }) => {
+      setCheckingPromo(true);
+      setPromoError(null);
+      try {
+        setPromo(await api.previewPromo(eventID, { ...input, items }));
+      } catch (cause) {
+        setPromo(null);
+        setPromoError(cause instanceof ApiError ? cause.message : t("promo.couldNotApply"));
+      } finally {
+        setCheckingPromo(false);
+      }
+    },
+    [eventID, items, t],
+  );
+
+  // The campaign link applies itself as soon as the seats are known.
+  useEffect(() => {
+    if (campaignToken && items.length > 0) void preview({ campaign_token: campaignToken });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [campaignToken, items.length]);
 
   useEffect(() => {
     api
@@ -235,7 +295,11 @@ function HeldSeats({ orderID, onEnded }: { orderID: string; onEnded: (message: s
     setSubmitting(true);
     setError(null);
     try {
-      const result = await api.confirmHold(orderID, { buyer_name: name.trim(), buyer_email: email.trim() });
+      const result = await api.confirmHold(orderID, {
+        buyer_name: name.trim(),
+        buyer_email: email.trim(),
+        ...(promo ? { promo_code: promo.code } : {}),
+      });
       router.replace(`/order/${result.order.id}`);
     } catch (cause) {
       setSubmitting(false);
@@ -263,6 +327,14 @@ function HeldSeats({ orderID, onEnded }: { orderID: string; onEnded: (message: s
 
   if (!hold || remaining === null) return <Loading label={t("seatCheckout.checking")} />;
 
+  // The fee is a share of what is paid, so it shrinks with the discount; the
+  // order screen shows the exact figure the server charged.
+  const subtotalTiyn = toTiyn(hold.subtotal_kzt);
+  const discountTiyn = promo ? toTiyn(promo.discount_kzt) : 0;
+  const feeTiyn =
+    subtotalTiyn > 0 ? Math.round((toTiyn(hold.estimated_processing_fee_kzt) * (subtotalTiyn - discountTiyn)) / subtotalTiyn) : 0;
+  const totalTiyn = subtotalTiyn - discountTiyn + feeTiyn;
+
   const minutes = Math.floor(remaining / 60);
   const seconds = String(remaining % 60).padStart(2, "0");
 
@@ -279,10 +351,32 @@ function HeldSeats({ orderID, onEnded }: { orderID: string; onEnded: (message: s
         {hold.order_number}
       </Muted>
       <Muted>{t("seatCheckout.tickets")}: {formatKZT(hold.subtotal_kzt)}</Muted>
-      <Muted>{t("seatCheckout.fee")}: {formatKZT(hold.estimated_processing_fee_kzt)}</Muted>
-      <Text style={styles.total}>{t("seatCheckout.total")}: {formatKZT(hold.estimated_total_kzt)}</Text>
+      <Muted>{t("seatCheckout.fee")}: {formatTiyn(feeTiyn)}</Muted>
+      {promo ? (
+        <Text style={styles.discount}>
+          {t("checkout.promo", { code: promo.code })}: −{formatKZT(promo.discount_kzt)}
+        </Text>
+      ) : null}
+      <Text style={styles.total}>{t("seatCheckout.total")}: {formatTiyn(totalTiyn)}</Text>
+      {promo ? (
+        <Button
+          small
+          variant="ghost"
+          title={t("promo.remove")}
+          onPress={() => setPromo(null)}
+        />
+      ) : (
+        <Row>
+          <View style={styles.grow}>
+            <Field label={t("promo.haveCode")} value={code} onChangeText={(value) => setCode(value.toUpperCase())} autoCapitalize="characters" />
+          </View>
+          <Button small variant="secondary" title={t("promo.apply")} loading={checkingPromo} disabled={!code.trim()} onPress={() => void preview({ code: code.trim() })} />
+        </Row>
+      )}
+      {promoError ? <Text style={styles.promoError}>{promoError}</Text> : null}
       {error ? <Banner tone="error">{error}</Banner> : null}
-      <Field label={t("seatCheckout.name")} value={name} onChangeText={setName} error={fieldErrors.buyer_name} autoCapitalize="words" testID="buyer-name" />
+      {user ? <Check label={t("home.useAccount")} value={useAccount} onChange={chooseAccount} /> : null}
+      <Field label={t("seatCheckout.name")} value={name} onChangeText={setName} error={fieldErrors.buyer_name} autoCapitalize="words" editable={!locked} testID="buyer-name" />
       <Field
         label={t("auth.common.email")}
         value={email}
@@ -291,10 +385,11 @@ function HeldSeats({ orderID, onEnded }: { orderID: string; onEnded: (message: s
         error={fieldErrors.buyer_email}
         keyboardType="email-address"
         autoCapitalize="none"
+        editable={!locked}
         testID="buyer-email"
       />
       <Button
-        title={t("seatCheckout.pay", { amount: formatKZT(hold.estimated_total_kzt) })}
+        title={t("seatCheckout.pay", { amount: formatTiyn(totalTiyn) })}
         loading={submitting}
         onPress={() => void pay()}
         testID="pay-seats"
@@ -323,7 +418,7 @@ const styles = StyleSheet.create({
   seat: {
     width: 26,
     height: 26,
-    borderRadius: 13,
+    borderRadius: 4,
     borderWidth: 1.5,
     alignItems: "center",
     justifyContent: "center",
@@ -334,4 +429,7 @@ const styles = StyleSheet.create({
   total: { color: theme.text, fontSize: 16, fontWeight: "700" },
   timer: { color: theme.textMuted, fontWeight: "700" },
   timerUrgent: { color: theme.dangerBright },
+  discount: { color: theme.success, fontSize: 14, fontWeight: "700" },
+  promoError: { color: theme.danger, fontSize: 13 },
+  grow: { flex: 1, minWidth: 160 },
 });

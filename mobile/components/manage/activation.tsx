@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { View } from "react-native";
 
 import { ApiError, api } from "../../lib/client";
 import { useT } from "../../lib/i18n/context";
@@ -6,6 +7,7 @@ import type { MessageKey } from "../../lib/i18n/dictionaries";
 import type { Activation, ActivationStep, ActivationSubmission } from "../../lib/models";
 import { formatKZT } from "../../lib/money";
 import { Banner, Button, Card, Check, Muted } from "../ui";
+import { IdentityCheck } from "./identity-check";
 
 const STEPS: { key: ActivationStep; field: keyof ActivationSubmission; title: MessageKey; detail: MessageKey }[] = [
   { key: "identity", field: "confirm_identity", title: "org.activation.identityTitle", detail: "org.activation.identityDetail" },
@@ -92,8 +94,8 @@ export function ActivationChecklist({ eventID, onActivated }: { eventID: string;
           {STEPS.map((step) => {
             const complete = !activation.outstanding.includes(step.key);
             return (
+              <View key={step.key} style={{ gap: 6 }}>
               <Check
-                key={step.key}
                 label={
                   t(step.title) +
                   (step.key === "fee" ? ` · ${formatKZT(activation.activation_fee_kzt)} · ${t("org.activation.simulated")}` : "") +
@@ -101,7 +103,8 @@ export function ActivationChecklist({ eventID, onActivated }: { eventID: string;
                 }
                 hint={t(step.detail)}
                 value={complete || checked.has(step.key)}
-                disabled={complete || submitting}
+                // Identity is ticked by the document check, not by hand (BF-100).
+                disabled={complete || submitting || step.key === "identity"}
                 onChange={() =>
                   setChecked((current) => {
                     const next = new Set(current);
@@ -111,6 +114,13 @@ export function ActivationChecklist({ eventID, onActivated }: { eventID: string;
                   })
                 }
               />
+              {step.key === "identity" && !complete ? (
+                <IdentityCheck
+                  disabled={submitting}
+                  onVerified={() => setChecked((current) => new Set(current).add("identity"))}
+                />
+              ) : null}
+              </View>
             );
           })}
           {error ? <Banner tone="error">{error}</Banner> : null}

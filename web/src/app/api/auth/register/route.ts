@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { getLocale } from "@/lib/i18n/server";
 import { apiBaseURL, isSecureRequest, writeToken } from "@/lib/server-session";
 
 /** Create an account and start a session, the same way login does (SRS 4.1). */
@@ -14,10 +15,16 @@ export async function POST(request: Request) {
     );
   }
 
+  // A new account keeps the language it was created in; its emails use it.
+  const withLocale =
+    details && typeof details === "object" && !("locale" in details)
+      ? { ...(details as Record<string, unknown>), locale: await getLocale() }
+      : details;
+
   const upstream = await fetch(`${apiBaseURL()}/auth/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify(details),
+    body: JSON.stringify(withLocale),
     cache: "no-store",
   });
 

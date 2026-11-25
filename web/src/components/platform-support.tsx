@@ -95,7 +95,7 @@ export function PlatformSupport() {
     <div className="mx-auto max-w-3xl space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{t("platformSupport.title")}</h1>
+          <h1 className="text-3xl font-bold">{t("platformSupport.title")}</h1>
           <p className="mt-1 text-sm text-foreground-muted">{t("platformSupport.subtitle")}</p>
         </div>
         {!composing && (
@@ -223,7 +223,7 @@ export function CaseList({
               </span>
             </span>
             <span
-              className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_STYLES[item.status]}`}
+              className={`shrink-0 rounded px-2.5 py-0.5 text-xs font-medium ${STATUS_STYLES[item.status]}`}
             >
               {supportStatusLabel(t, item.status)}
             </span>

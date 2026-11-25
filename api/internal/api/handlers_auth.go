@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -98,6 +99,16 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		httpx.WriteInternalError(w, r, err)
 		return
+	}
+
+	// SRS 4.1/4.10: a new account is asked to confirm its address straight
+	// away. A failure to issue the token must not undo the registration - the
+	// account exists, and the confirmation can be re-sent from the site.
+	if issued, err := s.accountTokens.Issue(
+		r.Context(), user.ID, store.TokenEmailVerification, store.EmailVerificationTTL); err == nil {
+		s.sendEmailVerification(issued)
+	} else {
+		slog.Error("issue email verification", "error", err, "user_id", user.ID)
 	}
 
 	s.writeAuthResponse(w, r, http.StatusCreated, user)

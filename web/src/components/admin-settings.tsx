@@ -7,7 +7,8 @@ import { Alert } from "@/components/ui/alert";
 import { Button, Spinner } from "@/components/ui/button";
 import { ApiError, api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
-import { useT } from "@/lib/i18n/context";
+import { formatInTimezone } from "@/lib/datetime";
+import { useI18n } from "@/lib/i18n/context";
 import type { PlatformSetting } from "@/lib/types";
 
 /** Text a person can edit: strings as they are, anything else as JSON. */
@@ -27,7 +28,7 @@ function fromText(text: string, original: unknown): unknown {
 
 /** SRS 4.12: "Configure activation fees and platform settings." */
 export function AdminSettings() {
-  const t = useT();
+  const { t, locale } = useI18n();
   const { user } = useAuth();
   const isAdmin = user?.roles.includes("platform_admin") ?? false;
   const [settings, setSettings] = useState<PlatformSetting[] | null>(null);
@@ -91,7 +92,7 @@ export function AdminSettings() {
         <Link href="/admin" className="text-sm text-foreground-muted hover:underline">
           {t("adminTools.back")}
         </Link>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight">{t("adminTools.settingsTitle")}</h1>
+        <h1 className="mt-2 text-3xl font-bold">{t("adminTools.settingsTitle")}</h1>
         <p className="mt-1 text-sm text-foreground-muted">{t("adminTools.settingsSubtitle")}</p>
       </div>
 
@@ -134,7 +135,7 @@ export function AdminSettings() {
               {rowError[setting.key] && <p className="text-xs text-danger">{rowError[setting.key]}</p>}
               {savedKey === setting.key && <p className="text-xs text-success">{t("adminTools.saved")}</p>}
               <p className="text-xs text-foreground-muted">
-                {t("adminTools.updated", { when: new Date(setting.updated_at).toLocaleString() })}
+                {t("adminTools.updated", { when: formatInTimezone(setting.updated_at, "Asia/Almaty", locale) })}
               </p>
             </li>
           ))}

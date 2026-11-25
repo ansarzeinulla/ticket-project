@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 
+import { ConfirmEmailCard } from "@/components/confirm-email-card";
 import { Alert } from "@/components/ui/alert";
 import { Button, Spinner } from "@/components/ui/button";
 import { TextAreaField, TextField } from "@/components/ui/field";
@@ -130,11 +131,13 @@ export function ProfileForm() {
         <Link href="/dashboard" className="text-sm text-foreground-muted hover:underline">
           {t("org.detail.back")}
         </Link>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight">{t("org.titles.profile")}</h1>
+        <h1 className="mt-2 text-3xl font-bold">{t("org.titles.profile")}</h1>
         <p className="mt-1 text-sm text-foreground-muted">
           {t("org.profile.signedInAs", { email: user?.email ?? "" })}
         </p>
       </div>
+
+      <ConfirmEmailCard />
 
       {loadError && <Alert tone="error">{loadError}</Alert>}
       {formError && <Alert tone="error">{formError}</Alert>}
@@ -262,7 +265,7 @@ function PayoutSection({ profile }: { profile: OrganizerProfile | null }) {
                 </p>
               </div>
               <span
-                className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                className={`rounded px-2 py-0.5 text-xs font-medium ${
                   account.status === "verified"
                     ? "bg-success-soft text-success"
                     : "bg-surface-muted text-foreground-muted"

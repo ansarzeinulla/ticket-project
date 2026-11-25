@@ -5,6 +5,7 @@ import { Image, StyleSheet } from "react-native";
 import { Banner, Body, Button, Card, Heading, KV, Loading, Muted, Row, Screen, Title } from "../../../components/ui";
 import { ApiError, api } from "../../../lib/client";
 import { formatInTimezone } from "../../../lib/datetime";
+import { mediaURL } from "../../../lib/media";
 import { useT } from "../../../lib/i18n/context";
 import type { BiletEvent, TicketType } from "../../../lib/models";
 import { formatKZT } from "../../../lib/money";
@@ -36,7 +37,7 @@ export default function PreviewScreen() {
       <Stack.Screen options={{ title: t("orgSettings.preview") }} />
       <Button small variant="ghost" title={t("org.form.backTo", { title: event.title })} onPress={() => router.back()} />
       <Banner title={t("orgSettings.previewTitle")}>{t("orgSettings.previewBody")}</Banner>
-      {event.cover_image_url ? <Image source={{ uri: event.cover_image_url }} style={styles.banner} accessibilityLabel={event.title} /> : null}
+      {event.cover_image_url ? <Image source={{ uri: mediaURL(event.cover_image_url) }} style={styles.banner} accessibilityLabel={event.title} /> : null}
       {event.category ? <Muted>{event.category.toUpperCase()}</Muted> : null}
       <Title>{event.title}</Title>
       <Row>

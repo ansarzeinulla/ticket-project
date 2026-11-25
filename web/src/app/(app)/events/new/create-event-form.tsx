@@ -127,7 +127,7 @@ export function CreateEventForm() {
         <Link href="/dashboard" className="text-sm text-foreground-muted hover:underline">
           {t("org.detail.back")}
         </Link>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight">{t("org.titles.newEvent")}</h1>
+        <h1 className="mt-2 text-3xl font-bold">{t("org.titles.newEvent")}</h1>
         <p className="mt-1 text-sm text-foreground-muted">
           {t("org.form.createSubtitle")}
         </p>

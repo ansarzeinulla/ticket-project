@@ -6,8 +6,10 @@ import { Image, StyleSheet } from "react-native";
 import { Banner, Button, Card, Choice, Field, Heading, Loading, Muted, Row, Screen, Title } from "../components/ui";
 import { useAuth } from "../lib/auth-context";
 import { ApiError, api } from "../lib/client";
+import { CATEGORIES, isCategory } from "../lib/catalogue";
 import { DATE_INPUT_HINT, inputToISO, isoToInput } from "../lib/date-input";
 import { slugify, timezoneOptions } from "../lib/datetime";
+import { mediaURL } from "../lib/media";
 import { useT } from "../lib/i18n/context";
 import type { BiletEvent, VenueLayout } from "../lib/models";
 import { radius, theme } from "../lib/theme";
@@ -279,7 +281,7 @@ export default function EventFormScreen() {
       <Card>
         <Muted>{t("org.upload.label")}</Muted>
         {values.coverImageURL ? (
-          <Image source={{ uri: values.coverImageURL }} style={styles.banner} accessibilityLabel={t("org.upload.alt")} />
+          <Image source={{ uri: mediaURL(values.coverImageURL) }} style={styles.banner} accessibilityLabel={t("org.upload.alt")} />
         ) : (
           <Muted>{t("org.upload.tip")}</Muted>
         )}
@@ -312,7 +314,15 @@ export default function EventFormScreen() {
       ) : null}
       <Field label={t("org.form.refundPolicy")} value={values.refundPolicy} onChangeText={(v) => set("refundPolicy", v)} placeholder={t("org.form.refundPlaceholder")} hint={t("org.form.refundHint")} multiline />
       <Field label={t("org.form.description")} value={values.description} onChangeText={(v) => set("description", v)} placeholder={t("org.form.descriptionPlaceholder")} multiline />
-      <Field label={t("org.form.category")} value={values.category} onChangeText={(v) => set("category", v)} placeholder="music" autoCapitalize="none" />
+      <Choice
+        label={t("org.form.category")}
+        options={[
+          ...CATEGORIES.map((value) => ({ value: value as string, label: t(`categories.${value}`) })),
+          ...(values.category && !isCategory(values.category) ? [{ value: values.category, label: values.category }] : []),
+        ]}
+        value={values.category}
+        onChange={(v) => set("category", v === values.category ? "" : v)}
+      />
       <Choice<Visibility>
         label={t("org.form.visibility")}
         options={(["public", "unlisted", "private"] as const).map((value) => ({ value, label: t(`org.form.visibilities.${value}`) }))}

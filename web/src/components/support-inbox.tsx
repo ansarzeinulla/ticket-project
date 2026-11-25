@@ -109,7 +109,7 @@ export function SupportInbox({ eventID }: { eventID: string }) {
                   </span>
                 </span>
                 <span
-                  className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_STYLES[item.status]}`}
+                  className={`shrink-0 rounded px-2.5 py-0.5 text-xs font-medium ${STATUS_STYLES[item.status]}`}
                 >
                   {supportStatusLabel(t, item.status)}
                 </span>

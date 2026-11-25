@@ -7,6 +7,7 @@ import {
   RefreshControl,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 
@@ -38,6 +39,11 @@ export default function ScannerTab() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  // Search by title, so staff with many events find theirs at once (BF-100).
+  const shown = query.trim()
+    ? events.filter((event) => event.title.toLowerCase().includes(query.trim().toLowerCase()))
+    : events;
 
   const load = useCallback(async () => {
     try {
@@ -82,6 +88,21 @@ export default function ScannerTab() {
         </View>
       </View>
 
+      {events.length > 0 ? (
+        <View style={styles.searchWrap}>
+          <TextInput
+            value={query}
+            onChangeText={setQuery}
+            placeholder={t("app.scanner.search")}
+            placeholderTextColor={theme.textMuted}
+            accessibilityLabel={t("app.scanner.search")}
+            returnKeyType="search"
+            style={styles.search}
+            testID="scanner-search"
+          />
+        </View>
+      ) : null}
+
       {error && (
         <View style={styles.errorBox}>
           <Text style={styles.errorText}>{error}</Text>
@@ -89,7 +110,7 @@ export default function ScannerTab() {
       )}
 
       <FlatList
-        data={events}
+        data={shown}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}
         refreshControl={
@@ -103,10 +124,16 @@ export default function ScannerTab() {
           />
         }
         ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>{t("app.scanner.emptyTitle")}</Text>
-            <Text style={styles.muted}>{t("app.scanner.emptyBody")}</Text>
-          </View>
+          events.length > 0 ? (
+            <View style={styles.empty}>
+              <Text style={styles.muted}>{t("app.scanner.noEvent")}</Text>
+            </View>
+          ) : (
+            <View style={styles.empty}>
+              <Text style={styles.emptyTitle}>{t("app.scanner.emptyTitle")}</Text>
+              <Text style={styles.muted}>{t("app.scanner.emptyBody")}</Text>
+            </View>
+          )
         }
         renderItem={({ item }) => {
           const remaining = Math.max(0, item.stats.issued - item.stats.checked_in);
@@ -147,10 +174,19 @@ export default function ScannerTab() {
                 </View>
               </View>
 
+              {/* The camera is what staff want nine times in ten (BF-100). */}
+              <Pressable
+                onPress={() => router.push(`/scan/${item.id}`)}
+                testID={`scan-${item.id}`}
+                accessibilityRole="button"
+                style={({ pressed }) => [styles.scanButton, pressed && styles.cardPressed]}
+              >
+                <Text style={styles.scanText}>{t("app.scanner.scan")}</Text>
+              </Pressable>
+
               {/*
-                The card itself opens the camera, which is what staff want
-                nine times in ten. This is the other way in, for when a QR
-                cannot be scanned at all (SRS 4.8).
+                The other ways in: by name when a QR cannot be scanned at all,
+                and offline with a downloaded roster (SRS 4.8).
               */}
               <View style={styles.secondaryRow}>
                 <Pressable
@@ -182,12 +218,32 @@ export default function ScannerTab() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: theme.bg },
-  secondaryRow: { flexDirection: "row", gap: 10, marginTop: 12 },
+  secondaryRow: { flexDirection: "row", gap: 10, marginTop: 10 },
+  scanButton: {
+    marginTop: 14,
+    backgroundColor: theme.brand,
+    borderRadius: radius.md,
+    minHeight: 48,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  scanText: { color: "#ffffff", fontSize: 16, fontWeight: "700" },
+  searchWrap: { paddingHorizontal: 16, paddingTop: 12 },
+  search: {
+    backgroundColor: theme.surface,
+    borderColor: theme.border,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    fontSize: 15,
+    color: theme.text,
+  },
   secondary: {
     flex: 1,
     borderColor: theme.border,
     borderWidth: 1,
-    borderRadius: radius.sm,
+    borderRadius: radius.md,
     paddingVertical: 10,
     alignItems: "center",
   },
@@ -225,7 +281,7 @@ const styles = StyleSheet.create({
   cardTitle: { color: theme.text, fontSize: 17, fontWeight: "700", flex: 1 },
   badge: {
     backgroundColor: theme.surfaceAlt,
-    borderRadius: 999,
+    borderRadius: 4,
     paddingHorizontal: 10,
     paddingVertical: 4,
   },
@@ -238,11 +294,11 @@ const styles = StyleSheet.create({
   emptyTitle: { color: theme.text, fontSize: 17, fontWeight: "600" },
   errorBox: {
     margin: 16,
-    backgroundColor: "#450a0a",
+    backgroundColor: "#fee2e2",
     borderColor: theme.danger,
     borderWidth: 1,
     borderRadius: radius.md,
     padding: 12,
   },
-  errorText: { color: "#fecaca", fontSize: 14 },
+  errorText: { color: theme.danger, fontSize: 14 },
 });

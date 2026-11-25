@@ -2,6 +2,7 @@ import { Stack } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 
 import { Badge, Banner, Body, Button, Card, Field, Heading, Loading, Muted, Row, Screen, Title } from "../components/ui";
+import { ConfirmEmailCard } from "../components/confirm-email-card";
 import { useAuth } from "../lib/auth-context";
 import { ApiError, api } from "../lib/client";
 import { useT } from "../lib/i18n/context";
@@ -51,7 +52,12 @@ export default function ProfileScreen() {
   }, [load]);
 
   if (!values) {
-    return <Screen>{loadError ? <Banner tone="error">{loadError}</Banner> : <Loading label={t("org.profile.loading")} />}</Screen>;
+    return (
+      <Screen>
+        <ConfirmEmailCard />
+        {loadError ? <Banner tone="error">{loadError}</Banner> : <Loading label={t("org.profile.loading")} />}
+      </Screen>
+    );
   }
 
   const update = (key: keyof Values, value: string) => {
@@ -91,6 +97,7 @@ export default function ProfileScreen() {
       <Stack.Screen options={{ title: t("org.titles.profile") }} />
       <Title>{t("org.titles.profile")}</Title>
       <Muted>{t("org.profile.signedInAs", { email: user?.email ?? "" })}</Muted>
+      <ConfirmEmailCard />
       {saved ? <Banner tone="success">{t("org.profile.saved")}</Banner> : null}
       {formError ? <Banner tone="error">{formError}</Banner> : null}
 

@@ -123,7 +123,7 @@ test("a platform admin suspends an event and it stops selling", async ({ page })
 
   await signIn(page, admin.token);
   await page.goto("/admin");
-  await page.getByRole("searchbox").fill(title);
+  await page.locator("#admin-search").fill(title);
 
   // Scoped to the Events section: the activation-fee payment carries the same
   // title as its reference, so an unscoped row locator matches twice.
@@ -159,7 +159,7 @@ test("a platform admin suspends a user, whose session ends at once", async ({ br
   const adminPage = await adminContext.newPage();
   await signIn(adminPage, admin.token);
   await adminPage.goto("/admin");
-  await adminPage.getByRole("searchbox").fill(target.email);
+  await adminPage.locator("#admin-search").fill(target.email);
 
   const row = adminPage.locator("tr", { hasText: target.email });
   await row.getByRole("button", { name: "Suspend", exact: true }).click();
@@ -184,7 +184,8 @@ test("the admin portal is refused to an ordinary account", async ({ page }) => {
 
   // The page says so plainly; the API is the actual boundary.
   await expect(page.getByText(/platform administrator/i).first()).toBeVisible();
-  await expect(page.getByRole("searchbox")).toHaveCount(0);
+  // The site header has its own event search (BF-100); the portal's search is #admin-search.
+  await expect(page.locator("#admin-search")).toHaveCount(0);
 });
 
 test("an attendee reports an event and it reaches the moderation queue", async ({

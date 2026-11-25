@@ -28,6 +28,12 @@ type Message struct {
 	Subject string
 	Body    string
 
+	// Locale is the recipient's language; the HTML part's footer uses it.
+	Locale string
+	// Attachments are sent with the message: ticket PDFs, and the poster the
+	// HTML part shows inline (BF-100).
+	Attachments []Attachment
+
 	// Ref is an opaque caller reference echoed back to the Mailer's
 	// completion callback. The API puts the outbox row's id here so a
 	// finished send can be matched to the row it belongs to, without this
@@ -95,6 +101,15 @@ func Render(msg Message) string {
 			continue
 		}
 		b.WriteString("  " + line + "\n")
+	}
+
+	if len(msg.Attachments) > 0 {
+		b.WriteString(light + "\n")
+		for _, a := range msg.Attachments {
+			if a.ContentID == "" {
+				fmt.Fprintf(&b, "  Attached: %s (%d KB)\n", a.Filename, (len(a.Data)+1023)/1024)
+			}
+		}
 	}
 
 	b.WriteString(heavy + "\n\n")

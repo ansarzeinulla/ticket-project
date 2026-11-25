@@ -307,7 +307,7 @@ const styles = StyleSheet.create({
   },
   cardHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
   name: { color: theme.text, fontSize: 17, fontWeight: "600", flexShrink: 1 },
-  badge: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3, marginLeft: "auto" },
+  badge: { borderRadius: 4, paddingHorizontal: 10, paddingVertical: 3, marginLeft: "auto" },
   badgeValid: { backgroundColor: theme.brandDark },
   badgeSpent: { backgroundColor: theme.surfaceAlt },
   badgeText: { color: theme.text, fontSize: 12, fontWeight: "600" },

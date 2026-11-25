@@ -6,18 +6,16 @@ import { ModerationAction } from "../../components/moderation-action";
 import { Badge, Banner, Body, Button, Card, Empty, Field, Heading, KV, Muted, Row, Screen, Stat, Title } from "../../components/ui";
 import { useAuth } from "../../lib/auth-context";
 import { ApiError, api } from "../../lib/client";
-import { useT } from "../../lib/i18n/context";
+import { formatDay } from "../../lib/datetime";
+import { useI18n } from "../../lib/i18n/context";
 import { adminWordLabel } from "../../lib/labels";
 import type { AdminSearchResponse } from "../../lib/models";
 import { formatKZT } from "../../lib/money";
 
-function formatDate(iso?: string): string {
-  return iso ? new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "—";
-}
 
 /** The administrative portal (SRS 2.1, 4.12); the API enforces the role. */
 export default function AdminScreen() {
-  const t = useT();
+  const { t, locale } = useI18n();
   const { user } = useAuth();
   const isAdmin = user?.roles.includes("platform_admin") ?? false;
   const [query, setQuery] = useState("");
@@ -142,7 +140,7 @@ export default function AdminScreen() {
               <Row>
                 <KV label={t("nav.events")} value={String(row.event_count)} />
                 <KV label={t("org.analytics.orders")} value={String(row.order_count)} />
-                <KV label={t("org.admin.colJoined")} value={formatDate(row.created_at)} />
+                <KV label={t("org.admin.colJoined")} value={formatDay(row.created_at, locale)} />
               </Row>
               {row.id === user?.id ? (
                 <Muted>{t("org.admin.you")}</Muted>
@@ -159,7 +157,7 @@ export default function AdminScreen() {
             <Card key={row.id} testID={`admin-event-${row.slug}`}>
               <Body>{row.title}</Body>
               <Muted>
-                {formatDate(row.starts_at)} · {row.organizer_email}
+                {formatDay(row.starts_at, locale)} · {row.organizer_email}
               </Muted>
               <Row>
                 <Badge text={adminWordLabel(t, row.lifecycle)} />
@@ -210,7 +208,7 @@ export default function AdminScreen() {
                 <Badge text={adminWordLabel(t, row.status)} />
                 {row.is_simulated ? <Muted>{t("org.activation.simulated")}</Muted> : null}
                 <KV label={t("org.admin.colAmount")} value={formatKZT(row.amount_kzt)} />
-                <KV label={t("org.admin.colWhen")} value={formatDate(row.created_at)} />
+                <KV label={t("org.admin.colWhen")} value={formatDay(row.created_at, locale)} />
               </Row>
             </Card>
           ))}

@@ -40,6 +40,8 @@ func testConfig(t *testing.T) config.Config {
 
 // client drives the real HTTP stack: router, middleware, handlers and database.
 type client struct {
+	// locale is the page language sent with each request; empty means English.
+	locale string
 	t      *testing.T
 	server *httptest.Server
 	pool   *pgxpool.Pool
@@ -155,6 +157,12 @@ func (c *client) do(method, path, token string, body any) response {
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
+		// The page language a guest checkout passes on to its emails.
+		locale := c.locale
+		if locale == "" {
+			locale = "en"
+		}
+		req.Header.Set("X-BiletFlow-Locale", locale)
 	}
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
@@ -255,15 +263,33 @@ func nextEmail(prefix string) string {
 }
 
 // register creates an account through the real registration endpoint.
+// register creates an account whose email is already confirmed, which is what
+// most tests want: publishing an event needs it (BF-100). Tests about the
+// confirmation itself use registerUnverified.
 func (c *client) register(prefix string) account {
+	c.t.Helper()
+	a := c.registerUnverified(prefix)
+	if _, err := c.pool.Exec(c.t.Context(),
+		`UPDATE users SET email_verified_at = now(), status = 'active' WHERE id = $1`, a.ID); err != nil {
+		c.t.Fatalf("confirm %s: %v", a.Email, err)
+	}
+	return a
+}
+
+// registerUnverified creates an account exactly as signing up does: pending,
+// with its confirmation code in the mailbox.
+func (c *client) registerUnverified(prefix string) account {
 	c.t.Helper()
 
 	email := nextEmail(prefix)
 	const password = "correct horse battery"
 
+	// English, so the emails the tests read are in English (BF-100 sends
+	// each email in the recipient's language).
 	res := c.post("/api/v1/auth/register", "", map[string]any{
 		"email":    email,
 		"password": password,
+		"locale":   "en",
 	})
 	if res.Status != http.StatusCreated {
 		c.t.Fatalf("register %s: status = %d, body = %s", email, res.Status, res.Raw)

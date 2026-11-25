@@ -3,6 +3,7 @@ import { enAttendee, kkAttendee, ruAttendee } from "./messages/attendee";
 import { enOrganizer, kkOrganizer, ruOrganizer } from "./messages/organizer";
 import { enAdminTools, kkAdminTools, ruAdminTools } from "./messages/admin-tools";
 import { enCalendar, kkCalendar, ruCalendar } from "./messages/calendar";
+import { enHome, kkHome, ruHome } from "./messages/home";
 import { enOrganizerSettings, kkOrganizerSettings, ruOrganizerSettings } from "./messages/organizer-settings";
 import { enPlatformSupport, kkPlatformSupport, ruPlatformSupport } from "./messages/platform-support";
 
@@ -39,6 +40,7 @@ const en = {
     when: "When",
     until: "until {time} ({tz})",
     where: "Where",
+    openMap: "Open in Google Maps",
     suspendedTitle: "Ticket sales suspended",
     suspendedBody:
       "BiletFlow has suspended this event pending review, so no new tickets can be bought. Tickets already issued remain valid — if you are holding one, contact the organizer from your order page for the latest information.",
@@ -79,7 +81,7 @@ const en = {
     simulatedNote:
       "Simulated payment — no card is charged and no money moves. This is a demonstration checkout.",
     processing: "Processing…",
-    pay: "Pay {amount} (simulated)",
+    pay: "Pay {amount}",
     cancel: "Cancel",
     correctFields: "Please correct the highlighted fields.",
     failed: "The payment simulation failed. Please try again.",
@@ -147,6 +149,7 @@ const en = {
   ...enOrganizerSettings,
   ...enAdminTools,
   ...enCalendar,
+  ...enHome,
 };
 
 /** The shape every locale must satisfy, taken from English. */
@@ -186,6 +189,7 @@ const ru: Dictionary = {
     when: "Когда",
     until: "до {time} ({tz})",
     where: "Где",
+    openMap: "Открыть в Google Картах",
     suspendedTitle: "Продажа билетов приостановлена",
     suspendedBody:
       "BiletFlow приостановил это событие до проверки, поэтому новые билеты купить нельзя. Уже выпущенные билеты остаются действительными — если у вас есть билет, свяжитесь с организатором со страницы заказа, чтобы узнать актуальную информацию.",
@@ -209,7 +213,7 @@ const ru: Dictionary = {
     removeOne: "Убрать один: {name}",
     noneSelected: "Билеты не выбраны",
     countOne: "{count} билет",
-    countMany: "{count} билетов",
+    countMany: "{count} {count|билет|билета|билетов}",
     getTickets: "Получить билеты",
   },
   checkout: {
@@ -226,7 +230,7 @@ const ru: Dictionary = {
     simulatedNote:
       "Симуляция оплаты — карта не списывается и деньги не двигаются. Это демонстрационное оформление.",
     processing: "Обработка…",
-    pay: "Оплатить {amount} (симуляция)",
+    pay: "Оплатить {amount}",
     cancel: "Отмена",
     correctFields: "Пожалуйста, исправьте выделенные поля.",
     failed: "Симуляция оплаты не удалась. Пожалуйста, попробуйте снова.",
@@ -238,7 +242,7 @@ const ru: Dictionary = {
     metaTitle: "Подтверждение заказа",
     confirmed: "Заказ подтверждён",
     issuedOne: "{count} билет выпущен для {email}.",
-    issuedMany: "{count} билетов выпущено для {email}.",
+    issuedMany: "Выпущено {count} {count|билет|билета|билетов} для {email}.",
     orderNumber: "Номер заказа",
     orderId: "ID заказа",
     status: "Статус",
@@ -260,7 +264,7 @@ const ru: Dictionary = {
     browse: "Посмотреть события",
     error: "Не удалось загрузить ваши билеты.",
     ticketsOne: "{count} билет",
-    ticketsMany: "{count} билетов",
+    ticketsMany: "{count} {count|билет|билета|билетов}",
     stillValid: "{count} ещё действительны",
   },
   promo: {
@@ -293,6 +297,7 @@ const ru: Dictionary = {
   ...ruOrganizerSettings,
   ...ruAdminTools,
   ...ruCalendar,
+  ...ruHome,
 };
 
 const kk: Dictionary = {
@@ -316,6 +321,7 @@ const kk: Dictionary = {
     when: "Қашан",
     until: "{time} дейін ({tz})",
     where: "Қайда",
+    openMap: "Google Maps-та ашу",
     suspendedTitle: "Билет сатылымы тоқтатылды",
     suspendedBody:
       "BiletFlow бұл іс-шараны тексеруге дейін тоқтатты, сондықтан жаңа билет сатып алуға болмайды. Бұрын берілген билеттер жарамды болып қала береді — билетіңіз болса, соңғы ақпаратты білу үшін тапсырыс бетінен ұйымдастырушыға хабарласыңыз.",
@@ -356,7 +362,7 @@ const kk: Dictionary = {
     simulatedNote:
       "Төлем симуляциясы — картадан ақша алынбайды және қаражат аударылмайды. Бұл көрсетілім рәсімдеуі.",
     processing: "Өңделуде…",
-    pay: "{amount} төлеу (симуляция)",
+    pay: "{amount} төлеу",
     cancel: "Бас тарту",
     correctFields: "Белгіленген өрістерді түзетіңіз.",
     failed: "Төлем симуляциясы сәтсіз аяқталды. Қайталап көріңіз.",
@@ -423,6 +429,7 @@ const kk: Dictionary = {
   ...kkOrganizerSettings,
   ...kkAdminTools,
   ...kkCalendar,
+  ...kkHome,
 };
 
 const dictionaries: Record<Locale, Dictionary> = { kk, ru, en };

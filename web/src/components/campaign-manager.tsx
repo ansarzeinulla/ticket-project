@@ -449,7 +449,7 @@ function StatusPill({ status }: { status: string }) {
   const t = useT();
   return (
     <span
-      className={`rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${
+      className={`rounded px-2.5 py-0.5 text-xs font-medium capitalize ${
         STATUS_STYLES[status] ?? STATUS_STYLES.draft
       }`}
     >

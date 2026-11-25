@@ -7,9 +7,10 @@ import { Alert } from "@/components/ui/alert";
 import { Spinner } from "@/components/ui/button";
 import { ApiError, api } from "@/lib/api";
 import { formatInTimezone } from "@/lib/datetime";
-import { useT } from "@/lib/i18n/context";
+import { useI18n } from "@/lib/i18n/context";
 import { formatKZT } from "@/lib/money";
 import type { BiletEvent, TicketType } from "@/lib/types";
+import { mediaURL } from "@/lib/media";
 
 /**
  * The organizer's preview of the public event page.
@@ -19,7 +20,7 @@ import type { BiletEvent, TicketType } from "@/lib/types";
  * through the organizer's own API instead and lays it out the same way.
  */
 export function EventPreview({ eventID }: { eventID: string }) {
-  const t = useT();
+  const { t, locale } = useI18n();
   const [event, setEvent] = useState<BiletEvent | null>(null);
   const [types, setTypes] = useState<TicketType[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -67,7 +68,7 @@ export function EventPreview({ eventID }: { eventID: string }) {
         {event.cover_image_url && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={event.cover_image_url}
+            src={mediaURL(event.cover_image_url)}
             alt=""
             className="max-h-64 w-full rounded-lg object-cover"
           />
@@ -76,17 +77,17 @@ export function EventPreview({ eventID }: { eventID: string }) {
           {event.category && (
             <p className="text-xs font-medium uppercase tracking-wide text-brand">{event.category}</p>
           )}
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">{event.title}</h1>
+          <h1 className="mt-1 text-3xl font-bold">{event.title}</h1>
         </div>
 
         <dl className="grid gap-4 text-sm sm:grid-cols-2">
           <div>
             <dt className="text-xs text-foreground-muted">{t("eventPage.when")}</dt>
             <dd className="mt-0.5">
-              {formatInTimezone(event.starts_at, event.timezone)}
+              {formatInTimezone(event.starts_at, event.timezone, locale)}
               <span className="block text-xs text-foreground-muted">
                 {t("eventPage.until", {
-                  time: formatInTimezone(event.ends_at, event.timezone),
+                  time: formatInTimezone(event.ends_at, event.timezone, locale),
                   tz: event.timezone,
                 })}
               </span>

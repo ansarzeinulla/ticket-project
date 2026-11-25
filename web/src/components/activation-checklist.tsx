@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { IdentityCheck } from "@/components/identity-check";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { ApiError, api } from "@/lib/api";
-import { useT } from "@/lib/i18n/context";
+import { formatDay } from "@/lib/datetime";
+import { useI18n } from "@/lib/i18n/context";
 import type { MessageKey } from "@/lib/i18n/dictionaries";
 import { formatKZT } from "@/lib/money";
 import type { Activation, ActivationStep, ActivationSubmission } from "@/lib/types";
@@ -62,7 +64,7 @@ export function ActivationChecklist({
   eventID: string;
   onActivated?: () => void;
 }) {
-  const t = useT();
+  const { t, locale } = useI18n();
   const [activation, setActivation] = useState<Activation | null>(null);
   const [open, setOpen] = useState(false);
   const [checked, setChecked] = useState<Set<ActivationStep>>(new Set());
@@ -148,7 +150,7 @@ export function ActivationChecklist({
       <Alert tone="success" title={t("org.activation.activeTitle")}>
         {t("org.activation.activeBody", {
           date: activation.activated_at
-            ? new Date(activation.activated_at).toLocaleDateString()
+            ? formatDay(activation.activated_at, locale)
             : t("org.activation.thisEvent"),
           fee: formatKZT(activation.activation_fee_kzt),
         })}
@@ -195,7 +197,8 @@ export function ActivationChecklist({
                   type="checkbox"
                   className="mt-1 size-4 shrink-0 accent-brand"
                   checked={complete || checked.has(step.key)}
-                  disabled={complete || submitting}
+                  // Identity is ticked by the document check below, not by hand (BF-100).
+                  disabled={complete || submitting || step.key === "identity"}
                   onChange={() => toggle(step.key)}
                 />
                 <span className="min-w-0">
@@ -213,6 +216,12 @@ export function ActivationChecklist({
                   <span className="mt-1 block text-xs text-foreground-muted">
                     {t(step.detail)}
                   </span>
+                  {step.key === "identity" && !complete && (
+                    <IdentityCheck
+                      disabled={submitting}
+                      onVerified={() => setChecked((current) => new Set(current).add("identity"))}
+                    />
+                  )}
                 </span>
               </label>
             );

@@ -104,6 +104,16 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * The app's current language, sent with every request so the emails a
+ * request triggers (order confirmations, password resets) speak it (BF-100).
+ * The language provider keeps it up to date.
+ */
+let currentLocale = "kk";
+export function setRequestLocale(locale: string) {
+  currentLocale = locale;
+}
+
 interface RequestOptions {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
   body?: unknown;
@@ -115,7 +125,7 @@ interface RequestOptions {
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = "GET", body, token, anonymous = false, signal } = options;
 
-  const headers: Record<string, string> = { Accept: "application/json" };
+  const headers: Record<string, string> = { Accept: "application/json", "X-BiletFlow-Locale": currentLocale };
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (!anonymous) {
     const bearer = token ?? (await loadToken());
@@ -172,7 +182,12 @@ export const api = {
     phone?: string;
     locale?: string;
   }): Promise<AuthResult> {
-    return request<AuthResult>("/auth/register", { method: "POST", body: input, anonymous: true });
+    // A new account keeps the language it was created in; its emails use it.
+    return request<AuthResult>("/auth/register", {
+      method: "POST",
+      body: { locale: currentLocale, ...input },
+      anonymous: true,
+    });
   },
 
   /** Sign in; returns the token for the caller to store. */
@@ -219,10 +234,26 @@ export const api = {
   },
 
   /** GET /events - the public catalogue. */
-  listPublicEvents(params: { limit?: number; offset?: number } = {}, signal?: AbortSignal) {
+  listPublicEvents(
+    params: {
+      limit?: number;
+      offset?: number;
+      category?: string;
+      q?: string;
+      city?: string;
+      startsAfter?: string;
+      startsBefore?: string;
+    } = {},
+    signal?: AbortSignal,
+  ) {
     const query = new URLSearchParams();
     if (params.limit !== undefined) query.set("limit", String(params.limit));
     if (params.offset !== undefined) query.set("offset", String(params.offset));
+    if (params.category) query.set("category", params.category);
+    if (params.q) query.set("q", params.q);
+    if (params.city) query.set("city", params.city);
+    if (params.startsAfter) query.set("starts_after", params.startsAfter);
+    if (params.startsBefore) query.set("starts_before", params.startsBefore);
 
     const suffix = query.size > 0 ? `?${query}` : "";
     return request<EventListResponse>(`/events${suffix}`, { signal });
@@ -551,16 +582,16 @@ export const api = {
   },
 
   /** POST /auth/password-reset - consumes the emailed token. */
-  resetPassword(token: string, password: string): Promise<AcceptedResponse> {
+  resetPassword(email: string, code: string, password: string): Promise<AcceptedResponse> {
     return request<AcceptedResponse>("/auth/password-reset", {
       method: "POST",
-      body: { token, password },
+      body: { email, code, password },
     });
   },
 
   /** POST /auth/verify-email - needs no session; the token is the proof. */
-  verifyEmail(token: string): Promise<{ status: string; email: string; account_status: string }> {
-    return request("/auth/verify-email", { method: "POST", body: { token } });
+  verifyEmail(email: string, code: string): Promise<{ status: string; email: string; account_status: string }> {
+    return request("/auth/verify-email", { method: "POST", body: { email, code } });
   },
 
   /** POST /auth/verify-email/request - re-send for the signed-in account. */

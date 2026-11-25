@@ -74,7 +74,6 @@ export default function OrderScreen() {
             <Body>{formatKZT(item.line_total_kzt)}</Body>
           </Row>
         ))}
-        <Muted>{t("order.simulatedNote")}</Muted>
       </Card>
 
       <Heading>{t("order.yourTickets")}</Heading>

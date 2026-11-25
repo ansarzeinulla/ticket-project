@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { TextField } from "@/components/ui/field";
+import { BuyerFields, useBuyerDetails } from "@/components/buyer-fields";
 import { ApiError, api } from "@/lib/api";
 import { toAnalyticsValue, trackPurchase } from "@/lib/analytics";
 import { useT } from "@/lib/i18n/context";
@@ -52,8 +52,8 @@ export function CheckoutDialog({
   const t = useT();
   const dialogRef = useRef<HTMLDialogElement>(null);
 
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+  const buyer = useBuyerDetails();
+  const { name, email } = buyer;
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -188,35 +188,16 @@ export function CheckoutDialog({
         {formError && <Alert tone="error">{formError}</Alert>}
 
         <form onSubmit={handleSubmit} noValidate className="space-y-4">
-          <TextField
-            label={t("checkout.nameLabel")}
-            name="buyer_name"
-            autoComplete="name"
-            placeholder={t("checkout.namePlaceholder")}
-            required
-            value={name}
-            error={fieldErrors.buyer_name}
+          <BuyerFields
+            buyer={buyer}
+            errors={fieldErrors}
             disabled={submitting}
-            onChange={(event) => setName(event.target.value)}
+            nameLabel={t("checkout.nameLabel")}
+            emailLabel={t("checkout.emailLabel")}
+            emailHint={t("checkout.emailHint")}
+            namePlaceholder={t("checkout.namePlaceholder")}
+            emailPlaceholder={t("checkout.emailPlaceholder")}
           />
-          <TextField
-            label={t("checkout.emailLabel")}
-            type="email"
-            name="buyer_email"
-            autoComplete="email"
-            placeholder={t("checkout.emailPlaceholder")}
-            hint={t("checkout.emailHint")}
-            required
-            value={email}
-            error={fieldErrors.buyer_email}
-            disabled={submitting}
-            onChange={(event) => setEmail(event.target.value)}
-          />
-
-          {/* SRS 4.6: a demonstration payment must never look like a real one. */}
-          <p className="rounded-lg border border-warning/30 bg-warning-soft px-3 py-2 text-xs text-warning">
-            {t("checkout.simulatedNote")}
-          </p>
 
           <div className="flex flex-wrap gap-3">
             <Button type="submit" loading={submitting} className="flex-1">

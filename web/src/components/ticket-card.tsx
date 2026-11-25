@@ -44,7 +44,7 @@ export async function TicketCard({ ticket }: { ticket: IssuedTicket }) {
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="font-medium">{ticket.ticket_type_name}</h3>
             <span
-              className={`rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${
+              className={`rounded px-2.5 py-0.5 text-xs font-medium capitalize ${
                 cancelled
                   ? "bg-danger-soft text-danger"
                   : "bg-success-soft text-success"

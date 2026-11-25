@@ -1,6 +1,7 @@
 import { Stack, router } from "expo-router";
 import { useState } from "react";
 
+import { ResetPasswordForm } from "../components/reset-password-form";
 import { Banner, Button, Field, Muted, Screen, Title } from "../components/ui";
 import { ApiError, api } from "../lib/client";
 import { useT } from "../lib/i18n/context";
@@ -28,15 +29,15 @@ export default function ForgotPasswordScreen() {
 
   return (
     <Screen>
-      <Stack.Screen options={{ title: t("auth.forgot.title") }} />
+      <Stack.Screen options={{ title: "" }} />
       {sent ? (
         <>
           <Title>{t("auth.forgot.sentHeading")}</Title>
           <Banner tone="success" title={t("auth.forgot.sentTitle")}>
             {t("auth.forgot.sentBodyBefore") + email.trim() + t("auth.forgot.sentBodyAfter")}
           </Banner>
-          <Muted>{t("auth.forgot.consoleNote")}</Muted>
-          <Button title={t("auth.forgot.enterHere")} onPress={() => router.replace("/reset-password")} />
+          {/* The code is typed right here, without leaving the screen (BF-100). */}
+          <ResetPasswordForm initialEmail={email.trim()} embedded />
           <Button variant="ghost" title={t("auth.forgot.back")} onPress={() => router.replace("/login")} />
         </>
       ) : (

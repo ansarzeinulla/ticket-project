@@ -36,7 +36,7 @@ export function StatusBadge({ status }: { status: EventStatus }) {
   const t = useT();
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${styles[status]}`}
+      className={`inline-flex items-center rounded px-2.5 py-0.5 text-xs font-medium capitalize ${styles[status]}`}
     >
       {t(labels[status])}
     </span>

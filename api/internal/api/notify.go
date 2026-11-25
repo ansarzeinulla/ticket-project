@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"log"
+	"net/http"
 	"strings"
 	"time"
 
@@ -24,26 +25,33 @@ const notifyTimeout = 10 * time.Second
 // that fails must never fail the purchase: the attendee has paid, the tickets
 // exist, and the confirmation is a convenience on top of that. Failures are
 // logged and recorded against the outbox row instead of surfacing.
-func (s *Server) sendOrderConfirmation(result store.CheckoutResult, event store.Event) {
+func (s *Server) sendOrderConfirmation(result store.CheckoutResult, event store.Event, localeHint string) {
 	tickets := make([]email.TicketLine, 0, len(result.Tickets))
 	for _, t := range result.Tickets {
 		tickets = append(tickets, email.TicketLine{
 			TicketCode: t.TicketCode,
 			TypeName:   t.TicketTypeName,
-			PDFURL:     s.cfg.APIBaseURL + "/api/v1/tickets/" + t.ID.String() + "/pdf",
 		})
 	}
+
+	// The tickets themselves travel as PDF attachments (BF-100), with the
+	// poster shown inline above the text.
+	ctx, cancel := context.WithTimeout(context.Background(), notifyTimeout)
+	defer cancel()
+	attachments := append(s.posterAttachment(event.CoverImageURL), s.ticketAttachments(ctx, result.Tickets)...)
 
 	msg := email.OrderConfirmation(email.OrderDetails{
 		BuyerName:   result.Order.BuyerName,
 		BuyerEmail:  result.Order.BuyerEmail,
+		Locale:      s.localeFor(result.Order.BuyerEmail, localeHint),
 		OrderNumber: result.Order.OrderNumber,
 		EventTitle:  event.Title,
 		EventVenue:  venueLine(event),
 		EventWhen:   eventWhen(event),
 		TotalKZT:    result.Order.TotalKZT,
 		Tickets:     tickets,
-		OrderURL:    s.cfg.WebBaseURL + "/orders/" + result.Order.ID.String(),
+		OrderURL:    s.webLink("/orders/" + result.Order.ID.String()),
+		Attachments: attachments,
 	})
 
 	s.dispatch(msg, store.NotificationParams{
@@ -60,6 +68,7 @@ func (s *Server) sendRefundConfirmation(result store.RefundResult, reason string
 	msg := email.RefundCompleted(email.RefundDetails{
 		BuyerName:   result.BuyerName,
 		BuyerEmail:  result.BuyerEmail,
+		Locale:      s.localeFor(result.BuyerEmail, s.orderLocale(result.Order.ID)),
 		OrderNumber: result.Order.OrderNumber,
 		EventTitle:  result.EventTitle,
 		AmountKZT:   result.Refund.AmountKZT,
@@ -85,6 +94,7 @@ func (s *Server) sendCancellationConfirmation(result store.CancelResult, reason 
 	msg := email.RegistrationCancelled(email.CancellationDetails{
 		BuyerName:   result.BuyerName,
 		BuyerEmail:  result.BuyerEmail,
+		Locale:      s.localeFor(result.BuyerEmail, s.orderLocale(result.Order.ID)),
 		OrderNumber: result.Order.OrderNumber,
 		EventTitle:  result.EventTitle,
 		TicketCount: result.CancelledTickets,
@@ -107,16 +117,17 @@ func (s *Server) sendCancellationConfirmation(result store.CancelResult, reason 
 // written, precisely so a failed transaction leaves nothing behind that could
 // be mistaken for a purchase (SRS 4.6).
 func (s *Server) sendPaymentFailure(
-	event store.Event, buyerName, buyerEmail, amountKZT, reason string,
+	event store.Event, buyerName, buyerEmail, amountKZT, reason, localeHint string,
 ) {
 	msg := email.PaymentFailed(email.PaymentFailureDetails{
 		BuyerName:   buyerName,
 		BuyerEmail:  buyerEmail,
+		Locale:      s.localeFor(buyerEmail, localeHint),
 		OrderNumber: "-",
 		EventTitle:  event.Title,
 		AmountKZT:   amountKZT,
 		Reason:      reason,
-		RetryURL:    s.cfg.WebBaseURL + "/events/" + event.Slug,
+		RetryURL:    s.webLink("/events/" + event.Slug),
 	})
 
 	eventID := event.ID
@@ -134,6 +145,7 @@ func (s *Server) sendPayoutStatus(
 	msg := email.PayoutStatus(email.PayoutStatusDetails{
 		OrganizerName:  organizer.FullName,
 		OrganizerEmail: organizer.Email,
+		Locale:         s.localeFor(organizer.Email, ""),
 		EventTitle:     event.Title,
 		Status:         status,
 		AmountKZT:      amountKZT,
@@ -173,9 +185,10 @@ func (s *Server) sendEventUpdate(event store.Event, changes []string) {
 		msg := email.EventUpdated(email.EventUpdateDetails{
 			AttendeeName:  h.BuyerName,
 			AttendeeEmail: h.BuyerEmail,
+			Locale:        s.localeFor(h.BuyerEmail, s.orderLocale(h.OrderID)),
 			EventTitle:    event.Title,
 			Changes:       changes,
-			EventURL:      s.cfg.WebBaseURL + "/events/" + event.Slug,
+			EventURL:      s.webLink("/events/" + event.Slug),
 		})
 		eventID := event.ID
 		orderID := h.OrderID
@@ -207,10 +220,11 @@ func (s *Server) sendSupportCaseAssigned(supportCase store.SupportCase, assignee
 	msg := email.SupportCaseAssigned(email.SupportCaseDetails{
 		RecipientName:  requester.FullName,
 		RecipientEmail: requester.Email,
+		Locale:         s.localeFor(requester.Email, ""),
 		CaseNumber:     supportCase.CaseNumber,
 		Subject:        supportCase.Subject,
 		AssigneeName:   assigneeName,
-		CaseURL:        s.cfg.WebBaseURL + "/support/" + supportCase.ID.String(),
+		CaseURL:        s.webLink("/support/" + supportCase.ID.String()),
 	})
 
 	s.dispatch(msg, store.NotificationParams{
@@ -242,10 +256,11 @@ func (s *Server) sendSupportStatusChanged(supportCase store.SupportCase, actorID
 	msg := email.SupportCaseStatusChanged(email.SupportCaseDetails{
 		RecipientName:  requester.FullName,
 		RecipientEmail: requester.Email,
+		Locale:         s.localeFor(requester.Email, ""),
 		CaseNumber:     supportCase.CaseNumber,
 		Subject:        supportCase.Subject,
 		Status:         supportCase.Status,
-		CaseURL:        s.cfg.WebBaseURL + "/support/" + supportCase.ID.String(),
+		CaseURL:        s.webLink("/support/" + supportCase.ID.String()),
 	})
 
 	s.dispatch(msg, store.NotificationParams{
@@ -261,6 +276,66 @@ func (s *Server) sendSupportStatusChanged(supportCase store.SupportCase, actorID
 // The row is written synchronously so a test - or an operator - can see that a
 // notification was raised, even if the send itself is still in flight. Only
 // the delivery is asynchronous.
+// localeFor picks the language of an email (BF-100): the language saved on
+// the recipient's account; for somebody without one, the language of the page
+// that triggered the email (the hint); failing both, Kazakh - the site's
+// default.
+func (s *Server) localeFor(address, hint string) string {
+	if s.pool != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		var locale string
+		err := s.pool.QueryRow(ctx,
+			`SELECT locale FROM users WHERE lower(email) = lower($1)`, address).Scan(&locale)
+		if err == nil && isSupportedLocale(locale) {
+			return locale
+		}
+	}
+	if isSupportedLocale(hint) {
+		return hint
+	}
+	return "kk"
+}
+
+func isSupportedLocale(locale string) bool {
+	return locale == "kk" || locale == "ru" || locale == "en"
+}
+
+// orderLocale is the language an order was placed in, or "" if unknown.
+func (s *Server) orderLocale(orderID uuid.UUID) string {
+	if s.pool == nil {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	var locale *string
+	if err := s.pool.QueryRow(ctx, `SELECT locale FROM orders WHERE id = $1`, orderID).Scan(&locale); err != nil || locale == nil {
+		return ""
+	}
+	return *locale
+}
+
+// rememberOrderLocale keeps the buyer's page language with the order, so later
+// emails about it (refund, cancellation, event changes) speak the same language.
+func (s *Server) rememberOrderLocale(ctx context.Context, orderID uuid.UUID, locale string) {
+	if !isSupportedLocale(locale) {
+		return
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE orders SET locale = $1 WHERE id = $2`, locale, orderID); err != nil {
+		log.Printf("order %s: could not record its language: %v", orderID, err)
+	}
+}
+
+// requestLocale is the language of the page a request came from. The website
+// and the app send it in X-BiletFlow-Locale.
+func requestLocale(r *http.Request) string {
+	locale := strings.ToLower(strings.TrimSpace(r.Header.Get("X-BiletFlow-Locale")))
+	if i := strings.IndexAny(locale, "-_"); i > 0 {
+		locale = locale[:i]
+	}
+	return locale
+}
+
 func (s *Server) dispatch(msg email.Message, params store.NotificationParams) {
 	params.Type = msg.Type
 	params.Subject = msg.Subject
@@ -369,6 +444,7 @@ func (s *Server) sendEventCancelled(event store.Event) {
 		msg := email.EventCancelled(email.EventCancelledDetails{
 			AttendeeName: holder.BuyerName,
 			Email:        holder.BuyerEmail,
+			Locale:       s.localeFor(holder.BuyerEmail, s.orderLocale(holder.OrderID)),
 			EventTitle:   event.Title,
 			EventWhen:    eventWhen(event),
 			OrderNumber:  holder.OrderNumber,
@@ -420,11 +496,12 @@ func (s *Server) sendSupportMessageNotice(
 	msg := email.NewSupportMessage(email.SupportMessageDetails{
 		RecipientName:  recipient.FullName,
 		Email:          recipient.Email,
+		Locale:         s.localeFor(recipient.Email, ""),
 		EventTitle:     title,
 		CaseSubject:    supportCase.Subject,
 		SenderName:     senderName,
 		MessagePreview: truncateForPreview(body, 400),
-		CaseURL:        s.cfg.WebBaseURL + "/orders/" + orderIDForCase(supportCase),
+		CaseURL:        s.webLink("/orders/" + orderIDForCase(supportCase)),
 	})
 
 	s.dispatch(msg, store.NotificationParams{

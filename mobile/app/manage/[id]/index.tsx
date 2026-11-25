@@ -27,6 +27,7 @@ export default function ManageEventScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [event, setEvent] = useState<BiletEvent | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [needsEmail, setNeedsEmail] = useState(false);
   const [busy, setBusy] = useState<null | "publish" | "unpublish" | "cancel" | "duplicate">(null);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
 
@@ -48,6 +49,7 @@ export default function ManageEventScreen() {
   async function run(action: "publish" | "unpublish" | "cancel") {
     setBusy(action);
     setError(null);
+    setNeedsEmail(false);
     try {
       const updated =
         action === "publish"
@@ -58,7 +60,9 @@ export default function ManageEventScreen() {
       setEvent(updated);
       setConfirmingCancel(false);
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : t("org.eventCard.actionFailed"));
+      // SRS UC1: an unconfirmed address cannot publish; the code is on the Profile screen.
+      if (cause instanceof ApiError && cause.code === "email_unverified") setNeedsEmail(true);
+      else setError(cause instanceof ApiError ? cause.message : t("org.eventCard.actionFailed"));
     } finally {
       setBusy(null);
     }
@@ -118,6 +122,12 @@ export default function ManageEventScreen() {
         <Banner>{t("org.detail.notPublished", { status: eventStatusLabel(t, event.status) })}</Banner>
       )}
       {error ? <Banner tone="error">{error}</Banner> : null}
+      {needsEmail ? (
+        <>
+          <Banner tone="error">{t("home.publishNeedsEmail")}</Banner>
+          <Button variant="outline" title={t("home.verifyGo")} onPress={() => router.push("/profile")} testID="publish-needs-email" />
+        </>
+      ) : null}
 
       <Row>
         <Button small variant="secondary" title={t("org.eventCard.edit")} onPress={() => router.push(`/event-form?id=${event.id}`)} testID="edit-event" />

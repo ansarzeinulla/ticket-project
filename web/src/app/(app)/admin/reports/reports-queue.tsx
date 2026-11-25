@@ -102,7 +102,7 @@ export function ReportsQueue() {
           <Link href="/admin" className="text-sm text-foreground-muted hover:underline">
             {t("org.reports.back")}
           </Link>
-          <h1 className="mt-2 text-2xl font-semibold tracking-tight">{t("org.titles.reports")}</h1>
+          <h1 className="mt-2 text-3xl font-bold">{t("org.titles.reports")}</h1>
           <p className="mt-1 text-sm text-foreground-muted">
             {t("org.reports.subtitle")}
           </p>
@@ -120,7 +120,7 @@ export function ReportsQueue() {
             onClick={() => setStatus(filter.value)}
             aria-pressed={status === filter.value}
             data-testid={`report-filter-${filter.value || "all"}`}
-            className={`rounded-full px-3 py-1.5 text-xs font-medium ${
+            className={`rounded px-3 py-1.5 text-xs font-medium ${
               status === filter.value
                 ? "bg-brand text-white"
                 : "border border-border-subtle hover:bg-surface-muted"
@@ -162,11 +162,11 @@ export function ReportsQueue() {
                       {report.event_title}
                     </Link>
                     <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_TONES[report.status]}`}
+                      className={`rounded px-2 py-0.5 text-xs font-medium ${STATUS_TONES[report.status]}`}
                     >
                       {t(STATUS_LABELS[report.status])}
                     </span>
-                    <span className="rounded-full bg-surface-muted px-2 py-0.5 text-xs">
+                    <span className="rounded bg-surface-muted px-2 py-0.5 text-xs">
                       {REASON_LABELS[report.reason] ? t(REASON_LABELS[report.reason]) : report.reason}
                     </span>
                   </div>

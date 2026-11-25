@@ -9,6 +9,7 @@ import { slugify } from "@/lib/datetime";
 import type { VenueLayout } from "@/lib/types";
 import { useT } from "@/lib/i18n/context";
 import type { Translator } from "@/lib/i18n/translate";
+import { CATEGORIES, isCategory } from "@/lib/catalogue";
 
 export const VISIBILITIES = ["public", "unlisted", "private"] as const;
 export const SEATING_MODES = ["general_admission", "assigned_seating"] as const;
@@ -267,14 +268,21 @@ export function EventFormFields({
           />
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <TextField
+            {/* The storefront's categories (BF-100); an older free-text value stays selectable. */}
+            <SelectField
               label={t("org.form.category")}
               name="category"
-              placeholder="music"
+              options={[
+                "",
+                ...CATEGORIES,
+                ...(values.category && !isCategory(values.category) ? [values.category] : []),
+              ]}
+              optionLabel={(option) => (option === "" ? "—" : isCategory(option) ? t(`categories.${option}`) : option)}
               value={values.category}
               error={fieldErrors.category}
               disabled={disabled}
               onChange={(event) => onChange("category", event.target.value)}
+              data-testid="event-category"
             />
             <SelectField
               label={t("org.form.visibility")}

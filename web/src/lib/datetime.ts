@@ -158,12 +158,18 @@ export function isoToLocalInput(iso: string, timeZone: string): string {
 }
 
 /** Render an API timestamp in the event's own timezone. */
-export function formatInTimezone(iso: string, timeZone: string): string {
+/** The Intl locale for one of the site's languages (BF-100: dates in the reader's language). */
+export function intlLocale(locale?: string): string {
+  return locale === "ru" ? "ru-RU" : locale === "kk" ? "kk-KZ" : "en-GB";
+}
+
+export function formatInTimezone(iso: string, timeZone: string, locale?: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
 
   try {
-    return new Intl.DateTimeFormat("en-GB", {
+    if (locale === "kk") return formatKazakh(date, timeZone);
+    return new Intl.DateTimeFormat(intlLocale(locale), {
       timeZone,
       dateStyle: "medium",
       timeStyle: "short",
@@ -171,6 +177,40 @@ export function formatInTimezone(iso: string, timeZone: string): string {
   } catch {
     return date.toISOString();
   }
+}
+
+/** A calendar date in the page's language, e.g. "28 нояб. 2026 г." (BF-100). */
+export function formatDay(iso: string | null | undefined, locale?: string, timeZone = "Asia/Almaty"): string {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  if (locale === "kk") return formatKazakh(date, timeZone).split(",")[0];
+  return new Intl.DateTimeFormat(intlLocale(locale), { timeZone, dateStyle: "medium" }).format(date);
+}
+
+const KK_MONTHS = ["қаң.", "ақп.", "нау.", "сәу.", "мам.", "мау.", "шіл.", "там.", "қыр.", "қаз.", "қар.", "жел."];
+
+/**
+ * Kazakh dates are spelled out here rather than by Intl: many browsers and
+ * phone engines ship without Kazakh locale data and fall back to "2026 M11 28",
+ * which also makes the server and browser disagree. Same shape as Node's
+ * kk-KZ output: "2026 ж. 28 қар., 09:00".
+ */
+function formatKazakh(date: Date, timeZone: string): string {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-GB", {
+      timeZone,
+      year: "numeric",
+      month: "numeric",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    })
+      .formatToParts(date)
+      .map((part) => [part.type, part.value]),
+  );
+  return `${parts.year} ж. ${Number(parts.day)} ${KK_MONTHS[Number(parts.month) - 1]}, ${parts.hour}:${parts.minute}`;
 }
 
 /** A `datetime-local` value for `daysFromNow`, rounded to the hour. */

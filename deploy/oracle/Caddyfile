@@ -1,0 +1,14 @@
+# One address for everything (BF-100). Caddy fetches and renews the HTTPS
+# certificate for {$DOMAIN} on its own.
+{$DOMAIN} {
+	encode zstd gzip
+
+	# The Go API: its routes, the catalogue posters, uploaded banners and the
+	# health check a monitor can ping. Only /api/v1 - the website has its own
+	# /api/auth, /api/proxy and /api/locale routes.
+	@api path /api/v1/* /media/* /uploads/* /health
+	reverse_proxy @api api:8080
+
+	# Everything else is the website.
+	reverse_proxy web:3000
+}
