@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Image, StyleSheet } from "react-native";
 
 import { Banner, Body, Button, Card, Heading, KV, Loading, Muted, Row, Screen, Title } from "../../../components/ui";
+import { cityLabel } from "../../../lib/catalogue";
 import { ApiError, api } from "../../../lib/client";
 import { formatInTimezone } from "../../../lib/datetime";
 import { mediaURL } from "../../../lib/media";
@@ -45,7 +46,7 @@ export default function PreviewScreen() {
           label={t("eventPage.when")}
           value={`${formatInTimezone(event.starts_at, event.timezone)}\n${t("eventPage.until", { time: formatInTimezone(event.ends_at, event.timezone), tz: event.timezone })}`}
         />
-        {event.venue_name ? <KV label={t("eventPage.where")} value={[event.venue_name, event.venue_address].filter(Boolean).join("\n")} /> : null}
+        {event.venue_name || event.city ? <KV label={t("eventPage.where")} value={[[event.venue_name, cityLabel(t, event.city)].filter(Boolean).join(" · "), event.venue_address].filter(Boolean).join("\n")} /> : null}
       </Row>
       {event.description ? <Body>{event.description}</Body> : null}
       <Heading>{t("tickets.heading")}</Heading>

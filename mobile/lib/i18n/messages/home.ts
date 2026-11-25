@@ -90,6 +90,7 @@ export const enHome = {
     almaty: "Almaty",
     astana: "Astana",
     shymkent: "Shymkent",
+    other: "Other city",
   },
 };
 
@@ -183,6 +184,7 @@ export const ruHome: HomeMessages = {
     almaty: "Алматы",
     astana: "Астана",
     shymkent: "Шымкент",
+    other: "Другой город",
   },
 };
 
@@ -274,5 +276,6 @@ export const kkHome: HomeMessages = {
     almaty: "Алматы",
     astana: "Астана",
     shymkent: "Шымкент",
+    other: "Басқа қала",
   },
 };

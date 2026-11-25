@@ -52,6 +52,8 @@ export interface BiletEvent {
   cover_image_url?: string;
   venue_name?: string;
   venue_address?: string;
+  /** almaty, astana, shymkent or other; older events may have none (BF-100). */
+  city?: string;
   starts_at: string;
   ends_at: string;
   timezone: string;
@@ -116,6 +118,7 @@ export interface CreateEventInput {
   category?: string;
   venue_name?: string;
   venue_address?: string;
+  city?: string;
   starts_at: string;
   ends_at: string;
   timezone: string;

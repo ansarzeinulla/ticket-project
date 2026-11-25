@@ -28,6 +28,7 @@ type createEventRequest struct {
 	VenueID              *string    `json:"venue_id"`
 	VenueName            *string    `json:"venue_name"`
 	VenueAddress         *string    `json:"venue_address"`
+	City                 *string    `json:"city"`
 	StartsAt             *time.Time `json:"starts_at"`
 	EndsAt               *time.Time `json:"ends_at"`
 	Timezone             *string    `json:"timezone"`
@@ -137,6 +138,10 @@ func (s *Server) handleCreateEvent(w http.ResponseWriter, r *http.Request) {
 	if req.Capacity != nil && *req.Capacity <= 0 {
 		errs.add("capacity", "Capacity must be greater than zero.")
 	}
+	// Optional, so older clients that never send a city keep working (BF-100).
+	if req.City != nil && !validEventCities[*req.City] {
+		errs.add("city", eventCityMessage)
+	}
 	if req.RegistrationOpensAt != nil && req.RegistrationClosesAt != nil &&
 		!req.RegistrationClosesAt.After(*req.RegistrationOpensAt) {
 		errs.add("registration_closes_at", "Registration must close after it opens.")
@@ -168,6 +173,7 @@ func (s *Server) handleCreateEvent(w http.ResponseWriter, r *http.Request) {
 		CoverImageURL:        req.CoverImageURL,
 		VenueName:            req.VenueName,
 		VenueAddress:         req.VenueAddress,
+		City:                 req.City,
 		StartsAt:             *req.StartsAt,
 		EndsAt:               *req.EndsAt,
 		Timezone:             timezone,
@@ -222,14 +228,6 @@ func (s *Server) handleGetEvent(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, eventResponse{Event: event})
 }
 
-// citySpellings maps the catalogue's city filter to the names a venue address
-// may use for it, in Russian, Kazakh and English.
-var citySpellings = map[string][]string{
-	"almaty":   {"Алматы", "Almaty"},
-	"astana":   {"Астана", "Astana"},
-	"shymkent": {"Шымкент", "Shymkent"},
-}
-
 func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
 	limit, offset, errs := pagination(r)
 	q := r.URL.Query()
@@ -248,14 +246,12 @@ func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
 	if v := q.Get("q"); v != "" {
 		filter.Search = &v
 	}
+	// The picker offers the three cities; "other" is not a place to browse.
 	if v := q.Get("city"); v != "" {
-		spellings, ok := citySpellings[v]
-		if !ok {
+		if !validEventCities[v] || v == "other" {
 			errs.add("city", "Must be almaty, astana or shymkent.")
 		} else {
-			for _, name := range spellings {
-				filter.City = append(filter.City, "%"+name+"%")
-			}
+			filter.City = &v
 		}
 	}
 	if v := q.Get("starts_after"); v != "" {
@@ -366,6 +362,7 @@ type updateEventRequest struct {
 	VenueID              store.Optional[uuid.UUID] `json:"venue_id"`
 	VenueName            store.Optional[string]    `json:"venue_name"`
 	VenueAddress         store.Optional[string]    `json:"venue_address"`
+	City                 store.Optional[string]    `json:"city"`
 	StartsAt             store.Optional[time.Time] `json:"starts_at"`
 	EndsAt               store.Optional[time.Time] `json:"ends_at"`
 	Timezone             store.Optional[string]    `json:"timezone"`
@@ -390,6 +387,7 @@ func (req updateEventRequest) toParams() store.UpdateEventParams {
 		VenueID:              req.VenueID,
 		VenueName:            req.VenueName,
 		VenueAddress:         req.VenueAddress,
+		City:                 req.City,
 		StartsAt:             req.StartsAt,
 		EndsAt:               req.EndsAt,
 		Timezone:             req.Timezone,
@@ -459,6 +457,9 @@ func (s *Server) handleUpdateEvent(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Capacity.Set && req.Capacity.Valid && req.Capacity.Value <= 0 {
 		errs.add("capacity", "Capacity must be greater than zero.")
+	}
+	if req.City.Set && req.City.Valid && !validEventCities[req.City.Value] {
+		errs.add("city", eventCityMessage)
 	}
 
 	// Optional free-text fields, when the patch touches them.

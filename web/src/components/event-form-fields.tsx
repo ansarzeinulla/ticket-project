@@ -9,7 +9,7 @@ import { slugify } from "@/lib/datetime";
 import type { VenueLayout } from "@/lib/types";
 import { useT } from "@/lib/i18n/context";
 import type { Translator } from "@/lib/i18n/translate";
-import { CATEGORIES, isCategory } from "@/lib/catalogue";
+import { CATEGORIES, EVENT_CITIES, isCategory } from "@/lib/catalogue";
 
 export const VISIBILITIES = ["public", "unlisted", "private"] as const;
 export const SEATING_MODES = ["general_admission", "assigned_seating"] as const;
@@ -34,6 +34,8 @@ export interface EventFormValues {
   category: string;
   venueName: string;
   venueAddress: string;
+  /** One of EVENT_CITIES; the catalogue's city filter reads it (BF-100). */
+  city: string;
   visibility: string;
   /** SRS 4.2: "Define registration opening and closing times." Optional. */
   registrationOpensAt: string;
@@ -129,6 +131,23 @@ export function EventFormFields({
           onChange={(event) => onChange("slug", event.target.value)}
         />
       )}
+
+      {/* Required: an event without a city never shows under the city picker (BF-100). */}
+      <SelectField
+        label={t("org.form.city")}
+        name="city"
+        required
+        options={["", ...EVENT_CITIES]}
+        optionLabel={(option) =>
+          option === "" ? t("org.form.chooseCity") : t(`cities.${option as (typeof EVENT_CITIES)[number]}`)
+        }
+        value={values.city}
+        error={fieldErrors.city}
+        disabled={disabled}
+        hint={t("org.form.cityHint")}
+        onChange={(event) => onChange("city", event.target.value)}
+        data-testid="event-city"
+      />
 
       <div className="grid gap-4 sm:grid-cols-2">
         <TextField
@@ -341,6 +360,7 @@ export function validateEventForm(
 } {
   const errors: Record<string, string> = {};
   if (!values.title.trim()) errors.title = t("org.form.errTitle");
+  if (!values.city) errors.city = t("org.form.errCity");
 
   // The organizer types wall-clock time at the venue; convert it to a real
   // instant using the event's own timezone, not the browser's.

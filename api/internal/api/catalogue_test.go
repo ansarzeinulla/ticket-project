@@ -9,21 +9,27 @@ import (
 	"github.com/biletflow/api/internal/media"
 )
 
-// The home page's city picker filters on the venue address, in any of the
-// spellings an organizer may have typed (BF-100).
+// The home page's city picker filters on the city the organizer picked in the
+// event form, not on the address text (BF-100).
 func TestListEventsFiltersByCity(t *testing.T) {
 	c := newClient(t)
 	owner := c.register("cities")
 
-	for title, address := range map[string]string{
-		"Almaty In Russian": "улица Калдаякова, 35, Алматы",
-		"Almaty In English": "Abay Avenue 44, Almaty",
-		"Astana Event":      "проспект Мангилик Ел, Астана",
+	for title, city := range map[string]string{
+		"Almaty Concert": "almaty",
+		"Almaty Lecture": "almaty",
+		"Astana Event":   "astana",
+		"Somewhere Else": "other",
 	} {
 		body := validEventBody(title)
-		body["venue_address"] = address
+		body["city"] = city
+		// The address alone no longer decides the city.
+		body["venue_address"] = "Abay Avenue 44, Almaty"
 		res := c.post("/api/v1/events", owner.Token, body)
 		requireStatus(t, res, http.StatusCreated)
+		if got := res.eventString("city"); got != city {
+			t.Errorf("%s: city = %q, want %q", title, got, city)
+		}
 		requireStatus(t, c.post("/api/v1/events/"+res.eventString("id")+"/publish", owner.Token, nil), http.StatusOK)
 	}
 
@@ -33,7 +39,7 @@ func TestListEventsFiltersByCity(t *testing.T) {
 		return len(res.Body["events"].([]any))
 	}
 	if got := count("/api/v1/events?city=almaty"); got != 2 {
-		t.Errorf("almaty: got %d events, want 2 (both spellings)", got)
+		t.Errorf("almaty: got %d events, want 2", got)
 	}
 	if got := count("/api/v1/events?city=astana"); got != 1 {
 		t.Errorf("astana: got %d events, want 1", got)
@@ -42,6 +48,29 @@ func TestListEventsFiltersByCity(t *testing.T) {
 		t.Errorf("shymkent: got %d events, want 0", got)
 	}
 	requireErrorCode(t, c.get("/api/v1/events?city=paris", ""), http.StatusUnprocessableEntity, "validation_failed")
+	requireErrorCode(t, c.get("/api/v1/events?city=other", ""), http.StatusUnprocessableEntity, "validation_failed")
+}
+
+// The city is one of four values on create and on edit, and can be changed.
+func TestEventCityIsValidated(t *testing.T) {
+	c := newClient(t)
+	owner := c.register("citycheck")
+
+	body := validEventBody("Paris Event")
+	body["city"] = "paris"
+	requireErrorCode(t, c.post("/api/v1/events", owner.Token, body), http.StatusUnprocessableEntity, "validation_failed")
+
+	// Older clients send no city at all, and that still works.
+	id, _ := c.createEvent(owner.Token, "No City Yet")
+	path := "/api/v1/events/" + id.String()
+	requireErrorCode(t, c.patch(path, owner.Token, map[string]any{"city": "paris"}),
+		http.StatusUnprocessableEntity, "validation_failed")
+
+	res := c.patch(path, owner.Token, map[string]any{"city": "shymkent"})
+	requireStatus(t, res, http.StatusOK)
+	if got := res.eventString("city"); got != "shymkent" {
+		t.Errorf("city after edit = %q, want shymkent", got)
+	}
 }
 
 // The catalogue's posters are compiled in and served without authentication.

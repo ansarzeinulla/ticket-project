@@ -7,6 +7,7 @@ import { useCategoryLabel } from "../../components/posters";
 import { SeatedCheckout } from "../../components/seated-checkout";
 import { TicketCheckout } from "../../components/ticket-checkout";
 import { Banner, Body, Heading, Loading, Muted, Screen } from "../../components/ui";
+import { cityLabel } from "../../lib/catalogue";
 import { ApiError, api } from "../../lib/client";
 import { formatInTimezone } from "../../lib/datetime";
 import { useI18n } from "../../lib/i18n/context";
@@ -57,6 +58,8 @@ export default function EventScreen() {
   const prices = ticketTypes.map((type) => toTiyn(type.price_kzt));
   const cheapest = prices.length > 0 ? Math.min(...prices) : null;
   const label = categoryLabel(event.category);
+  // Beside the venue, as on the website (BF-100).
+  const venueLine = [event.venue_name, cityLabel(t, event.city)].filter(Boolean).join(" · ");
 
   return (
     <Screen>
@@ -70,9 +73,9 @@ export default function EventScreen() {
         <Text style={styles.title}>{event.title}</Text>
         <Text style={styles.line}>{formatInTimezone(event.starts_at, event.timezone, locale)}</Text>
         <Text style={styles.address}>{t("eventPage.until", { time: formatInTimezone(event.ends_at, event.timezone, locale), tz: event.timezone })}</Text>
-        {event.venue_name ? (
+        {venueLine ? (
           <Text style={styles.line}>
-            {event.venue_name}
+            {venueLine}
             {event.venue_address ? <Text style={styles.address}>{`, ${event.venue_address}`}</Text> : null}
           </Text>
         ) : null}

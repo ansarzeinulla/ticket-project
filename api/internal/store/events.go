@@ -24,6 +24,7 @@ type Event struct {
 	CoverImageURL         *string    `json:"cover_image_url,omitempty"`
 	VenueName             *string    `json:"venue_name,omitempty"`
 	VenueAddress          *string    `json:"venue_address,omitempty"`
+	City                  *string    `json:"city,omitempty"` // almaty, astana, shymkent or other (BF-100)
 	StartsAt              time.Time  `json:"starts_at"`
 	EndsAt                time.Time  `json:"ends_at"`
 	Timezone              string     `json:"timezone"`
@@ -78,7 +79,7 @@ type EventStore struct {
 func NewEventStore(pool *pgxpool.Pool) *EventStore { return &EventStore{pool: pool} }
 
 const eventColumns = `id, organizer_id, venue_id, title, slug, description, category,
-	cover_image_url, venue_name, venue_address, starts_at, ends_at, timezone,
+	cover_image_url, venue_name, venue_address, city, starts_at, ends_at, timezone,
 	status::text, visibility::text, seating_mode::text, capacity,
 	registration_opens_at, registration_closes_at, paid_sales_enabled, refund_policy,
 	published_at, cancelled_at, duplicated_from_event_id, created_at, updated_at`
@@ -86,7 +87,7 @@ const eventColumns = `id, organizer_id, venue_id, title, slug, description, cate
 func scanEvent(row pgx.Row) (Event, error) {
 	var e Event
 	err := row.Scan(&e.ID, &e.OrganizerID, &e.VenueID, &e.Title, &e.Slug, &e.Description,
-		&e.Category, &e.CoverImageURL, &e.VenueName, &e.VenueAddress, &e.StartsAt, &e.EndsAt,
+		&e.Category, &e.CoverImageURL, &e.VenueName, &e.VenueAddress, &e.City, &e.StartsAt, &e.EndsAt,
 		&e.Timezone, &e.Status, &e.Visibility, &e.SeatingMode, &e.Capacity,
 		&e.RegistrationOpensAt, &e.RegistrationClosesAt, &e.PaidSalesEnabled, &e.RefundPolicy,
 		&e.PublishedAt, &e.CancelledAt, &e.DuplicatedFromEventID, &e.CreatedAt, &e.UpdatedAt)
@@ -108,6 +109,7 @@ type CreateEventParams struct {
 	CoverImageURL        *string
 	VenueName            *string
 	VenueAddress         *string
+	City                 *string
 	StartsAt             time.Time
 	EndsAt               time.Time
 	Timezone             string
@@ -162,14 +164,14 @@ func (s *EventStore) insert(ctx context.Context, p CreateEventParams, slug strin
 			organizer_id, venue_id, title, slug, description, category, cover_image_url,
 			venue_name, venue_address, starts_at, ends_at, timezone,
 			status, visibility, seating_mode, capacity,
-			registration_opens_at, registration_closes_at, refund_policy)
+			registration_opens_at, registration_closes_at, refund_policy, city)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-			'draft', $13::event_visibility, $14::seating_mode, $15, $16, $17, $18)
+			'draft', $13::event_visibility, $14::seating_mode, $15, $16, $17, $18, $19)
 		RETURNING `+eventColumns,
 		p.OrganizerID, p.VenueID, p.Title, slug, p.Description, p.Category, p.CoverImageURL,
 		p.VenueName, p.VenueAddress, p.StartsAt, p.EndsAt, p.Timezone,
 		p.Visibility, p.SeatingMode, p.Capacity,
-		p.RegistrationOpensAt, p.RegistrationClosesAt, p.RefundPolicy))
+		p.RegistrationOpensAt, p.RegistrationClosesAt, p.RefundPolicy, p.City))
 	if err != nil {
 		return Event{}, mapError(err)
 	}
@@ -209,8 +211,8 @@ type ListEventsFilter struct {
 	Visibilities []string
 	Category     *string
 	Search       *string
-	// City matches any of the spellings in the venue address (Алматы / Almaty).
-	City         []string
+	// City is one of the stored city values (BF-100).
+	City         *string
 	StartsAfter  *time.Time
 	StartsBefore *time.Time
 	Limit        int
@@ -246,8 +248,8 @@ func (s *EventStore) List(ctx context.Context, f ListEventsFilter) ([]Event, int
 			"(title ILIKE '%%' || $%d || '%%' OR description ILIKE '%%' || $%[1]d || '%%')",
 			len(args)))
 	}
-	if len(f.City) > 0 {
-		add("venue_address ILIKE ANY($%d)", f.City)
+	if f.City != nil {
+		add("city = $%d", *f.City)
 	}
 	if f.StartsAfter != nil {
 		add("starts_at >= $%d", *f.StartsAfter)
@@ -301,6 +303,7 @@ type UpdateEventParams struct {
 	CoverImageURL        Optional[string]
 	VenueName            Optional[string]
 	VenueAddress         Optional[string]
+	City                 Optional[string]
 	VenueID              Optional[uuid.UUID]
 	StartsAt             Optional[time.Time]
 	EndsAt               Optional[time.Time]
@@ -336,6 +339,7 @@ func (s *EventStore) Update(ctx context.Context, id uuid.UUID, p UpdateEventPara
 	set("cover_image_url", p.CoverImageURL.Set, p.CoverImageURL.Ptr())
 	set("venue_name", p.VenueName.Set, p.VenueName.Ptr())
 	set("venue_address", p.VenueAddress.Set, p.VenueAddress.Ptr())
+	set("city", p.City.Set, p.City.Ptr())
 	set("venue_id", p.VenueID.Set, p.VenueID.Ptr())
 	set("starts_at", p.StartsAt.Set, p.StartsAt.Ptr())
 	set("ends_at", p.EndsAt.Set, p.EndsAt.Ptr())

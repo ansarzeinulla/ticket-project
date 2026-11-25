@@ -6,7 +6,7 @@ import { Image, StyleSheet } from "react-native";
 import { Banner, Button, Card, Choice, Field, Heading, Loading, Muted, Row, Screen, Title } from "../components/ui";
 import { useAuth } from "../lib/auth-context";
 import { ApiError, api } from "../lib/client";
-import { CATEGORIES, isCategory } from "../lib/catalogue";
+import { CATEGORIES, EVENT_CITIES, isCategory } from "../lib/catalogue";
 import { DATE_INPUT_HINT, inputToISO, isoToInput } from "../lib/date-input";
 import { slugify, timezoneOptions } from "../lib/datetime";
 import { mediaURL } from "../lib/media";
@@ -31,6 +31,7 @@ interface Values {
   visibility: Visibility;
   venueName: string;
   venueAddress: string;
+  city: string;
   refundPolicy: string;
   coverImageURL: string;
   registrationOpensAt: string;
@@ -58,6 +59,7 @@ function fromEvent(event: BiletEvent): Values {
     visibility: event.visibility,
     venueName: event.venue_name ?? "",
     venueAddress: event.venue_address ?? "",
+    city: event.city ?? "",
     refundPolicy: event.refund_policy ?? "",
     coverImageURL: event.cover_image_url ?? "",
     registrationOpensAt: isoToInput(event.registration_opens_at, event.timezone),
@@ -85,7 +87,7 @@ export default function EventFormScreen() {
       : {
           title: "", slug: "", startsAt: inDays(30, 19), endsAt: inDays(30, 22), timezone: "Asia/Almaty",
           capacity: "200", description: "", category: "", visibility: "public", venueName: "",
-          venueAddress: "", refundPolicy: "", coverImageURL: "", registrationOpensAt: "",
+          venueAddress: "", city: "", refundPolicy: "", coverImageURL: "", registrationOpensAt: "",
           registrationClosesAt: "", seatingMode: "general_admission", venueID: "",
         },
   );
@@ -146,6 +148,7 @@ export default function EventFormScreen() {
     if (!values) return;
     const errors: Record<string, string> = {};
     if (!values.title.trim()) errors.title = t("org.form.errTitle");
+    if (!values.city) errors.city = t("org.form.errCity");
     if (!zones.includes(values.timezone)) errors.timezone = DATE_INPUT_HINT;
     const startsISO = inputToISO(values.startsAt, values.timezone);
     const endsISO = inputToISO(values.endsAt, values.timezone);
@@ -176,6 +179,7 @@ export default function EventFormScreen() {
           ends_at: endsISO as string,
           timezone: values.timezone,
           visibility: values.visibility,
+          city: values.city,
           ...(values.slug.trim() ? { slug: slugify(values.slug) } : {}),
           ...(capacity ? { capacity: Number(capacity) } : {}),
           description: optional(values.description),
@@ -201,6 +205,7 @@ export default function EventFormScreen() {
       if (startsISO && startsISO !== event.starts_at) patch.starts_at = startsISO;
       if (endsISO && endsISO !== event.ends_at) patch.ends_at = endsISO;
       if (!slugLocked && slugify(values.slug) !== before.slug) patch.slug = slugify(values.slug);
+      if (values.city !== before.city) patch.city = values.city;
       if (capacity !== before.capacity) patch.capacity = capacity === "" ? null : Number(capacity);
       if (values.registrationOpensAt !== before.registrationOpensAt) patch.registration_opens_at = opensISO;
       if (values.registrationClosesAt !== before.registrationClosesAt) patch.registration_closes_at = closesISO;
@@ -271,6 +276,15 @@ export default function EventFormScreen() {
           autoCapitalize="none"
         />
       )}
+      {/* Required, like on the website: the catalogue's city picker reads it (BF-100). */}
+      <Choice
+        label={t("org.form.city")}
+        options={EVENT_CITIES.map((value) => ({ value: value as string, label: t(`cities.${value}`) }))}
+        value={values.city}
+        onChange={(v) => set("city", v)}
+        hint={t("org.form.cityHint")}
+        error={fieldErrors.city}
+      />
       <Field label={t("org.form.startsAt")} value={values.startsAt} onChangeText={(v) => set("startsAt", v)} hint={DATE_INPUT_HINT} error={fieldErrors.starts_at} autoCapitalize="none" />
       <Field label={t("org.form.endsAt")} value={values.endsAt} onChangeText={(v) => set("endsAt", v)} hint={DATE_INPUT_HINT} error={fieldErrors.ends_at} autoCapitalize="none" />
       <Field label={t("org.eventCard.timezone")} value={values.timezone} onChangeText={(v) => set("timezone", v)} hint={t("org.form.timezoneHint")} error={fieldErrors.timezone} autoCapitalize="none" />

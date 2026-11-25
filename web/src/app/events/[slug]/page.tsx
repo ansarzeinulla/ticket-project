@@ -7,7 +7,7 @@ import { EventAnalyticsTracker } from "@/components/event-analytics-tracker";
 import { SeatedPurchase } from "@/components/seated-purchase";
 import { ApiError, api } from "@/lib/api";
 import { formatInTimezone } from "@/lib/datetime";
-import { categoryLabel } from "@/lib/catalogue";
+import { categoryLabel, cityLabel } from "@/lib/catalogue";
 import type { MessageKey } from "@/lib/i18n/dictionaries";
 import { getTranslations } from "@/lib/i18n/server";
 import { mediaURL } from "@/lib/media";
@@ -62,6 +62,9 @@ export default async function PublicEventPage({
   const prices = ticketTypes.map((type) => toTiyn(type.price_kzt));
   const cheapest = prices.length > 0 ? Math.min(...prices) : null;
   const label = categoryLabel(t as (key: MessageKey) => string, event.category);
+  // Shown beside the venue, since a scraped address does not always name the city (BF-100).
+  const city = cityLabel(t as (key: MessageKey) => string, event.city);
+  const venueLine = [event.venue_name, city].filter(Boolean).join(" · ");
 
   return (
     <main>
@@ -105,10 +108,10 @@ export default async function PublicEventPage({
                   })}
                 </dd>
               </div>
-              {event.venue_name && (
+              {venueLine && (
                 <div>
                   <dt className="sr-only">{t("eventPage.where")}</dt>
-                  <dd className="font-semibold">{event.venue_name}</dd>
+                  <dd className="font-semibold">{venueLine}</dd>
                   {event.venue_address && <dd className="text-white/70">{event.venue_address}</dd>}
                 </div>
               )}
@@ -179,7 +182,7 @@ export default async function PublicEventPage({
           {event.venue_name && (
             <section className="space-y-2 rounded-lg bg-surface p-6 ring-1 ring-border-subtle">
               <h2 className="text-xl font-bold">{t("eventPage.where")}</h2>
-              <p className="font-semibold">{event.venue_name}</p>
+              <p className="font-semibold">{venueLine}</p>
               {event.venue_address && <p className="text-foreground-muted">{event.venue_address}</p>}
               <a
                 href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([event.venue_name, event.venue_address].filter(Boolean).join(", "))}`}

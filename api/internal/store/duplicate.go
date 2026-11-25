@@ -85,15 +85,15 @@ func (s *EventStore) Duplicate(ctx context.Context, p DuplicateParams) (Event, e
 				organizer_id, venue_id, title, slug, description, category, cover_image_url,
 				venue_name, venue_address, starts_at, ends_at, timezone,
 				status, visibility, seating_mode, capacity, refund_policy,
-				duplicated_from_event_id)
+				duplicated_from_event_id, city)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-				'draft', $13::event_visibility, $14::seating_mode, $15, $16, $17)
+				'draft', $13::event_visibility, $14::seating_mode, $15, $16, $17, $18)
 			RETURNING `+eventColumns,
 			source.OrganizerID, source.VenueID, title, slug, source.Description,
 			source.Category, source.CoverImageURL, source.VenueName, source.VenueAddress,
 			startsAt, endsAt, source.Timezone,
 			source.Visibility, source.SeatingMode, source.Capacity, source.RefundPolicy,
-			source.ID))
+			source.ID, source.City))
 
 		if err == nil {
 			if commitErr := savepoint.Commit(ctx); commitErr != nil {
