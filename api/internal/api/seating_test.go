@@ -377,3 +377,31 @@ func TestSeatFromAnotherEventIsRefused(t *testing.T) {
 		t.Errorf("a foreign seat was accepted: %d %s", res.Status, res.Raw)
 	}
 }
+
+// TestVenuesListThePredefinedLayout: an organizer can see which seated venue
+// to pick, with the sections their ticket types must match.
+func TestVenuesListThePredefinedLayout(t *testing.T) {
+	c := newClient(t)
+	organizer := c.register("venuelist")
+	venueID := c.seedVenueLayout()
+
+	requireStatus(t, c.get("/api/v1/venues", ""), http.StatusUnauthorized)
+	res := c.get("/api/v1/venues", organizer.Token)
+	requireStatus(t, res, http.StatusOK)
+
+	for _, item := range res.Body["venues"].([]any) {
+		venue := item.(map[string]any)
+		if venue["id"] != venueID.String() {
+			continue
+		}
+		sections := venue["sections"].([]any)
+		if len(sections) != 3 {
+			t.Fatalf("sections = %d, want 3", len(sections))
+		}
+		if venue["seats"] != float64(fixtureSeats) {
+			t.Fatalf("seats = %v, want %d", venue["seats"], fixtureSeats)
+		}
+		return
+	}
+	t.Fatal("the predefined venue is not listed")
+}

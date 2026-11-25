@@ -18,8 +18,10 @@ import { Button, Spinner } from "@/components/ui/button";
 import { LIFECYCLE_LABELS, StatusBadge } from "@/components/ui/status-badge";
 import { ApiError, api } from "@/lib/api";
 import { formatInTimezone } from "@/lib/datetime";
-import { useT } from "@/lib/i18n/context";
-import type { BiletEvent, TicketType } from "@/lib/types";
+import { mediaURL } from "@/lib/media";
+import { useI18n, useT } from "@/lib/i18n/context";
+import type { MessageKey } from "@/lib/i18n/dictionaries";
+import type { BiletEvent, TicketType, VenueLayoutSection } from "@/lib/types";
 
 export function EventDetail({ eventID }: { eventID: string }) {
   // Bumped when something elsewhere on the page changes the figures - a
@@ -28,7 +30,8 @@ export function EventDetail({ eventID }: { eventID: string }) {
   const [refreshKey, setRefreshKey] = useState(0);
 
   const router = useRouter();
-  const t = useT();
+  const { t, locale } = useI18n();
+  const [sections, setSections] = useState<VenueLayoutSection[]>([]);
 
   const [event, setEvent] = useState<BiletEvent | null>(null);
   const [ticketTypes, setTicketTypes] = useState<TicketType[]>([]);
@@ -44,6 +47,13 @@ export function EventDetail({ eventID }: { eventID: string }) {
       ]);
       setEvent(loaded);
       setTicketTypes(types);
+      // A seated event's ticket types are matched to its venue's sections.
+      if (loaded.seating_mode === "assigned_seating" && loaded.venue_id) {
+        const venues = await api.listVenues(signal);
+        setSections(venues.find((venue) => venue.id === loaded.venue_id)?.sections ?? []);
+      } else {
+        setSections([]);
+      }
       setError(null);
     } catch (cause) {
       if (cause instanceof DOMException && cause.name === "AbortError") return;
@@ -100,59 +110,60 @@ export function EventDetail({ eventID }: { eventID: string }) {
           {t("org.detail.back")}
         </Link>
 
-        <div className="mt-2 flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight">{event.title}</h1>
-          <StatusBadge status={event.status} />
-          <span className="rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-medium capitalize text-foreground-muted">
-            {t(LIFECYCLE_LABELS[event.lifecycle])}
-          </span>
-
-          <div className="ml-auto">
-            <Button
-              variant="secondary"
-              size="sm"
-              loading={duplicating}
-              onClick={() => void handleDuplicate()}
-              data-testid="duplicate-event"
-            >
-              {t("org.detail.duplicate")}
-            </Button>
+        {/* The event at a glance (BF-100): poster, title, status, when, actions. */}
+        <div className="mt-3 flex gap-5 rounded-lg bg-surface p-4 ring-1 ring-border-subtle sm:p-5">
+          {event.cover_image_url && (
+            <div className="aspect-[2/3] w-20 shrink-0 self-start overflow-hidden rounded-md bg-surface-muted sm:w-28">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={mediaURL(event.cover_image_url)} alt="" className="h-full w-full object-cover" />
+            </div>
+          )}
+          <div className="min-w-0 flex-1 space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusBadge status={event.status} />
+              {event.lifecycle !== event.status && (
+                <span className="rounded bg-surface-muted px-2.5 py-0.5 text-xs font-medium capitalize text-foreground-muted">
+                  {t(LIFECYCLE_LABELS[event.lifecycle])}
+                </span>
+              )}
+            </div>
+            <h1 className="break-words text-2xl font-bold leading-tight sm:text-3xl">{event.title}</h1>
+            <p className="text-sm text-foreground-muted">
+              {formatInTimezone(event.starts_at, event.timezone, locale)} – {formatInTimezone(event.ends_at, event.timezone, locale)} ({event.timezone})
+              {", "}
+              {t("org.eventCard.capacity").toLowerCase()} {event.capacity ?? t("org.eventCard.unlimited")}
+            </p>
+            {event.duplicated_from_event_id && (
+              <p className="text-xs text-foreground-muted">
+                {t("org.detail.duplicatedFrom")}{" "}
+                <Link href={`/dashboard/events/${event.duplicated_from_event_id}`} className="text-brand hover:underline">
+                  {t("org.detail.earlierEvent")}
+                </Link>
+                .
+              </p>
+            )}
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <Button
+                variant="secondary"
+                size="sm"
+                loading={duplicating}
+                onClick={() => void handleDuplicate()}
+                data-testid="duplicate-event"
+              >
+                {t("org.detail.duplicate")}
+              </Button>
+              {event.status !== "published" && (
+                <Link
+                  href={`/dashboard/events/${event.id}/preview`}
+                  className="inline-flex items-center rounded-md border border-border-subtle px-3 py-1.5 text-xs font-semibold hover:bg-surface-muted"
+                  data-testid="preview-event"
+                >
+                  {t("orgSettings.preview")}
+                </Link>
+              )}
+            </div>
           </div>
         </div>
-
-        {event.duplicated_from_event_id && (
-          <p className="mt-2 text-xs text-foreground-muted">
-            {t("org.detail.duplicatedFrom")}{" "}
-            <Link
-              href={`/dashboard/events/${event.duplicated_from_event_id}`}
-              className="text-brand hover:underline"
-            >
-              {t("org.detail.earlierEvent")}
-            </Link>
-            .
-          </p>
-        )}
-
-        <p className="mt-1 font-mono text-xs text-foreground-muted">/{event.slug}</p>
-
-        <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-4">
-          <div>
-            <dt className="text-xs text-foreground-muted">{t("org.eventCard.starts")}</dt>
-            <dd className="mt-0.5">{formatInTimezone(event.starts_at, event.timezone)}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-foreground-muted">{t("org.eventCard.ends")}</dt>
-            <dd className="mt-0.5">{formatInTimezone(event.ends_at, event.timezone)}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-foreground-muted">{t("org.eventCard.timezone")}</dt>
-            <dd className="mt-0.5">{event.timezone}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-foreground-muted">{t("org.eventCard.capacity")}</dt>
-            <dd className="mt-0.5">{event.capacity ?? t("org.eventCard.unlimited")}</dd>
-          </div>
-        </dl>
 
         {event.status === "suspended" ? (
           <Alert tone="error" title={t("org.detail.suspendedTitle")}>
@@ -181,33 +192,110 @@ export function EventDetail({ eventID }: { eventID: string }) {
       */}
       <ActivationChecklist eventID={event.id} onActivated={() => setRefreshKey((n) => n + 1)} />
 
-      <EventAnalyticsPanel
-        key={`analytics-${refreshKey}`}
-        eventID={event.id}
-        ticketTypes={ticketTypes}
-      />
+      <SectionNav />
 
-      <OrderManager
-        eventID={event.id}
-        onRefunded={() => setRefreshKey((n) => n + 1)}
-      />
+      <Section id="analytics">
+        <EventAnalyticsPanel key={`analytics-${refreshKey}`} eventID={event.id} ticketTypes={ticketTypes} />
+      </Section>
+
+      <Section id="orders">
+        <OrderManager eventID={event.id} onRefunded={() => setRefreshKey((n) => n + 1)} />
+      </Section>
 
       {/*
         Keyed on the same counter as the analytics: a refund returns inventory,
         so leaving this panel showing the pre-refund "sold" would contradict
         the numbers directly above it.
       */}
-      <TicketTypeManager key={`types-${refreshKey}`} eventID={event.id} />
+      <Section id="tickets">
+        <TicketTypeManager key={`types-${refreshKey}`} eventID={event.id} timezone={event.timezone} sections={sections} />
+      </Section>
 
-      <AttendeeList key={`attendees-${refreshKey}`} eventID={event.id} />
+      <Section id="attendees">
+        <AttendeeList key={`attendees-${refreshKey}`} eventID={event.id} />
+      </Section>
 
-      <StaffManager eventID={event.id} />
+      <Section id="staff">
+        <StaffManager eventID={event.id} />
+      </Section>
 
-      <CampaignManager eventID={event.id} />
+      <Section id="promo">
+        <CampaignManager eventID={event.id} timezone={event.timezone} ticketTypes={ticketTypes} />
+      </Section>
 
-      <SupportInbox eventID={event.id} />
+      <Section id="support">
+        <SupportInbox eventID={event.id} />
+      </Section>
 
-      <EventTimeline eventID={event.id} />
+      <Section id="history">
+        <EventTimeline eventID={event.id} />
+      </Section>
     </div>
+  );
+}
+
+const SECTIONS: { id: string; label: MessageKey }[] = [
+  { id: "analytics", label: "org.analytics.heading" },
+  { id: "orders", label: "org.orders.heading" },
+  { id: "tickets", label: "org.types.heading" },
+  { id: "attendees", label: "org.attendees.heading" },
+  { id: "staff", label: "org.staff.heading" },
+  { id: "promo", label: "org.campaigns.heading" },
+  { id: "support", label: "orderSupport.heading" },
+  { id: "history", label: "org.timeline.heading" },
+];
+
+/** One part of the event page; a rule above, and an anchor for the section bar. */
+function Section({ id, children }: { id: string; children: React.ReactNode }) {
+  return (
+    <section id={id} className="scroll-mt-40 border-t border-border-subtle pt-8">
+      {children}
+    </section>
+  );
+}
+
+/**
+ * The event page holds everything about one event, so a bar under the site
+ * header jumps between its parts and shows which one is on screen (BF-100).
+ */
+function SectionNav() {
+  const t = useT();
+  const [current, setCurrent] = useState(SECTIONS[0].id);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries.filter((entry) => entry.isIntersecting);
+        if (visible.length > 0) setCurrent(visible[0].target.id);
+      },
+      { rootMargin: "-40% 0px -55% 0px" },
+    );
+    for (const section of SECTIONS) {
+      const element = document.getElementById(section.id);
+      if (element) observer.observe(element);
+    }
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <nav
+      className="scroll-row sticky top-[6.75rem] z-30 flex gap-6 overflow-x-auto border-b border-border-subtle bg-background"
+      aria-label={t("org.detail.sections")}
+    >
+      {SECTIONS.map((section) => (
+        <a
+          key={section.id}
+          href={`#${section.id}`}
+          aria-current={current === section.id ? "true" : undefined}
+          className={`relative shrink-0 whitespace-nowrap py-3 text-sm ${
+            current === section.id
+              ? "font-semibold text-foreground after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-brand"
+              : "text-foreground-muted hover:text-foreground"
+          }`}
+        >
+          {t(section.label)}
+        </a>
+      ))}
+    </nav>
   );
 }

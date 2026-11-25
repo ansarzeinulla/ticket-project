@@ -27,6 +27,3 @@ function resolveBaseURL(): string {
 }
 
 export const API_BASE_URL = resolveBaseURL();
-
-/** Shown on the login screen so a mis-pointed build is obvious immediately. */
-export const API_HOST_LABEL = API_BASE_URL.replace(/^https?:\/\//, "").replace("/api/v1", "");

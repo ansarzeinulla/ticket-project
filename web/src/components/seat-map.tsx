@@ -190,10 +190,10 @@ export function SeatMapPicker({
 
       {error && <Alert>{error}</Alert>}
 
-      <div className="overflow-x-auto rounded-xl border border-border-subtle bg-surface p-4">
+      <div className="overflow-x-auto rounded-lg border border-border-subtle bg-surface p-4 sm:p-6">
         <svg
           viewBox={`${plan.min_x - PADDING} ${plan.min_y - PADDING} ${width} ${height}`}
-          className="mx-auto block h-auto w-full max-w-2xl"
+          className="mx-auto block h-auto w-full max-w-3xl"
           role="group"
           aria-label={t("seatMap.mapLabel", { venue: plan.venue_name })}
         >
@@ -203,15 +203,17 @@ export function SeatMapPicker({
             y={plan.min_y - PADDING}
             width={width - PADDING}
             height={12}
-            rx={4}
-            fill="var(--color-surface-muted)"
+            rx={2}
+            fill="var(--color-foreground)"
           />
           <text
             x={plan.min_x + (width - PADDING * 2) / 2}
             y={plan.min_y - PADDING + 9}
             textAnchor="middle"
             fontSize={7}
-            fill="var(--color-foreground-muted)"
+            fontWeight={600}
+            letterSpacing={2}
+            fill="#fff"
           >
             {t("seatMap.stage")}
           </text>
@@ -227,13 +229,15 @@ export function SeatMapPicker({
 
                 return (
                   <g key={seat.id}>
-                    <circle
-                      cx={seat.x}
-                      cy={seat.y}
-                      r={SEAT_RADIUS}
+                    <rect
+                      x={seat.x - SEAT_RADIUS}
+                      y={seat.y - SEAT_RADIUS}
+                      width={SEAT_RADIUS * 2}
+                      height={SEAT_RADIUS * 2}
+                      rx={3}
                       fill={style.fill}
                       stroke={style.stroke}
-                      strokeWidth={state === "selected" ? 2.5 : 1.5}
+                      strokeWidth={state === "selected" ? 2 : 1.25}
                       // An accessible seat is dashed as well as marked, so it
                       // reads as different at a glance and without colour.
                       strokeDasharray={seat.accessible ? "3 2" : undefined}
@@ -277,12 +281,12 @@ export function SeatMapPicker({
 
       {/* The legend names every state in words, which is the other half of
           "colors and text or symbols". */}
-      <ul className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-foreground-muted">
+      <ul className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm text-foreground-muted sm:grid-cols-3">
         {(Object.keys(SEAT_STYLE) as SeatState[]).map((state) => (
           <li key={state} className="flex items-center gap-1.5">
             <span
               aria-hidden
-              className="inline-block size-3 rounded-full border"
+              className="inline-block size-4 shrink-0 rounded-sm border"
               style={{
                 background: SEAT_STYLE[state].fill,
                 borderColor: SEAT_STYLE[state].stroke,

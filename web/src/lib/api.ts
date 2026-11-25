@@ -7,6 +7,8 @@
  */
 
 import type {
+  AdminCampaign,
+  VenueLayout,
   AcceptedResponse,
   Activation,
   BuyerOrderListResponse,
@@ -341,10 +343,10 @@ export const api = {
       signal,
     });
     const payload = await response.json().catch(() => null);
-    if (!response.ok) {
+    if (!response.ok || !(payload as { user: User | null } | null)?.user) {
       const envelope = payload as ApiErrorBody | null;
       throw new ApiError(
-        response.status,
+        response.ok ? 401 : response.status,
         envelope?.error?.code ?? "unauthorized",
         envelope?.error?.message ?? "Not signed in.",
       );
@@ -385,10 +387,26 @@ export const api = {
   },
 
   /** GET /events - the public catalogue. */
-  listPublicEvents(params: { limit?: number; offset?: number } = {}, signal?: AbortSignal) {
+  listPublicEvents(
+    params: {
+      limit?: number;
+      offset?: number;
+      category?: string;
+      q?: string;
+      city?: string;
+      startsAfter?: string;
+      startsBefore?: string;
+    } = {},
+    signal?: AbortSignal,
+  ) {
     const query = new URLSearchParams();
     if (params.limit !== undefined) query.set("limit", String(params.limit));
     if (params.offset !== undefined) query.set("offset", String(params.offset));
+    if (params.category) query.set("category", params.category);
+    if (params.q) query.set("q", params.q);
+    if (params.city) query.set("city", params.city);
+    if (params.startsAfter) query.set("starts_after", params.startsAfter);
+    if (params.startsBefore) query.set("starts_before", params.startsBefore);
 
     const suffix = query.size > 0 ? `?${query}` : "";
     return request<EventListResponse>(`/events${suffix}`, { signal });
@@ -460,6 +478,12 @@ export const api = {
   },
 
   /** POST /events/{id}/ticket-types */
+  /** GET /venues - the predefined seated layouts (SRS 4.3.1). */
+  async listVenues(signal?: AbortSignal): Promise<VenueLayout[]> {
+    const data = await request<{ venues: VenueLayout[] }>("/venues", { signal });
+    return data.venues;
+  },
+
   async createTicketType(eventID: string, input: CreateTicketTypeInput): Promise<TicketType> {
     const data = await request<TicketTypeResponse>(`/events/${eventID}/ticket-types`, {
       method: "POST",
@@ -642,6 +666,12 @@ export const api = {
     return data.cases;
   },
 
+  /** GET /admin/support/cases - organizer requests to BiletFlow (platform admins). */
+  async platformSupportCases(signal?: AbortSignal): Promise<SupportCase[]> {
+    const data = await request<{ cases: SupportCase[] }>("/admin/support/cases", { signal });
+    return data.cases;
+  },
+
   /** GET /events/{id}/support/cases - the organizer's inbox for one event. */
   async eventSupportCases(eventID: string, signal?: AbortSignal): Promise<SupportCase[]> {
     const data = await request<{ cases: SupportCase[] }>(
@@ -704,17 +734,17 @@ export const api = {
     });
   },
 
-  /** POST /auth/password-reset - consumes the emailed token. */
-  resetPassword(token: string, password: string): Promise<AcceptedResponse> {
+  /** POST /auth/password-reset - the emailed 6-digit code sets a new password. */
+  resetPassword(email: string, code: string, password: string): Promise<AcceptedResponse> {
     return request<AcceptedResponse>("/auth/password-reset", {
       method: "POST",
-      body: { token, password },
+      body: { email, code, password },
     });
   },
 
-  /** POST /auth/verify-email - needs no session; the token is the proof. */
-  verifyEmail(token: string): Promise<{ status: string; email: string; account_status: string }> {
-    return request("/auth/verify-email", { method: "POST", body: { token } });
+  /** POST /auth/verify-email - needs no session; the emailed 6-digit code is the proof. */
+  verifyEmail(email: string, code: string): Promise<{ status: string; email: string; account_status: string }> {
+    return request("/auth/verify-email", { method: "POST", body: { email, code } });
   },
 
   /** POST /auth/verify-email/request - re-send for the signed-in account. */
@@ -787,6 +817,12 @@ export const api = {
       method: "POST",
       body: { reason, details },
     });
+  },
+
+  /** GET /admin/campaigns - promo-code activity across every event (SRS 4.12). */
+  async adminCampaigns(signal?: AbortSignal): Promise<AdminCampaign[]> {
+    const data = await request<{ campaigns: AdminCampaign[] }>("/admin/campaigns", { signal });
+    return data.campaigns;
   },
 
   /** GET /admin/settings - the configurable platform values (SRS 4.12). */

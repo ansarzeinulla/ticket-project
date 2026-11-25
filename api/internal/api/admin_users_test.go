@@ -60,7 +60,7 @@ func (c *client) userStatus(userID uuid.UUID) string {
 func TestAdminCanSuspendAndRestoreAUser(t *testing.T) {
 	c := newClient(t)
 	admin := c.adminAccount("usersuspendadmin")
-	target := c.register("usersuspendtarget")
+	target := c.registerUnverified("usersuspendtarget")
 
 	res := c.post("/api/v1/admin/users/"+target.ID.String()+"/suspend", admin.Token,
 		map[string]any{"reason": "repeated fraudulent listings"})

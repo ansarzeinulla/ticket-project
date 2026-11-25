@@ -3,6 +3,11 @@
 Self-service event ticketing platform for Kazakhstan, built to the specification
 in [bilet.md](bilet.md).
 
+> **This is a student project** (CSCI 361). The demo catalogue — event titles,
+> venues, descriptions, prices and posters — is taken from public listings on
+> [ticketon.kz](https://ticketon.kz) for the course demonstration only. Nothing
+> is sold: every payment is simulated and no money moves.
+
 | Phase | Scope | Status |
 | --- | --- | --- |
 | 1 | PostgreSQL schema + Docker environment | done |
@@ -57,6 +62,22 @@ What each suite covers, and which SRS requirement it proves, is in
 measured results are in [docs/verification/RESULTS.md](docs/verification/RESULTS.md).
 
 ---
+
+## Backups and recovery
+
+The database is the only state that matters; uploads are re-creatable demo
+banners. Take a dump before anything risky, and restore it the same way:
+
+```bash
+make backup                                  # -> backups/biletflow-<time>.sql
+make restore FILE=backups/biletflow-<time>.sql
+```
+
+`backups/` is ignored by git, because a dump contains every account and order.
+The dump is plain SQL made with `--clean --if-exists`, so restoring replaces the
+current tables rather than merging into them. A real deployment would run the
+same dump on a schedule and copy it off the machine; this MVP documents the
+procedure but does not schedule it.
 
 ## Phase 1: Database & Docker Foundation
 
@@ -260,10 +281,20 @@ real risk, so they are also constraints in PostgreSQL:
 make seed
 ```
 
-Loads 7 users, a 126-seat predefined venue layout, three events (one free, one
-paid assigned-seating with an active campaign, one completed), orders, tickets,
-a check-in, a refund, a support thread and an activity timeline. It clears its
-own rows first, so running it repeatedly does not duplicate anything.
+Loads two files, both re-runnable (each clears its own rows first):
+
+- `db/seed/01_demo_data.sql` — 7 users, a 126-seat predefined venue layout,
+  three events (one free, one paid assigned-seating with an active campaign,
+  one completed), orders, tickets, a check-in, a refund, a support thread and
+  an activity timeline.
+- `db/seed/02_catalogue.sql` — the storefront catalogue: every event listed on
+  ticketon.kz in Almaty, Astana and Shymkent at the time of collection
+  (concerts, theatre, stand-up, sports, kids, workshops, shows), with their
+  posters, full descriptions, age limits and durations, three more organizers,
+  paid sales activated, orders, tickets and check-ins on the past ones. Dates are
+  relative to the moment you seed, so upcoming events stay upcoming. The
+  posters are compiled into the API (`api/internal/media`) and served at
+  `/media/<file>`.
 
 ### Demo accounts
 
@@ -278,6 +309,9 @@ Every seeded account uses the password **`biletflow-demo`**.
 | `olzhas@example.kz` | Olzhas Serik | attendee |
 | `scanner@biletflow.kz` | Askar Kassym | event_admin — signs into the scanner app |
 | `support@biletflow.kz` | Sofia Ivanova | support_staff, platform_admin — sees `/admin` |
+| `aruzhan@biletflow.kz` | Aruzhan Nurlanova | organizer — Almaty catalogue events |
+| `marat@biletflow.kz` | Marat Ospanov | organizer — Astana catalogue events |
+| `saule@biletflow.kz` | Saule Tulegenova | organizer — Shymkent catalogue events |
 
 These are for a local demonstration database and nothing else. The password is
 published here on purpose: it is what makes the dataset usable.
@@ -290,6 +324,41 @@ Ticket QR codes you can type into the scanner's "Enter code by hand":
 | `TKT_DEMOFREE0000000001` | Already checked in — red, with the first-use time |
 | `TKT_DEMOSEAT00000000F1` | A refunded ticket — red, refused |
 | `CMP_STUDENT15ALMATYJAZZ` | A campaign QR — refused as "promo code, not a ticket" |
+
+Open `/events/almaty-winter-jazz-night?c=CMP_STUDENT15ALMATYJAZZ` to see the
+same campaign applied at checkout: pick seats, hold them, and the 15% discount
+is already on the total.
+
+To demonstrate a failed payment, check out with a buyer email ending in
+`@decline.simulator.biletflow.kz` (for example `test@decline.simulator.biletflow.kz`).
+The simulated card is declined, no ticket is issued, and the payment-failure
+email is sent.
+
+### Hosting it for a presentation
+
+`deploy/oracle/` runs the whole platform on one free Oracle Cloud server, over
+HTTPS, with one command: see [deploy/oracle/README.md](deploy/oracle/README.md).
+
+### Email
+
+Without settings, every email (registration, order confirmation, tickets,
+refunds, support replies, password reset) is printed in the API terminal. To
+send real email through Gmail, fill in the `SMTP_*` and `MAIL_FROM` lines in
+`.env` (see `.env.example`) with a Gmail address and an
+[app password](https://myaccount.google.com/apppasswords), then restart the
+API. Emails go out in the recipient's language: the one saved on their
+account, or for a guest the language of the page they bought on.
+
+Each email has an HTML version with the BiletFlow header and the student-project
+note. The order confirmation carries every ticket as a PDF attachment, with the
+event poster on top. Email confirmation and password reset use a 6-digit code
+(valid 1 hour, 5 tries) typed on the site or in the app. Links into the site
+are only included when `WEB_BASE_URL` is a public address, because a localhost
+link opens nothing on the phone the email is read on.
+
+Pulling this version into an existing database? Run `make schema` once: it
+adds the `orders.locale` and `user_tokens.attempts` columns and changes
+nothing else.
 
 ---
 

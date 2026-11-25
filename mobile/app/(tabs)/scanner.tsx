@@ -7,13 +7,15 @@ import {
   RefreshControl,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 
-import { ApiError, api } from "../lib/api";
-import { useAuth } from "../lib/auth-context";
-import { radius, theme } from "../lib/theme";
-import type { ScannableEvent } from "../lib/types";
+import { ApiError, api } from "../../lib/api";
+import { useAuth } from "../../lib/auth-context";
+import { useT } from "../../lib/i18n/context";
+import { radius, theme } from "../../lib/theme";
+import type { ScannableEvent } from "../../lib/types";
 
 /** Renders a start time in the event's own timezone, not the phone's. */
 function formatStart(event: ScannableEvent): string {
@@ -28,13 +30,20 @@ function formatStart(event: ScannableEvent): string {
   }
 }
 
-export default function EventsScreen() {
+/** The gate: events this account may scan (SRS 4.8). Signing out lives on the Account tab. */
+export default function ScannerTab() {
+  const t = useT();
   const { user, signOut } = useAuth();
 
   const [events, setEvents] = useState<ScannableEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  // Search by title, so staff with many events find theirs at once (BF-100).
+  const shown = query.trim()
+    ? events.filter((event) => event.title.toLowerCase().includes(query.trim().toLowerCase()))
+    : events;
 
   const load = useCallback(async () => {
     try {
@@ -43,15 +52,15 @@ export default function EventsScreen() {
     } catch (cause) {
       if (cause instanceof ApiError && cause.isSessionExpired) {
         await signOut();
-        router.replace("/login");
+        router.push("/login");
         return;
       }
-      setError(cause instanceof ApiError ? cause.message : "Could not load your events.");
+      setError(cause instanceof ApiError ? cause.message : t("app.scanner.loadFailed"));
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [signOut]);
+  }, [signOut, t]);
 
   // Re-fetch whenever the screen comes back into view, so the counts are fresh
   // after a shift at the gate.
@@ -61,16 +70,11 @@ export default function EventsScreen() {
     }, [load]),
   );
 
-  async function handleSignOut() {
-    await signOut();
-    router.replace("/login");
-  }
-
   if (loading) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator color={theme.brand} size="large" />
-        <Text style={styles.muted}>Loading your events…</Text>
+        <Text style={styles.muted}>{t("app.scanner.loading")}</Text>
       </View>
     );
   }
@@ -79,13 +83,25 @@ export default function EventsScreen() {
     <View style={styles.flex}>
       <View style={styles.header}>
         <View style={styles.headerText}>
-          <Text style={styles.who}>{user?.full_name ?? "Event Admin"}</Text>
+          <Text style={styles.who}>{user?.full_name ?? t("app.scanner.viaAdmin")}</Text>
           <Text style={styles.muted}>{user?.email}</Text>
         </View>
-        <Pressable onPress={handleSignOut} hitSlop={12} testID="sign-out">
-          <Text style={styles.signOut}>Sign out</Text>
-        </Pressable>
       </View>
+
+      {events.length > 0 ? (
+        <View style={styles.searchWrap}>
+          <TextInput
+            value={query}
+            onChangeText={setQuery}
+            placeholder={t("app.scanner.search")}
+            placeholderTextColor={theme.textMuted}
+            accessibilityLabel={t("app.scanner.search")}
+            returnKeyType="search"
+            style={styles.search}
+            testID="scanner-search"
+          />
+        </View>
+      ) : null}
 
       {error && (
         <View style={styles.errorBox}>
@@ -94,7 +110,7 @@ export default function EventsScreen() {
       )}
 
       <FlatList
-        data={events}
+        data={shown}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}
         refreshControl={
@@ -108,13 +124,16 @@ export default function EventsScreen() {
           />
         }
         ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>No events to scan</Text>
-            <Text style={styles.muted}>
-              An organizer needs to assign you as an Event Admin before an event
-              appears here. Pull down to refresh.
-            </Text>
-          </View>
+          events.length > 0 ? (
+            <View style={styles.empty}>
+              <Text style={styles.muted}>{t("app.scanner.noEvent")}</Text>
+            </View>
+          ) : (
+            <View style={styles.empty}>
+              <Text style={styles.emptyTitle}>{t("app.scanner.emptyTitle")}</Text>
+              <Text style={styles.muted}>{t("app.scanner.emptyBody")}</Text>
+            </View>
+          )
         }
         renderItem={({ item }) => {
           const remaining = Math.max(0, item.stats.issued - item.stats.checked_in);
@@ -130,7 +149,7 @@ export default function EventsScreen() {
                 </Text>
                 <View style={styles.badge}>
                   <Text style={styles.badgeText}>
-                    {item.access_via === "organizer" ? "Organizer" : "Event Admin"}
+                    {item.access_via === "organizer" ? t("app.scanner.viaOrganizer") : t("app.scanner.viaAdmin")}
                   </Text>
                 </View>
               </View>
@@ -143,22 +162,31 @@ export default function EventsScreen() {
               <View style={styles.stats}>
                 <View style={styles.stat}>
                   <Text style={styles.statValue}>{item.stats.checked_in}</Text>
-                  <Text style={styles.statLabel}>Checked in</Text>
+                  <Text style={styles.statLabel}>{t("app.scanner.checkedIn")}</Text>
                 </View>
                 <View style={styles.stat}>
                   <Text style={styles.statValue}>{remaining}</Text>
-                  <Text style={styles.statLabel}>Expected</Text>
+                  <Text style={styles.statLabel}>{t("app.scanner.expected")}</Text>
                 </View>
                 <View style={styles.stat}>
                   <Text style={styles.statValue}>{item.stats.issued}</Text>
-                  <Text style={styles.statLabel}>Tickets</Text>
+                  <Text style={styles.statLabel}>{t("app.scanner.tickets")}</Text>
                 </View>
               </View>
 
+              {/* The camera is what staff want nine times in ten (BF-100). */}
+              <Pressable
+                onPress={() => router.push(`/scan/${item.id}`)}
+                testID={`scan-${item.id}`}
+                accessibilityRole="button"
+                style={({ pressed }) => [styles.scanButton, pressed && styles.cardPressed]}
+              >
+                <Text style={styles.scanText}>{t("app.scanner.scan")}</Text>
+              </Pressable>
+
               {/*
-                The card itself opens the camera, which is what staff want
-                nine times in ten. This is the other way in, for when a QR
-                cannot be scanned at all (SRS 4.8).
+                The other ways in: by name when a QR cannot be scanned at all,
+                and offline with a downloaded roster (SRS 4.8).
               */}
               <View style={styles.secondaryRow}>
                 <Pressable
@@ -166,7 +194,7 @@ export default function EventsScreen() {
                   testID={`find-attendee-${item.id}`}
                   style={({ pressed }) => [styles.secondary, pressed && styles.cardPressed]}
                 >
-                  <Text style={styles.secondaryText}>Find by name</Text>
+                  <Text style={styles.secondaryText}>{t("app.scanner.findByName")}</Text>
                 </Pressable>
                 {/*
                   Offline check-in (SRS 4.8): download the roster now, then work
@@ -177,7 +205,7 @@ export default function EventsScreen() {
                   testID={`offline-${item.id}`}
                   style={({ pressed }) => [styles.secondary, pressed && styles.cardPressed]}
                 >
-                  <Text style={styles.secondaryText}>Offline mode</Text>
+                  <Text style={styles.secondaryText}>{t("app.scanner.offlineMode")}</Text>
                 </Pressable>
               </View>
             </Pressable>
@@ -190,12 +218,32 @@ export default function EventsScreen() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: theme.bg },
-  secondaryRow: { flexDirection: "row", gap: 10, marginTop: 12 },
+  secondaryRow: { flexDirection: "row", gap: 10, marginTop: 10 },
+  scanButton: {
+    marginTop: 14,
+    backgroundColor: theme.brand,
+    borderRadius: radius.md,
+    minHeight: 48,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  scanText: { color: "#ffffff", fontSize: 16, fontWeight: "700" },
+  searchWrap: { paddingHorizontal: 16, paddingTop: 12 },
+  search: {
+    backgroundColor: theme.surface,
+    borderColor: theme.border,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    fontSize: 15,
+    color: theme.text,
+  },
   secondary: {
     flex: 1,
     borderColor: theme.border,
     borderWidth: 1,
-    borderRadius: radius.sm,
+    borderRadius: radius.md,
     paddingVertical: 10,
     alignItems: "center",
   },
@@ -218,7 +266,6 @@ const styles = StyleSheet.create({
   },
   headerText: { flexShrink: 1 },
   who: { color: theme.text, fontSize: 15, fontWeight: "600" },
-  signOut: { color: theme.brand, fontSize: 14, fontWeight: "600" },
   muted: { color: theme.textMuted, fontSize: 13 },
   list: { padding: 16, gap: 12, flexGrow: 1 },
   card: {
@@ -234,7 +281,7 @@ const styles = StyleSheet.create({
   cardTitle: { color: theme.text, fontSize: 17, fontWeight: "700", flex: 1 },
   badge: {
     backgroundColor: theme.surfaceAlt,
-    borderRadius: 999,
+    borderRadius: 4,
     paddingHorizontal: 10,
     paddingVertical: 4,
   },
@@ -247,11 +294,11 @@ const styles = StyleSheet.create({
   emptyTitle: { color: theme.text, fontSize: 17, fontWeight: "600" },
   errorBox: {
     margin: 16,
-    backgroundColor: "#450a0a",
+    backgroundColor: "#fee2e2",
     borderColor: theme.danger,
     borderWidth: 1,
     borderRadius: radius.md,
     padding: 12,
   },
-  errorText: { color: "#fecaca", fontSize: 14 },
+  errorText: { color: theme.danger, fontSize: 14 },
 });

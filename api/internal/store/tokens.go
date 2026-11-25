@@ -4,9 +4,10 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"fmt"
+	"math/big"
 	"time"
 
 	"github.com/google/uuid"
@@ -20,28 +21,29 @@ const (
 	TokenPasswordReset     = "password_reset"
 )
 
-// Token lifetimes.
+// Code lifetimes and the number of wrong tries a code survives (BF-100).
 //
-// A reset token is short-lived because it is a password in disguise: anyone
-// holding it can take the account. A verification token is only a claim about
-// an address, so it can afford to survive a weekend in an inbox.
+// Both flows use a 6-digit code the person types where they already are, so a
+// link that only works on one machine is never needed. A million possible
+// codes is little, which is why each one dies after MaxCodeAttempts misses.
 const (
 	PasswordResetTTL     = 1 * time.Hour
-	EmailVerificationTTL = 72 * time.Hour
+	EmailVerificationTTL = 1 * time.Hour
+	MaxCodeAttempts      = 5
 )
 
-// ErrTokenInvalid covers every way a token can fail to work: unknown, expired,
-// or already used.
+// ErrTokenInvalid covers every way a code can fail to work: wrong, expired,
+// already used, or out of tries.
 //
 // They are deliberately one error. Telling a caller that a token exists but has
 // expired confirms the token was real, which is exactly the fact an attacker
 // guessing tokens is trying to learn.
 var ErrTokenInvalid = errors.New("token is invalid, expired or already used")
 
-// IssuedToken is what the caller emails out. The plaintext exists only in this
-// struct and in the message; the database sees the hash.
+// IssuedToken is what the caller emails out. The plaintext code exists only in
+// this struct and in the message; the database sees the hash.
 type IssuedToken struct {
-	Token     string
+	Code      string
 	ExpiresAt time.Time
 	UserID    uuid.UUID
 	Email     string
@@ -57,22 +59,28 @@ type TokenStore struct {
 func NewTokenStore(pool *pgxpool.Pool) *TokenStore { return &TokenStore{pool: pool} }
 
 // HashToken is the one-way function between what the user holds and what is
-// stored. Exported so tests can look a token up the way the database does.
+// stored. Exported so tests can look a value up the way the database does.
 func HashToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
 }
 
-// newToken returns a URL-safe random string with 256 bits of entropy.
-func newToken() (string, error) {
-	raw := make([]byte, 32)
-	if _, err := rand.Read(raw); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(raw), nil
+// codeHash salts a code with its row id: six digits repeat across accounts and
+// over time, and the stored hashes must stay unique and not be comparable.
+func codeHash(rowID uuid.UUID, code string) string {
+	return HashToken(rowID.String() + ":" + code)
 }
 
-// Issue creates a token for a user, invalidating any earlier one for the same
+// newAccountCode returns six random digits, leading zeros kept.
+func newAccountCode() (string, error) {
+	n, err := rand.Int(rand.Reader, big.NewInt(1_000_000))
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%06d", n.Int64()), nil
+}
+
+// Issue creates a code for a user, invalidating any earlier one for the same
 // purpose.
 //
 // Superseding rather than accumulating matters: someone who clicks "forgot
@@ -81,10 +89,11 @@ func newToken() (string, error) {
 func (s *TokenStore) Issue(
 	ctx context.Context, userID uuid.UUID, purpose string, ttl time.Duration,
 ) (IssuedToken, error) {
-	token, err := newToken()
+	code, err := newAccountCode()
 	if err != nil {
 		return IssuedToken{}, err
 	}
+	rowID := uuid.New()
 
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -99,12 +108,12 @@ func (s *TokenStore) Issue(
 		return IssuedToken{}, mapError(err)
 	}
 
-	issued := IssuedToken{Token: token, UserID: userID}
+	issued := IssuedToken{Code: code, UserID: userID}
 	err = tx.QueryRow(ctx, `
-		INSERT INTO user_tokens (user_id, purpose, token_hash, expires_at)
-		VALUES ($1, $2::user_token_purpose, $3, now() + $4::interval)
+		INSERT INTO user_tokens (id, user_id, purpose, token_hash, expires_at)
+		VALUES ($1, $2, $3::user_token_purpose, $4, now() + $5::interval)
 		RETURNING expires_at`,
-		userID, purpose, HashToken(token), ttl.String(),
+		rowID, userID, purpose, codeHash(rowID, code), ttl.String(),
 	).Scan(&issued.ExpiresAt)
 	if err != nil {
 		return IssuedToken{}, mapError(err)
@@ -142,26 +151,62 @@ func (s *TokenStore) IssueForEmail(
 	return s.Issue(ctx, userID, purpose, ttl)
 }
 
-// consume validates a token and marks it used, returning the user it belongs
-// to. The whole check happens in one UPDATE so a token cannot be redeemed
-// twice by two concurrent requests.
-func (s *TokenStore) consume(ctx context.Context, tx pgx.Tx, token, purpose string) (uuid.UUID, error) {
-	var userID uuid.UUID
-	err := tx.QueryRow(ctx, `
-		UPDATE user_tokens
-		   SET consumed_at = now()
-		 WHERE token_hash = $1
-		   AND purpose = $2::user_token_purpose
-		   AND consumed_at IS NULL
-		   AND expires_at > now()
-		RETURNING user_id`, HashToken(token), purpose).Scan(&userID)
+// consume checks a code for the account with this address and, if it is right,
+// marks it used. A wrong code costs one of its tries; the fifth miss kills it.
+//
+// It reports a miss with ok=false rather than an error, because the caller has
+// to commit the spent try - rolling it back would give an attacker unlimited
+// guesses.
+func (s *TokenStore) consume(
+	ctx context.Context, tx pgx.Tx, address, code, purpose string,
+) (userID uuid.UUID, ok bool, err error) {
+	var (
+		rowID    uuid.UUID
+		stored   string
+		attempts int
+	)
+	err = tx.QueryRow(ctx, `
+		SELECT t.id, t.user_id, t.token_hash, t.attempts
+		  FROM user_tokens t
+		  JOIN users u ON u.id = t.user_id
+		 WHERE u.email = $1
+		   AND t.purpose = $2::user_token_purpose
+		   AND t.consumed_at IS NULL
+		   AND t.expires_at > now()
+		 ORDER BY t.created_at DESC
+		 LIMIT 1
+		   FOR UPDATE OF t`, address, purpose).Scan(&rowID, &userID, &stored, &attempts)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return uuid.Nil, ErrTokenInvalid
+		return uuid.Nil, false, nil
 	}
 	if err != nil {
-		return uuid.Nil, mapError(err)
+		return uuid.Nil, false, mapError(err)
 	}
-	return userID, nil
+
+	if codeHash(rowID, code) != stored {
+		if _, err := tx.Exec(ctx, `
+			UPDATE user_tokens
+			   SET attempts = attempts + 1,
+			       consumed_at = CASE WHEN attempts + 1 >= $2 THEN now() END
+			 WHERE id = $1`, rowID, MaxCodeAttempts); err != nil {
+			return uuid.Nil, false, mapError(err)
+		}
+		return uuid.Nil, false, nil
+	}
+
+	if _, err := tx.Exec(ctx,
+		`UPDATE user_tokens SET consumed_at = now() WHERE id = $1`, rowID); err != nil {
+		return uuid.Nil, false, mapError(err)
+	}
+	return userID, true, nil
+}
+
+// spend commits a missed try and reports the code as invalid.
+func spend(ctx context.Context, tx pgx.Tx) error {
+	if err := tx.Commit(ctx); err != nil {
+		return mapError(err)
+	}
+	return ErrTokenInvalid
 }
 
 // VerifiedUser is the account state after a token has done its work.
@@ -173,16 +218,19 @@ type VerifiedUser struct {
 }
 
 // ConsumeEmailVerification marks an address verified (SRS 4.1).
-func (s *TokenStore) ConsumeEmailVerification(ctx context.Context, token string) (VerifiedUser, error) {
+func (s *TokenStore) ConsumeEmailVerification(ctx context.Context, address, code string) (VerifiedUser, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return VerifiedUser{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	userID, err := s.consume(ctx, tx, token, TokenEmailVerification)
+	userID, ok, err := s.consume(ctx, tx, address, code, TokenEmailVerification)
 	if err != nil {
 		return VerifiedUser{}, err
+	}
+	if !ok {
+		return VerifiedUser{}, spend(ctx, tx)
 	}
 
 	// An account only leaves pending_verification here. A suspended account
@@ -211,9 +259,9 @@ func (s *TokenStore) ConsumeEmailVerification(ctx context.Context, token string)
 // outstanding token for the account.
 //
 // The second part matters: someone recovering an account they lost control of
-// should not leave the attacker holding a working verification link.
+// should not leave the attacker holding a working verification code.
 func (s *TokenStore) ConsumePasswordReset(
-	ctx context.Context, token, passwordHash string,
+	ctx context.Context, address, code, passwordHash string,
 ) (VerifiedUser, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -221,9 +269,12 @@ func (s *TokenStore) ConsumePasswordReset(
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	userID, err := s.consume(ctx, tx, token, TokenPasswordReset)
+	userID, ok, err := s.consume(ctx, tx, address, code, TokenPasswordReset)
 	if err != nil {
 		return VerifiedUser{}, err
+	}
+	if !ok {
+		return VerifiedUser{}, spend(ctx, tx)
 	}
 
 	var user VerifiedUser

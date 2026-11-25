@@ -234,7 +234,7 @@ func TestPhase10SuccessCriteria(t *testing.T) {
 		}
 
 		orderNumber := bought.Body["order"].(map[string]any)["order_number"].(string)
-		firstTicketID := bought.Body["tickets"].([]any)[0].(map[string]any)["id"].(string)
+		firstTicketCode := bought.Body["tickets"].([]any)[0].(map[string]any)["ticket_code"].(string)
 
 		for _, want := range []string{
 			"MOCK EMAIL",                     // labelled as simulated
@@ -243,7 +243,7 @@ func TestPhase10SuccessCriteria(t *testing.T) {
 			"Hi Bekzat,",
 			orderNumber,
 			"10350.00", // what they paid, fee included
-			"http://localhost:8080/api/v1/tickets/" + firstTicketID + "/pdf",
+			"Attached: biletflow-" + firstTicketCode + ".pdf", // the ticket travels with the email
 		} {
 			if !strings.Contains(out, want) {
 				t.Errorf("console output is missing %q", want)

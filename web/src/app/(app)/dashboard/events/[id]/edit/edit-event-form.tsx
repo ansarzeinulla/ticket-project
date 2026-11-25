@@ -81,7 +81,8 @@ export function EditEventForm({ eventID }: { eventID: string }) {
     setFieldErrors({});
     setSaved(false);
 
-    const { errors, startsISO, endsISO } = validateEventForm(values, localInputToISO, t);
+    const { errors, startsISO, endsISO, registrationOpensISO, registrationClosesISO } =
+      validateEventForm(values, localInputToISO, t);
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
       return;
@@ -96,6 +97,17 @@ export function EditEventForm({ eventID }: { eventID: string }) {
     if (values.visibility !== original.visibility) patch.visibility = values.visibility;
     if (startsISO && startsISO !== event.starts_at) patch.starts_at = startsISO;
     if (endsISO && endsISO !== event.ends_at) patch.ends_at = endsISO;
+    // An emptied registration time is an explicit null, which clears it.
+    if (values.registrationOpensAt !== original.registrationOpensAt) {
+      patch.registration_opens_at = registrationOpensISO;
+    }
+    if (values.registrationClosesAt !== original.registrationClosesAt) {
+      patch.registration_closes_at = registrationClosesISO;
+    }
+    if (values.seatingMode !== original.seatingMode || values.venueID !== original.venueID) {
+      patch.seating_mode = values.seatingMode;
+      patch.venue_id = values.seatingMode === "assigned_seating" ? values.venueID : null;
+    }
     if (!isPublished(event) && slugify(values.slug) !== original.slug) {
       patch.slug = slugify(values.slug);
     }
@@ -170,7 +182,7 @@ export function EditEventForm({ eventID }: { eventID: string }) {
         >
           {t("org.form.backTo", { title: event.title })}
         </Link>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight">{t("org.form.editHeading")}</h1>
+        <h1 className="mt-2 text-3xl font-bold">{t("org.form.editHeading")}</h1>
         <p className="mt-1 text-sm text-foreground-muted">
           {isPublished(event)
             ? t("org.form.liveNote")
@@ -232,5 +244,13 @@ function toFormValues(event: BiletEvent): EventFormValues {
     venueName: event.venue_name ?? "",
     venueAddress: event.venue_address ?? "",
     visibility: event.visibility,
+    registrationOpensAt: event.registration_opens_at
+      ? isoToLocalInput(event.registration_opens_at, event.timezone)
+      : "",
+    registrationClosesAt: event.registration_closes_at
+      ? isoToLocalInput(event.registration_closes_at, event.timezone)
+      : "",
+    seatingMode: event.seating_mode,
+    venueID: event.venue_id ?? "",
   };
 }

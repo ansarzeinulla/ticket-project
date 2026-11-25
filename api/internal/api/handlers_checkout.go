@@ -153,7 +153,7 @@ func (s *Server) handleCheckout(w http.ResponseWriter, r *http.Request) {
 		// an out-of-stock basket is not a payment failure.
 		var declined *store.PaymentDeclinedError
 		if errors.As(err, &declined) {
-			s.sendPaymentFailure(event, req.BuyerName, buyerEmail, "", declined.Reason)
+			s.sendPaymentFailure(event, req.BuyerName, buyerEmail, "", declined.Reason, requestLocale(r))
 		}
 		return
 	}
@@ -164,7 +164,8 @@ func (s *Server) handleCheckout(w http.ResponseWriter, r *http.Request) {
 	// SRS 4.10: purchase confirmation and ticket delivery. The order is
 	// already committed and the response already written, so a notification
 	// problem cannot cost the attendee their tickets.
-	s.sendOrderConfirmation(result, event)
+	s.rememberOrderLocale(r.Context(), result.Order.ID, requestLocale(r))
+	s.sendOrderConfirmation(result, event, requestLocale(r))
 }
 
 // checkoutErrorBody adds the inventory numbers to the standard error envelope,

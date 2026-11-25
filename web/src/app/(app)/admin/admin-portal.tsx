@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/button";
 import { ApiError, api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { formatKZT } from "@/lib/money";
-import { useT } from "@/lib/i18n/context";
+import { formatDay } from "@/lib/datetime";
+import { useI18n, useT } from "@/lib/i18n/context";
 import type { MessageKey } from "@/lib/i18n/dictionaries";
 import type { Translator } from "@/lib/i18n/translate";
 import type { AdminSearchResponse } from "@/lib/types";
@@ -53,14 +54,7 @@ function word(t: Translator, value: string): string {
   return key ? t(key) : value.replace(/_/g, " ");
 }
 
-function formatDate(iso?: string): string {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
+
 
 /**
  * The administrative portal (SRS 2.1, 4.12).
@@ -72,7 +66,7 @@ function formatDate(iso?: string): string {
  */
 export function AdminPortal() {
   const { user } = useAuth();
-  const t = useT();
+  const { t, locale } = useI18n();
   const isAdmin = user?.roles.includes("platform_admin") ?? false;
 
   const [query, setQuery] = useState("");
@@ -157,7 +151,7 @@ export function AdminPortal() {
   if (!isAdmin) {
     return (
       <div className="space-y-4">
-        <h1 className="text-2xl font-semibold tracking-tight">{t("org.titles.admin")}</h1>
+        <h1 className="text-3xl font-bold">{t("org.titles.admin")}</h1>
         <Alert tone="error" title={t("org.admin.deniedTitle")}>
           {t("org.admin.deniedBody")}{" "}
           <Link href="/dashboard" className="font-medium underline">
@@ -176,19 +170,38 @@ export function AdminPortal() {
     <div className="space-y-8">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{t("org.titles.admin")}</h1>
+          <h1 className="text-3xl font-bold">{t("org.titles.admin")}</h1>
           <p className="mt-1 text-sm text-foreground-muted">
             {t("org.admin.subtitle")}
           </p>
         </div>
         <div className="flex flex-col items-end gap-2">
-          <div className="flex gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
             <Link
               href="/admin/reports"
               className="inline-flex items-center rounded-lg border border-border-subtle px-3 py-2 text-sm font-medium hover:bg-surface-muted"
               data-testid="reports-link"
             >
               {t("org.titles.reports")}
+            </Link>
+            <Link
+              href="/admin/support"
+              className="inline-flex items-center rounded-lg border border-border-subtle px-3 py-2 text-sm font-medium hover:bg-surface-muted"
+              data-testid="support-inbox-link"
+            >
+              {t("platformInbox.link")}
+            </Link>
+            <Link
+              href="/admin/campaigns"
+              className="inline-flex items-center rounded-lg border border-border-subtle px-3 py-2 text-sm font-medium hover:bg-surface-muted"
+            >
+              {t("adminTools.campaignsLink")}
+            </Link>
+            <Link
+              href="/admin/settings"
+              className="inline-flex items-center rounded-lg border border-border-subtle px-3 py-2 text-sm font-medium hover:bg-surface-muted"
+            >
+              {t("adminTools.settingsLink")}
             </Link>
             <Button onClick={() => void downloadReport()} loading={downloading}>
               {t("org.admin.export")}
@@ -282,7 +295,7 @@ export function AdminPortal() {
                   </td>
                   <td className="px-4 py-2 tabular-nums">{row.event_count}</td>
                   <td className="px-4 py-2 tabular-nums">{row.order_count}</td>
-                  <td className="px-4 py-2 text-xs">{formatDate(row.created_at)}</td>
+                  <td className="px-4 py-2 text-xs">{formatDay(row.created_at, locale)}</td>
                   <td className="px-4 py-2">
                     {row.id === user?.id ? (
                       <span className="text-xs text-foreground-muted">{t("org.admin.you")}</span>
@@ -326,13 +339,15 @@ export function AdminPortal() {
               {results.events.map((row) => (
                 <tr key={row.id} className="border-t border-border-subtle">
                   <td className="px-4 py-2">
-                    <Link
-                      href={`/events/${row.slug}`}
-                      className="font-medium text-brand hover:underline"
-                    >
-                      {row.title}
-                    </Link>
-                    <div className="text-xs text-foreground-muted">{formatDate(row.starts_at)}</div>
+                    {/* Only a published event has a public page to open. */}
+                    {row.status === "published" ? (
+                      <Link href={`/events/${row.slug}`} className="font-medium text-brand hover:underline">
+                        {row.title}
+                      </Link>
+                    ) : (
+                      <span className="font-medium">{row.title}</span>
+                    )}
+                    <div className="text-xs text-foreground-muted">{formatDay(row.starts_at, locale)}</div>
                   </td>
                   <td className="px-4 py-2 text-xs">{row.organizer_email}</td>
                   <td className="px-4 py-2">
@@ -443,7 +458,7 @@ export function AdminPortal() {
                     )}
                   </td>
                   <td className="px-4 py-2 tabular-nums">{formatKZT(row.amount_kzt)}</td>
-                  <td className="px-4 py-2 text-xs">{formatDate(row.created_at)}</td>
+                  <td className="px-4 py-2 text-xs">{formatDay(row.created_at, locale)}</td>
                 </tr>
               ))}
             </Table>
@@ -483,7 +498,7 @@ function Pill({ value }: { value: string }) {
   const t = useT();
   const tone = PILL_TONES[value] ?? "bg-surface-muted text-foreground-muted";
   return (
-    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${tone}`}>
+    <span className={`inline-flex rounded px-2 py-0.5 text-xs font-medium ${tone}`}>
       {word(t, value)}
     </span>
   );
@@ -501,7 +516,7 @@ function Section({
   const t = useT();
   return (
     <section>
-      <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground-muted">
+      <h2 className="text-base font-semibold">
         {title} <span className="ml-1 font-normal">({count})</span>
       </h2>
       <div className="mt-2">
@@ -527,7 +542,7 @@ function Table({
   return (
     <div className="overflow-x-auto rounded-lg border border-border-subtle">
       <table className="w-full min-w-[44rem] text-sm">
-        <thead className="bg-surface-muted text-left text-xs uppercase tracking-wide text-foreground-muted">
+        <thead className="bg-surface-muted text-left text-xs font-medium text-foreground-muted">
           <tr>
             {columns.map((column) => (
               <th key={column} className="px-4 py-2 font-medium">

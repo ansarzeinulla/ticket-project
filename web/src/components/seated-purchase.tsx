@@ -18,9 +18,12 @@ import { useT } from "@/lib/i18n/context";
 export function SeatedPurchase({
   eventID,
   eventSlug,
+  campaignToken,
 }: {
   eventID: string;
   eventSlug: string;
+  /** A scanned campaign QR (?c=CMP_...): applied to the held seats (SRS 4.14). */
+  campaignToken?: string;
 }) {
   const t = useT();
   const [orderID, setOrderID] = useState<string | null>(null);
@@ -30,7 +33,9 @@ export function SeatedPurchase({
     return (
       <SeatCheckout
         orderID={orderID}
+        eventID={eventID}
         eventSlug={eventSlug}
+        campaignToken={campaignToken}
         onExpired={() => {
           setOrderID(null);
           setNotice(t("seatCheckout.expiredNotice"));

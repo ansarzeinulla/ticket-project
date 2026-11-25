@@ -5,6 +5,7 @@ import { useRef, useState, type ChangeEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { ApiError, api } from "@/lib/api";
 import { useT } from "@/lib/i18n/context";
+import { mediaURL } from "@/lib/media";
 
 /** Mirrors the server's limit, so an oversized file is refused before it is
  *  sent rather than after a slow upload. The server enforces it regardless. */
@@ -73,7 +74,7 @@ export function ImageUpload({
           */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={value}
+            src={mediaURL(value)}
             alt={t("org.upload.alt")}
             className="max-h-48 w-full rounded-lg border border-border-subtle object-cover"
           />

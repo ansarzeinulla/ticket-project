@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -150,16 +151,16 @@ func TestPhase12SuccessCriteria(t *testing.T) {
 			t.Fatalf("no reset email on the console:\n%s", out)
 		}
 
-		// The token is read out of the console exactly as a person would.
-		token := tokenFromConsole(t, out, "/reset-password?token=")
+		// The code is read out of the console exactly as a person would.
+		token := codeFromConsole(t, out[strings.Index(out, "Subject: Reset your BiletFlow password"):])
 		if token == "" {
-			t.Fatalf("no token in the console output:\n%s", out)
+			t.Fatalf("no code in the console output:\n%s", out)
 		}
 
 		// --- use it ----------------------------------------------------------
 		const newPassword = "a brand new passphrase"
 		requireStatus(t, c.post("/api/v1/auth/password-reset", "",
-			map[string]any{"token": token, "password": newPassword}), http.StatusOK)
+			map[string]any{"email": account.Email, "code": token, "password": newPassword}), http.StatusOK)
 
 		// The old password is dead, the new one works.
 		requireStatus(t, c.post("/api/v1/auth/login", "",
@@ -175,7 +176,7 @@ func TestPhase12SuccessCriteria(t *testing.T) {
 
 		// A reset code is good exactly once.
 		requireErrorCode(t, c.post("/api/v1/auth/password-reset", "",
-			map[string]any{"token": token, "password": "yet another passphrase"}),
+			map[string]any{"email": account.Email, "code": token, "password": "yet another passphrase"}),
 			http.StatusBadRequest, CodeTokenInvalid)
 
 		t.Logf("criterion 2 OK: reset with the console token, old password refused")
@@ -331,20 +332,15 @@ func TestPhase12SuccessCriteria(t *testing.T) {
 	})
 }
 
-// tokenFromConsole pulls a token out of a printed link, the way a person
-// reading the console would.
-func tokenFromConsole(t *testing.T, output, marker string) string {
+// codeFromConsole pulls the 6-digit code out of an email body or console
+// output, the way a person reads it: the line that holds nothing but the code.
+func codeFromConsole(t *testing.T, output string) string {
 	t.Helper()
-
-	index := strings.Index(output, marker)
-	if index < 0 {
+	m := regexp.MustCompile(`(?m)^\s+(\d{6})\s*$`).FindStringSubmatch(output)
+	if m == nil {
 		return ""
 	}
-	rest := output[index+len(marker):]
-	if end := strings.IndexAny(rest, " \n\r\t"); end >= 0 {
-		rest = rest[:end]
-	}
-	return strings.TrimSpace(rest)
+	return m[1]
 }
 
 // pngBytes is a real 256x256 PNG. It has to clear the uploader's minimum

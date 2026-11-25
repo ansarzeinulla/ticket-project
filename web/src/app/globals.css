@@ -1,44 +1,30 @@
 @import "tailwindcss";
 
 /* --------------------------------------------------------------------------
-   Design tokens. Light values live on :root; the dark block only overrides.
+   Design tokens (BF-100): a near-black top bar, light grey pages with white
+   cards, and one strong crimson for actions.
    -------------------------------------------------------------------------- */
 :root {
-  --background: #f8fafc;
+  color-scheme: light;
+  --top: #14161b;
+  --top-muted: #a5a7ae;
+  --background: #f7f7f8;
   --surface: #ffffff;
-  --surface-muted: #f1f5f9;
-  --foreground: #0f172a;
-  --foreground-muted: #64748b;
-  --border: #e2e8f0;
-  --brand: #0f766e;
-  --brand-strong: #115e59;
-  --brand-soft: #ccfbf1;
-  --danger: #b91c1c;
-  --danger-soft: #fee2e2;
-  --success: #15803d;
-  --success-soft: #dcfce7;
-  --warning: #b45309;
-  --warning-soft: #fef3c7;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0b1120;
-    --surface: #111827;
-    --surface-muted: #1e293b;
-    --foreground: #e2e8f0;
-    --foreground-muted: #94a3b8;
-    --border: #1e293b;
-    --brand: #2dd4bf;
-    --brand-strong: #5eead4;
-    --brand-soft: #134e4a;
-    --danger: #fca5a5;
-    --danger-soft: #450a0a;
-    --success: #86efac;
-    --success-soft: #052e16;
-    --warning: #fcd34d;
-    --warning-soft: #451a03;
-  }
+  --surface-muted: #f0f0f2;
+  --foreground: #14161b;
+  --foreground-muted: #5f6168;
+  --border: #e4e4e8;
+  --brand: #e8174f;
+  --brand-strong: #c3103f;
+  --brand-soft: #ffe0e8;
+  --accent: #e8174f;
+  --accent-soft: #ffe0e8;
+  --danger: #c62828;
+  --danger-soft: #fdecec;
+  --success: #1b7f3b;
+  --success-soft: #e6f4ea;
+  --warning: #a15c00;
+  --warning-soft: #fff4e0;
 }
 
 @theme inline {
@@ -51,14 +37,25 @@
   --color-brand: var(--brand);
   --color-brand-strong: var(--brand-strong);
   --color-brand-soft: var(--brand-soft);
+  --color-accent: var(--accent);
+  --color-top: var(--top);
+  --color-top-muted: var(--top-muted);
+  --color-accent-soft: var(--accent-soft);
   --color-danger: var(--danger);
   --color-danger-soft: var(--danger-soft);
   --color-success: var(--success);
   --color-success-soft: var(--success-soft);
   --color-warning: var(--warning);
   --color-warning-soft: var(--warning-soft);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-body);
+  --font-display: var(--font-body);
   --font-mono: var(--font-geist-mono);
+  /* Small corners everywhere: no pill shapes. */
+  --radius-md: 0.25rem;
+  --radius-lg: 0.375rem;
+  --radius-xl: 0.5rem;
+  --radius-2xl: 0.5rem;
+  --radius-3xl: 0.625rem;
 }
 
 body {
@@ -66,8 +63,26 @@ body {
   color: var(--foreground);
 }
 
+h1,
+h2,
+h3 {
+  letter-spacing: -0.01em;
+}
+
 /* A single, consistent focus ring across every interactive element. */
 :where(a, button, input, select, textarea):focus-visible {
   outline: 2px solid var(--brand);
   outline-offset: 2px;
+}
+
+/* Horizontal poster rows scroll without a visible scrollbar, like a carousel. */
+.scroll-row {
+  scrollbar-width: none;
+  scroll-snap-type: x mandatory;
+}
+.scroll-row::-webkit-scrollbar {
+  display: none;
+}
+.scroll-row > * {
+  scroll-snap-align: start;
 }

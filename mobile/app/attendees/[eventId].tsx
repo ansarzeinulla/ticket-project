@@ -13,6 +13,8 @@ import {
 } from "react-native";
 
 import { ApiError, api } from "../../lib/api";
+import { useT } from "../../lib/i18n/context";
+import { attendeeStatusLabel } from "../../lib/labels";
 import { radius, theme } from "../../lib/theme";
 import type { AttendeeTicket } from "../../lib/types";
 
@@ -27,13 +29,6 @@ const DEBOUNCE_MS = 300;
 /** How long a confirmation stays on the row after a manual admission. */
 const CONFIRMATION_MS = 4000;
 
-const STATUS_LABELS: Record<AttendeeTicket["status"], string> = {
-  valid: "Not yet in",
-  checked_in: "Already in",
-  cancelled: "Cancelled",
-  refunded: "Refunded",
-};
-
 /**
  * Manual attendee search (SRS 4.8, "search for attendees manually").
  *
@@ -44,6 +39,7 @@ const STATUS_LABELS: Record<AttendeeTicket["status"], string> = {
  * it.
  */
 export default function AttendeeSearchScreen() {
+  const t = useT();
   const { eventId } = useLocalSearchParams<{ eventId: string }>();
 
   const [query, setQuery] = useState("");
@@ -69,13 +65,13 @@ export default function AttendeeSearchScreen() {
       } catch (cause) {
         if (seq !== requestSeq.current) return;
         setError(
-          cause instanceof ApiError ? cause.message : "Could not reach the server.",
+          cause instanceof ApiError ? cause.message : t("app.scanner.unreachable"),
         );
       } finally {
         if (seq === requestSeq.current) setLoading(false);
       }
     },
-    [eventId],
+    [eventId, t],
   );
 
   useEffect(() => {
@@ -104,7 +100,7 @@ export default function AttendeeSearchScreen() {
       if (Platform.OS !== "web") Vibration.vibrate(40);
       setConfirmation({
         id: attendee.ticket_id,
-        text: `Check-in undone: ${attendee.attendee_name}`,
+        text: t("app.scanner.undone", { name: attendee.attendee_name }),
       });
     } catch (cause) {
       setConfirmation({
@@ -112,7 +108,7 @@ export default function AttendeeSearchScreen() {
         text:
           cause instanceof ApiError
             ? cause.message
-            : "Could not undo this check-in. Try again.",
+            : t("app.scanner.undoRowFailed"),
       });
     } finally {
       setAdmitting(null);
@@ -131,7 +127,7 @@ export default function AttendeeSearchScreen() {
 
       setConfirmation({
         id: attendee.ticket_id,
-        text: `Checked in: ${result.attendee_name}`,
+        text: t("app.scanner.admitted", { name: result.attendee_name }),
       });
       await search(query.trim());
     } catch (cause) {
@@ -140,7 +136,7 @@ export default function AttendeeSearchScreen() {
         text:
           cause instanceof ApiError
             ? cause.message
-            : "Could not check this ticket in. Try again.",
+            : t("app.scanner.admitFailed"),
       });
       // Refresh anyway: the refusal usually means the row is out of date.
       await search(query.trim());
@@ -151,13 +147,13 @@ export default function AttendeeSearchScreen() {
 
   return (
     <View style={styles.screen}>
-      <Stack.Screen options={{ title: "Find attendee" }} />
+      <Stack.Screen options={{ title: t("app.scanner.findTitle") }} />
 
       <View style={styles.searchBar}>
         <TextInput
           value={query}
           onChangeText={setQuery}
-          placeholder="Name, email, ticket or order number"
+          placeholder={t("org.attendees.placeholder")}
           placeholderTextColor={theme.textMuted}
           autoCapitalize="none"
           autoCorrect={false}
@@ -186,12 +182,12 @@ export default function AttendeeSearchScreen() {
           ListEmptyComponent={
             <View style={styles.centered}>
               <Text style={styles.emptyTitle}>
-                {query.trim() === "" ? "No tickets yet" : "Nobody matches that"}
+                {query.trim() === "" ? t("app.scanner.noTickets") : t("app.scanner.noMatch")}
               </Text>
               <Text style={styles.muted}>
                 {query.trim() === ""
-                  ? "Nobody has bought a ticket for this event."
-                  : "Try a surname, an email address, or the order number."}
+                  ? t("app.scanner.noTicketsBody")
+                  : t("app.scanner.noMatchBody")}
               </Text>
             </View>
           }
@@ -211,7 +207,7 @@ export default function AttendeeSearchScreen() {
                       item.status === "valid" ? styles.badgeValid : styles.badgeSpent,
                     ]}
                   >
-                    <Text style={styles.badgeText}>{STATUS_LABELS[item.status]}</Text>
+                    <Text style={styles.badgeText}>{attendeeStatusLabel(t, item.status)}</Text>
                   </View>
                 </View>
 
@@ -243,7 +239,7 @@ export default function AttendeeSearchScreen() {
                       <ActivityIndicator color={theme.text} />
                     ) : (
                       <Text style={[styles.buttonText, styles.undoButtonText]}>
-                        Undo check-in
+                        {t("app.scanner.undoCheckIn")}
                       </Text>
                     )}
                   </Pressable>
@@ -262,7 +258,7 @@ export default function AttendeeSearchScreen() {
                       <ActivityIndicator color="#fff" />
                     ) : (
                       <Text style={styles.buttonText}>
-                        {item.admissible ? "Check in" : `Ticket ${item.status}`}
+                        {item.admissible ? t("app.scanner.checkIn") : attendeeStatusLabel(t, item.status)}
                       </Text>
                     )}
                   </Pressable>
@@ -311,7 +307,7 @@ const styles = StyleSheet.create({
   },
   cardHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
   name: { color: theme.text, fontSize: 17, fontWeight: "600", flexShrink: 1 },
-  badge: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3, marginLeft: "auto" },
+  badge: { borderRadius: 4, paddingHorizontal: 10, paddingVertical: 3, marginLeft: "auto" },
   badgeValid: { backgroundColor: theme.brandDark },
   badgeSpent: { backgroundColor: theme.surfaceAlt },
   badgeText: { color: theme.text, fontSize: 12, fontWeight: "600" },

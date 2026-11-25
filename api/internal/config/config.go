@@ -34,6 +34,13 @@ type Config struct {
 	// float. SRS 3.3 leaves the amount "to be determined"; 3.5% is a plausible
 	// card rate for the region and is what an unconfigured deployment charges.
 	// Set PROCESSING_FEE_PERCENT=0 to switch the charge off entirely.
+	// SMTP* and MailFrom switch notifications from the console to a real mail
+	// server (BF-100). Unset SMTPHost keeps the console delivery.
+	SMTPHost              string
+	SMTPPort              int
+	SMTPUsername          string
+	SMTPPassword          string
+	MailFrom              string
 	ProcessingFeePercent  string
 	ProcessingFeeFixedKZT string
 	AccessTokenTTL        time.Duration
@@ -80,6 +87,15 @@ func Load() (Config, error) {
 		envString("API_BASE_URL", "http://localhost:8080"), "/")
 
 	cfg.UploadDir = envString("UPLOAD_DIR", "./data/uploads")
+
+	cfg.SMTPHost = os.Getenv("SMTP_HOST")
+	if cfg.SMTPPort, err = envInt("SMTP_PORT", 587); err != nil {
+		return cfg, err
+	}
+	cfg.SMTPUsername = os.Getenv("SMTP_USERNAME")
+	// Google shows app passwords in groups of four; spaces are not part of it.
+	cfg.SMTPPassword = strings.ReplaceAll(os.Getenv("SMTP_PASSWORD"), " ", "")
+	cfg.MailFrom = os.Getenv("MAIL_FROM")
 
 	cfg.ProcessingFeePercent = envString("PROCESSING_FEE_PERCENT", "3.5")
 	cfg.ProcessingFeeFixedKZT = envString("PROCESSING_FEE_FIXED_KZT", "0")

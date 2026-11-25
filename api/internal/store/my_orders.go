@@ -23,8 +23,11 @@ type BuyerOrder struct {
 	EventSlug     string     `json:"event_slug"`
 	EventStartsAt time.Time  `json:"event_starts_at"`
 	Timezone      string     `json:"timezone"`
-	TicketCount   int        `json:"ticket_count"`
-	LiveTickets   int        `json:"live_tickets"`
+	// The poster and venue, so the list can show what the tickets are for (BF-100).
+	CoverImageURL *string `json:"cover_image_url,omitempty"`
+	VenueName     *string `json:"venue_name,omitempty"`
+	TicketCount   int     `json:"ticket_count"`
+	LiveTickets   int     `json:"live_tickets"`
 }
 
 // BuyerOrderStore lists a user's own orders.
@@ -50,7 +53,7 @@ func (s *BuyerOrderStore) ListForUser(
 
 	rows, err := s.pool.Query(ctx, `
 		SELECT o.id, o.order_number, o.status::text, o.total_kzt::text, o.placed_at,
-		       e.id, e.title, e.slug, e.starts_at, e.timezone,
+		       e.id, e.title, e.slug, e.starts_at, e.timezone, e.cover_image_url, e.venue_name,
 		       (SELECT count(*) FROM tickets t WHERE t.order_id = o.id),
 		       (SELECT count(*) FROM tickets t
 		         WHERE t.order_id = o.id AND t.status IN ('valid', 'checked_in'))
@@ -69,7 +72,7 @@ func (s *BuyerOrderStore) ListForUser(
 	for rows.Next() {
 		var o BuyerOrder
 		if err := rows.Scan(&o.ID, &o.OrderNumber, &o.Status, &o.TotalKZT, &o.PlacedAt,
-			&o.EventID, &o.EventTitle, &o.EventSlug, &o.EventStartsAt, &o.Timezone,
+			&o.EventID, &o.EventTitle, &o.EventSlug, &o.EventStartsAt, &o.Timezone, &o.CoverImageURL, &o.VenueName,
 			&o.TicketCount, &o.LiveTickets); err != nil {
 			return nil, err
 		}

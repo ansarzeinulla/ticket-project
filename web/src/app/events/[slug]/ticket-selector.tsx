@@ -112,7 +112,7 @@ export function TicketSelector({
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="font-medium">{type.name}</h3>
                   {type.is_free && (
-                    <span className="rounded-full bg-brand-soft px-2 py-0.5 text-xs font-medium text-brand-strong">
+                    <span className="rounded bg-brand-soft px-2 py-0.5 text-xs font-medium text-brand-strong">
                       {t("tickets.free")}
                     </span>
                   )}

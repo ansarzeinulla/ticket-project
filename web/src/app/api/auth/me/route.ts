@@ -10,11 +10,10 @@ import { apiBaseURL, clearToken, readToken } from "@/lib/server-session";
  */
 export async function GET() {
   const token = await readToken();
+  // A visitor with no session is not an error, just nobody: answering 200
+  // keeps every guest page free of a red 401 in the browser console (BF-100).
   if (!token) {
-    return NextResponse.json(
-      { error: { code: "unauthorized", message: "Not signed in." } },
-      { status: 401 },
-    );
+    return NextResponse.json({ user: null });
   }
 
   const upstream = await fetch(`${apiBaseURL()}/auth/me`, {
@@ -22,10 +21,11 @@ export async function GET() {
     cache: "no-store",
   });
 
-  if (upstream.status === 401) {
-    // The cookie outlived the token it names - expired, or revoked. Clearing
-    // it here means the next request is a clean anonymous one rather than
-    // another round trip that fails the same way.
+  if (upstream.status === 401 || upstream.status === 403) {
+    // The cookie outlived the token it names - expired, revoked, or the
+    // account was suspended (403). Clearing it here means the next request is
+    // a clean anonymous one; without this a suspended user bounced between
+    // /dashboard and /login forever, because proxy.ts still saw the cookie.
     await clearToken();
   }
 

@@ -137,7 +137,7 @@ export function SupportThreadView({
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="font-semibold">{supportCase.subject}</h3>
             <span
-              className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_STYLES[supportCase.status]}`}
+              className={`rounded px-2.5 py-0.5 text-xs font-medium ${STATUS_STYLES[supportCase.status]}`}
               data-testid="case-status"
             >
               {supportStatusLabel(t, supportCase.status)}

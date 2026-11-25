@@ -950,3 +950,26 @@ COMMENT ON TABLE audit_logs       IS 'Append-only activity timeline; UPDATE and 
 
 COMMENT ON COLUMN users.password_hash IS 'Hash only - plaintext passwords must never be stored.';
 COMMENT ON COLUMN payments.is_simulated IS 'True for demonstration payments; the MVP moves no real money.';
+
+-- -----------------------------------------------------------------------------
+-- BF-100: the language an order was placed in.
+-- -----------------------------------------------------------------------------
+-- Emails go out in the recipient's language. Someone with an account has one
+-- saved; a guest does not, so the language of the page they bought on is kept
+-- with the order, and a later refund or cancellation notice can use it.
+ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS locale text;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'orders_locale_check') THEN
+        ALTER TABLE orders ADD CONSTRAINT orders_locale_check
+            CHECK (locale IS NULL OR locale IN ('kk', 'ru', 'en'));
+    END IF;
+END
+$$;
+
+-- BF-100: email verification and password reset use a 6-digit code typed by
+-- the person instead of a link. A code is guessable, so each one counts its
+-- wrong tries and dies after five.
+ALTER TABLE user_tokens ADD COLUMN IF NOT EXISTS attempts integer NOT NULL DEFAULT 0;

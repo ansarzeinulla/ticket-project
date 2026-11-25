@@ -341,3 +341,59 @@ func resolveSeats(
 	}
 	return out, nil
 }
+
+// VenueLayout is a predefined venue an organizer can pick for an
+// assigned-seating event, with its sections so ticket types can be matched to
+// them (SRS 4.3.1: "select and configure the predefined layout").
+type VenueLayout struct {
+	ID       uuid.UUID            `json:"id"`
+	Name     string               `json:"name"`
+	Address  string               `json:"address"`
+	City     string               `json:"city"`
+	Seats    int                  `json:"seats"`
+	Sections []VenueLayoutSection `json:"sections"`
+}
+
+// VenueLayoutSection is one priced block of seats in a VenueLayout.
+type VenueLayoutSection struct {
+	Name          string `json:"name"`
+	PriceCategory string `json:"price_category"`
+	Seats         int    `json:"seats"`
+}
+
+// PredefinedVenues lists the venues that carry a seat layout.
+func (s *SeatingStore) PredefinedVenues(ctx context.Context) ([]VenueLayout, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT v.id, v.name, v.address_line, v.city,
+		       sec.name, sec.price_category,
+		       (SELECT count(*) FROM seat_rows r JOIN seats st ON st.row_id = r.id
+		         WHERE r.section_id = sec.id)::int
+		  FROM venues v
+		  JOIN venue_sections sec ON sec.venue_id = v.id
+		 WHERE v.is_predefined_layout
+		 ORDER BY v.name, v.id, sec.display_order, sec.name`)
+	if err != nil {
+		return nil, mapError(err)
+	}
+	defer rows.Close()
+
+	venues := []VenueLayout{}
+	for rows.Next() {
+		var (
+			v   VenueLayout
+			sec VenueLayoutSection
+		)
+		if err := rows.Scan(&v.ID, &v.Name, &v.Address, &v.City,
+			&sec.Name, &sec.PriceCategory, &sec.Seats); err != nil {
+			return nil, err
+		}
+		if n := len(venues); n == 0 || venues[n-1].ID != v.ID {
+			v.Sections = []VenueLayoutSection{}
+			venues = append(venues, v)
+		}
+		last := &venues[len(venues)-1]
+		last.Sections = append(last.Sections, sec)
+		last.Seats += sec.Seats
+	}
+	return venues, rows.Err()
+}

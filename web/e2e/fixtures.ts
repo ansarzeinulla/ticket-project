@@ -78,12 +78,25 @@ async function apiCall<T>(
 }
 
 export const api = {
-  async register(prefix: string, fullName = "E2E Tester"): Promise<Account> {
+  /**
+   * A new account. Its email is confirmed straight in the database unless
+   * `verified` is false: publishing needs a confirmed address (BF-100), and
+   * most specs are about something else.
+   */
+  async register(prefix: string, fullName = "E2E Tester", { verified = true } = {}): Promise<Account> {
     const email = uniqueEmail(prefix);
     const data = await apiCall<{ user: { id: string }; access_token: string }>(
       "/auth/register",
       { method: "POST", body: { email, password: PASSWORD, full_name: fullName } },
     );
+    if (verified) {
+      const { execSync } = await import("node:child_process");
+      execSync(
+        `docker compose exec -T db psql -U biletflow -d biletflow -qtAX -c ` +
+          `"UPDATE users SET email_verified_at = now(), status = 'active' WHERE id = '${data.user.id}';"`,
+        { cwd: "..", stdio: "ignore" },
+      );
+    }
     return { id: data.user.id, email, password: PASSWORD, token: data.access_token };
   },
 
@@ -290,5 +303,43 @@ export async function platformAdmin(): Promise<Account> {
   return { ...admin, token: await api.login(admin.email) };
 }
 
-export const test = base;
+/**
+ * The newest 6-digit code emailed to an address (BF-100), read from the
+ * notification outbox - the database never holds the code itself.
+ */
+export async function latestEmailedCode(email: string, type: string): Promise<string> {
+  const { execSync } = await import("node:child_process");
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const out = execSync(
+      `docker compose exec -T db psql -U biletflow -d biletflow -qtAX -c ` +
+        `"SELECT substring(body from ' {2}([0-9]{6})') FROM notifications ` +
+        `WHERE recipient_email = '${email}' AND type = '${type}' ORDER BY created_at DESC LIMIT 1;"`,
+      { cwd: ".." },
+    )
+      .toString()
+      .trim();
+    if (/^\d{6}$/.test(out)) return out;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(`no ${type} code was emailed to ${email}`);
+}
+
+/**
+ * Pages with a loading skeleton stream in (BF-100): for a moment after "load"
+ * React keeps the streamed copy in a hidden <div id="S:…"> beside the final one,
+ * so every test id briefly matches twice. Each navigation therefore waits until
+ * React has swapped the content in.
+ */
+export const test = base.extend({
+  // Playwright's fixture callback is named `use`; it is not a React hook.
+  page: async ({ page }, provide) => {
+    const goto = page.goto.bind(page);
+    page.goto = async (url, options) => {
+      const response = await goto(url, options);
+      await page.waitForFunction(() => !document.querySelector('div[hidden][id^="S:"]'));
+      return response;
+    };
+    await provide(page);
+  },
+});
 export { expect };

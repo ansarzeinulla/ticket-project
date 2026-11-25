@@ -13,8 +13,8 @@ export default function AppError({
   const t = useT();
   return (
     <div className="grid min-h-dvh place-items-center px-4">
-      <div className="max-w-md rounded-xl border border-border-subtle bg-surface p-8 text-center">
-        <h1 className="text-lg font-semibold">{t("appError.heading")}</h1>
+      <div className="max-w-md rounded-lg bg-surface p-8 text-center ring-1 ring-border-subtle">
+        <h1 className="text-2xl font-bold">{t("appError.heading")}</h1>
         <p className="mt-2 text-sm text-foreground-muted">
           {error.message || t("appError.fallback")}
         </p>

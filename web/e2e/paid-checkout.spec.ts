@@ -35,8 +35,9 @@ test("an attendee buys a paid ticket and receives a QR-code ticket", async ({ pa
   await dialog.locator('input[name="buyer_name"]').fill("Aigerim Zhaksy");
   await dialog.locator('input[name="buyer_email"]').fill(attendeeEmail);
 
-  // SRS 4.6: demonstration payments must never read as real ones.
-  await expect(dialog.getByText(/simulated/i).first()).toBeVisible();
+  // SRS 4.6: demonstration payments must never read as real ones. The notice
+  // is the site-wide footer (BF-100), present on the checkout page too.
+  await expect(page.getByTestId("student-project-note")).toContainText(/do not sell anything/i);
   await dialog.getByRole("button", { name: /^Pay / }).click();
 
   await expect(page).toHaveURL(/\/orders\//);
@@ -125,4 +126,28 @@ test("an invalid promo code is refused with a message, not silently ignored", as
   await expect(page.getByTestId("promo-error")).toBeVisible();
   // The basket total is untouched by a code that does not apply.
   await expect(page.getByTestId("promo-applied")).toHaveCount(0);
+});
+
+test("the identity step is a document check that always passes in this student project", async ({ page }) => {
+  // SRS 4.5 / UC2: the organizer completes identity verification before paid sales.
+  const organizer = await api.register("idcheck", "ID Check Organizer");
+  const event = await api.createEvent(organizer.token, uniqueTitle("Document Check Night"));
+  await api.addTicketType(organizer.token, event.id, "General Admission", "5000", 20);
+
+  await signIn(page, organizer.token);
+  await page.goto(`/dashboard/events/${event.id}`);
+  await page.getByRole("button", { name: "Activate paid sales" }).click();
+
+  await expect(page.getByTestId("identity-verify")).toBeVisible();
+  await page.getByTestId("identity-file").setInputFiles({
+    name: "passport.jpg",
+    mimeType: "image/jpeg",
+    buffer: Buffer.from([0xff, 0xd8, 0xff, 0xe0]),
+  });
+  await expect(page.getByTestId("identity-verified")).toBeVisible();
+
+  // The other three steps are ticked by hand, then activation completes.
+  for (const box of await page.locator('input[type="checkbox"]:not(:disabled)').all()) await box.check();
+  await page.getByRole("button", { name: "Complete activation" }).click();
+  await expect(page.getByText(/paid sales are active|paid sales enabled/i).first()).toBeVisible();
 });

@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "BiletFlow Scanner",
+    "name": "BiletFlow",
     "slug": "biletflow-scanner",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "kz.biletflow.scanner"
@@ -26,6 +26,13 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "BiletFlow uses your photos to add a banner image to an event you organize.",
+          "cameraPermission": "BiletFlow uses the camera to scan attendee ticket QR codes at the entrance."
+        }
+      ],
       [
         "expo-camera",
         {

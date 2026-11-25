@@ -6,7 +6,8 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { ApiError, api } from "@/lib/api";
 import { formatKZT } from "@/lib/money";
-import { useT } from "@/lib/i18n/context";
+import { formatInTimezone } from "@/lib/datetime";
+import { useI18n } from "@/lib/i18n/context";
 import type { MessageKey } from "@/lib/i18n/dictionaries";
 import type { Translator } from "@/lib/i18n/translate";
 import type { EventOrder } from "@/lib/types";
@@ -35,14 +36,8 @@ function statusLabel(t: Translator, status: string): string {
   return key ? t(key) : status;
 }
 
-function formatWhen(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+function formatWhen(iso: string, locale: string): string {
+  return formatInTimezone(iso, "Asia/Almaty", locale);
 }
 
 /**
@@ -59,7 +54,7 @@ export function OrderManager({
   eventID: string;
   onRefunded?: () => void;
 }) {
-  const t = useT();
+  const { t, locale } = useI18n();
   const [orders, setOrders] = useState<EventOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -174,7 +169,7 @@ export function OrderManager({
       {orders.length > 0 && (
         <div className="overflow-x-auto rounded-lg border border-border-subtle">
           <table className="w-full min-w-[42rem] text-sm">
-            <thead className="bg-surface-muted text-left text-xs uppercase tracking-wide text-foreground-muted">
+            <thead className="bg-surface-muted text-left text-xs font-medium text-foreground-muted">
               <tr>
                 <th className="px-4 py-2 font-medium">{t("org.orders.colAttendee")}</th>
                 <th className="px-4 py-2 font-medium">{t("org.orders.colOrder")}</th>
@@ -194,7 +189,7 @@ export function OrderManager({
                   <td className="px-4 py-3">
                     <div className="font-mono text-xs">{order.order_number}</div>
                     <div className="text-xs text-foreground-muted">
-                      {formatWhen(order.placed_at ?? order.created_at)}
+                      {formatWhen(order.placed_at ?? order.created_at, locale)}
                     </div>
                   </td>
                   <td className="px-4 py-3 text-right">
@@ -220,7 +215,7 @@ export function OrderManager({
                   </td>
                   <td className="px-4 py-3">
                     <span
-                      className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
+                      className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${
                         STATUS_STYLES[order.status] ?? "bg-surface-muted text-foreground-muted"
                       }`}
                     >

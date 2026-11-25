@@ -48,6 +48,10 @@ export function CreateEventForm() {
     venueName: "",
     venueAddress: "",
     visibility: "public",
+    registrationOpensAt: "",
+    registrationClosesAt: "",
+    seatingMode: "general_admission",
+    venueID: "",
   }));
 
   const [submitting, setSubmitting] = useState(false);
@@ -63,7 +67,8 @@ export function CreateEventForm() {
     setFormError(null);
     setFieldErrors({});
 
-    const { errors, startsISO, endsISO } = validateEventForm(values, localInputToISO, t);
+    const { errors, startsISO, endsISO, registrationOpensISO, registrationClosesISO } =
+      validateEventForm(values, localInputToISO, t);
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
       return;
@@ -85,6 +90,11 @@ export function CreateEventForm() {
       ...(values.venueAddress.trim() ? { venue_address: values.venueAddress.trim() } : {}),
       ...(values.coverImageURL ? { cover_image_url: values.coverImageURL } : {}),
       ...(values.refundPolicy.trim() ? { refund_policy: values.refundPolicy.trim() } : {}),
+      ...(registrationOpensISO ? { registration_opens_at: registrationOpensISO } : {}),
+      ...(registrationClosesISO ? { registration_closes_at: registrationClosesISO } : {}),
+      ...(values.seatingMode === "assigned_seating"
+        ? { seating_mode: "assigned_seating" as const, venue_id: values.venueID }
+        : {}),
     };
 
     setSubmitting(true);
@@ -117,7 +127,7 @@ export function CreateEventForm() {
         <Link href="/dashboard" className="text-sm text-foreground-muted hover:underline">
           {t("org.detail.back")}
         </Link>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight">{t("org.titles.newEvent")}</h1>
+        <h1 className="mt-2 text-3xl font-bold">{t("org.titles.newEvent")}</h1>
         <p className="mt-1 text-sm text-foreground-muted">
           {t("org.form.createSubtitle")}
         </p>

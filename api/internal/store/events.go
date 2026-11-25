@@ -209,6 +209,8 @@ type ListEventsFilter struct {
 	Visibilities []string
 	Category     *string
 	Search       *string
+	// City matches any of the spellings in the venue address (Алматы / Almaty).
+	City         []string
 	StartsAfter  *time.Time
 	StartsBefore *time.Time
 	Limit        int
@@ -243,6 +245,9 @@ func (s *EventStore) List(ctx context.Context, f ListEventsFilter) ([]Event, int
 		where = append(where, fmt.Sprintf(
 			"(title ILIKE '%%' || $%d || '%%' OR description ILIKE '%%' || $%[1]d || '%%')",
 			len(args)))
+	}
+	if len(f.City) > 0 {
+		add("venue_address ILIKE ANY($%d)", f.City)
 	}
 	if f.StartsAfter != nil {
 		add("starts_at >= $%d", *f.StartsAfter)

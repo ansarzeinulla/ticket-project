@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/biletflow/api/internal/email"
@@ -10,21 +11,40 @@ import (
 	"github.com/biletflow/api/internal/store"
 )
 
-// CodeTokenInvalid is returned for a token that is unknown, expired or spent.
-// The three cases share a code deliberately - see store.ErrTokenInvalid.
+// CodeTokenInvalid is returned for a code that is wrong, expired, spent or out
+// of tries. The cases share one answer deliberately - see store.ErrTokenInvalid.
 const CodeTokenInvalid = "token_invalid"
 
 type emailRequest struct {
 	Email string `json:"email"`
 }
 
-type consumeTokenRequest struct {
-	Token string `json:"token"`
+// verifyEmailRequest confirms an address with the 6-digit code emailed to it.
+type verifyEmailRequest struct {
+	Email string `json:"email"`
+	Code  string `json:"code"`
 }
 
+// resetPasswordRequest sets a new password with the 6-digit code emailed to
+// the account's address.
 type resetPasswordRequest struct {
-	Token    string `json:"token"`
+	Email    string `json:"email"`
+	Code     string `json:"code"`
 	Password string `json:"password"`
+}
+
+// validCode accepts six digits, ignoring spaces a person may type or paste.
+func validCode(code string) (string, bool) {
+	code = strings.ReplaceAll(strings.TrimSpace(code), " ", "")
+	if len(code) != 6 {
+		return code, false
+	}
+	for _, r := range code {
+		if r < '0' || r > '9' {
+			return code, false
+		}
+	}
+	return code, true
 }
 
 // acceptedResponse is the deliberately uninformative answer to both "send me a
@@ -69,7 +89,7 @@ func (s *Server) handleRequestPasswordReset(w http.ResponseWriter, r *http.Reque
 
 	httpx.WriteJSON(w, http.StatusAccepted, acceptedResponse{
 		Status:  "accepted",
-		Message: "If that address has an account, a reset link is on its way.",
+		Message: "If that address has an account, a reset code is on its way.",
 	})
 }
 
@@ -82,8 +102,13 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errs := fieldErrors{}
-	if blank(req.Token) {
-		errs.add("token", "The reset code is required.")
+	address := normalizeEmail(req.Email)
+	if msg := validateEmail(address); msg != "" {
+		errs.add("email", msg)
+	}
+	code, ok := validCode(req.Code)
+	if !ok {
+		errs.add("code", "Enter the 6-digit code from the email.")
 	}
 	if msg := validatePassword(req.Password); msg != "" {
 		errs.add("password", msg)
@@ -99,10 +124,10 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := s.accountTokens.ConsumePasswordReset(r.Context(), req.Token, hash)
+	user, err := s.accountTokens.ConsumePasswordReset(r.Context(), address, code, hash)
 	if errors.Is(err, store.ErrTokenInvalid) {
 		httpx.WriteError(w, http.StatusBadRequest, CodeTokenInvalid,
-			"This reset code is invalid, expired or has already been used.")
+			"This code is wrong or has expired. Check the latest email, or ask for a new code.")
 		return
 	}
 	if err != nil {
@@ -110,9 +135,9 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// No token is returned. Resetting a password proves control of an inbox,
+	// No session is returned. Resetting a password proves control of an inbox,
 	// not an intent to sign in on this device, and issuing a session here would
-	// let a stolen reset link skip the login screen entirely.
+	// let a stolen reset code skip the login screen entirely.
 	httpx.WriteJSON(w, http.StatusOK, acceptedResponse{
 		Status:  "ok",
 		Message: "Your password has been changed. Sign in with it now.",
@@ -148,7 +173,7 @@ func (s *Server) handleRequestEmailVerification(w http.ResponseWriter, r *http.R
 
 	httpx.WriteJSON(w, http.StatusAccepted, acceptedResponse{
 		Status:  "accepted",
-		Message: "Check your inbox for the confirmation link.",
+		Message: "Check your inbox for the confirmation code.",
 	})
 }
 
@@ -158,27 +183,34 @@ type verifiedResponse struct {
 	State  string `json:"account_status"`
 }
 
-// handleVerifyEmail consumes a verification token.
+// handleVerifyEmail confirms an address with its 6-digit code.
 //
-// It needs no authentication: the token is the proof, and the link is followed
-// from an inbox where nobody is signed in.
+// It needs no authentication: the code is the proof, and the address says
+// whose code it is. Wrong codes are counted, so guessing gets five tries.
 func (s *Server) handleVerifyEmail(w http.ResponseWriter, r *http.Request) {
-	var req consumeTokenRequest
+	var req verifyEmailRequest
 	if err := httpx.DecodeJSON(w, r, &req); err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeInvalidJSON, err.Error())
 		return
 	}
-	if blank(req.Token) {
-		errs := fieldErrors{}
-		errs.add("token", "The confirmation code is required.")
+	errs := fieldErrors{}
+	address := normalizeEmail(req.Email)
+	if msg := validateEmail(address); msg != "" {
+		errs.add("email", msg)
+	}
+	code, ok := validCode(req.Code)
+	if !ok {
+		errs.add("code", "Enter the 6-digit code from the email.")
+	}
+	if errs.any() {
 		httpx.WriteValidationError(w, errs)
 		return
 	}
 
-	user, err := s.accountTokens.ConsumeEmailVerification(r.Context(), req.Token)
+	user, err := s.accountTokens.ConsumeEmailVerification(r.Context(), address, code)
 	if errors.Is(err, store.ErrTokenInvalid) {
 		httpx.WriteError(w, http.StatusBadRequest, CodeTokenInvalid,
-			"This confirmation code is invalid, expired or has already been used.")
+			"This code is wrong or has expired. Check the latest email, or ask for a new code.")
 		return
 	}
 	if err != nil {
@@ -193,13 +225,13 @@ func (s *Server) handleVerifyEmail(w http.ResponseWriter, r *http.Request) {
 
 // --- the notifications these produce ----------------------------------------
 
-// sendPasswordReset emails a reset token (SRS 4.10).
+// sendPasswordReset emails a reset code (SRS 4.10).
 func (s *Server) sendPasswordReset(issued store.IssuedToken) {
 	msg := email.PasswordReset(email.AccountTokenDetails{
 		FullName:  issued.FullName,
 		Email:     issued.Email,
-		Token:     issued.Token,
-		Link:      s.cfg.WebBaseURL + "/reset-password?token=" + issued.Token,
+		Locale:    s.localeFor(issued.Email, ""),
+		Code:      issued.Code,
 		ExpiresIn: humanDuration(store.PasswordResetTTL),
 	})
 	userID := issued.UserID
@@ -209,13 +241,13 @@ func (s *Server) sendPasswordReset(issued store.IssuedToken) {
 	})
 }
 
-// sendEmailVerification emails a confirmation token (SRS 4.1).
+// sendEmailVerification emails a confirmation code (SRS 4.1).
 func (s *Server) sendEmailVerification(issued store.IssuedToken) {
 	msg := email.EmailVerification(email.AccountTokenDetails{
 		FullName:  issued.FullName,
 		Email:     issued.Email,
-		Token:     issued.Token,
-		Link:      s.cfg.WebBaseURL + "/verify-email?token=" + issued.Token,
+		Locale:    s.localeFor(issued.Email, ""),
+		Code:      issued.Code,
 		ExpiresIn: humanDuration(store.EmailVerificationTTL),
 	})
 	userID := issued.UserID

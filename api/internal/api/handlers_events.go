@@ -222,6 +222,14 @@ func (s *Server) handleGetEvent(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, eventResponse{Event: event})
 }
 
+// citySpellings maps the catalogue's city filter to the names a venue address
+// may use for it, in Russian, Kazakh and English.
+var citySpellings = map[string][]string{
+	"almaty":   {"Алматы", "Almaty"},
+	"astana":   {"Астана", "Astana"},
+	"shymkent": {"Шымкент", "Shymkent"},
+}
+
 func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
 	limit, offset, errs := pagination(r)
 	q := r.URL.Query()
@@ -239,6 +247,16 @@ func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	if v := q.Get("q"); v != "" {
 		filter.Search = &v
+	}
+	if v := q.Get("city"); v != "" {
+		spellings, ok := citySpellings[v]
+		if !ok {
+			errs.add("city", "Must be almaty, astana or shymkent.")
+		} else {
+			for _, name := range spellings {
+				filter.City = append(filter.City, "%"+name+"%")
+			}
+		}
 	}
 	if v := q.Get("starts_after"); v != "" {
 		t, err := time.Parse(time.RFC3339, v)
@@ -617,9 +635,26 @@ func (s *Server) handleDeleteEvent(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// CodeEmailUnverified refuses publishing for an account that has not confirmed
+// its email address (SRS UC1: "Organizer has a verified account").
+const CodeEmailUnverified = "email_unverified"
+
 func (s *Server) handlePublishEvent(w http.ResponseWriter, r *http.Request) {
 	event, ok := s.loadOwnedEvent(w, r)
 	if !ok {
+		return
+	}
+
+	// Drafts can be written by anyone; going public needs a confirmed address
+	// (BF-100). The code to confirm it is on the profile page.
+	user, err := s.users.GetByID(r.Context(), mustUserID(r.Context()))
+	if err != nil {
+		httpx.WriteInternalError(w, r, err)
+		return
+	}
+	if user.EmailVerifiedAt == nil {
+		httpx.WriteError(w, http.StatusForbidden, CodeEmailUnverified,
+			"Confirm your email address before publishing: enter the 6-digit code on your profile page.")
 		return
 	}
 

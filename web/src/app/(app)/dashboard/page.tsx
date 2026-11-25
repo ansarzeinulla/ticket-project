@@ -82,7 +82,7 @@ export default function DashboardPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{t("org.dashboard.heading")}</h1>
+          <h1 className="text-3xl font-bold">{t("org.dashboard.heading")}</h1>
           <p className="mt-1 text-sm text-foreground-muted">
             {loading
               ? t("org.common.loading")
@@ -92,34 +92,42 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="secondary" onClick={handleRefresh} disabled={loading}>
             {t("org.common.refresh")}
           </Button>
           <Link
             href="/events/new"
-            className="inline-flex items-center justify-center rounded-lg bg-brand px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-strong"
+            className="inline-flex items-center justify-center rounded-md bg-brand px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-strong"
           >
             {t("org.dashboard.newEvent")}
           </Link>
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-1" role="group" aria-label={t("org.dashboard.filter")}>
-        {LIFECYCLE_TABS.map((tab) => (
-          <Button
-            key={tab.label}
-            size="sm"
-            variant={lifecycle === tab.value ? "primary" : "secondary"}
-            onClick={() => {
-              setLoading(true);
-              setLifecycle(tab.value);
-            }}
-            data-testid={`filter-${tab.value || "all"}`}
-          >
-            {t(tab.label)}
-          </Button>
-        ))}
+      <div className="scroll-row flex gap-6 overflow-x-auto border-b border-border-subtle" role="group" aria-label={t("org.dashboard.filter")}>
+        {LIFECYCLE_TABS.map((tab) => {
+          const on = lifecycle === tab.value;
+          return (
+            <button
+              key={tab.label}
+              type="button"
+              aria-pressed={on}
+              onClick={() => {
+                setLoading(true);
+                setLifecycle(tab.value);
+              }}
+              className={`relative shrink-0 whitespace-nowrap pb-3 text-sm transition-colors ${
+                on
+                  ? "font-semibold after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:bg-brand"
+                  : "text-foreground-muted hover:text-foreground"
+              }`}
+              data-testid={`filter-${tab.value || "all"}`}
+            >
+              {t(tab.label)}
+            </button>
+          );
+        })}
       </div>
 
       {error && (
@@ -129,23 +137,23 @@ export default function DashboardPage() {
       )}
 
       {loading && events.length === 0 ? (
-        <div className="flex items-center gap-3 rounded-xl border border-border-subtle bg-surface p-8 text-sm text-foreground-muted">
+        <div className="flex items-center gap-3 rounded-lg bg-surface p-8 ring-1 ring-border-subtle text-sm text-foreground-muted">
           <Spinner />
           {t("org.dashboard.fetching")}
         </div>
       ) : events.length === 0 && !error && lifecycle ? (
-        <p className="rounded-xl border border-dashed border-border-subtle bg-surface p-10 text-center text-sm text-foreground-muted">
+        <p className="rounded-lg bg-surface ring-1 ring-border-subtle p-10 text-center text-sm text-foreground-muted">
           {t(LIFECYCLE_TABS.find((tab) => tab.value === lifecycle)?.empty ?? "org.dashboard.empty.all")}
         </p>
       ) : events.length === 0 && !error ? (
-        <div className="rounded-xl border border-dashed border-border-subtle bg-surface p-12 text-center">
+        <div className="rounded-lg bg-surface ring-1 ring-border-subtle p-12 text-center">
           <h2 className="text-base font-semibold">{t("org.dashboard.noneHeading")}</h2>
           <p className="mx-auto mt-1 max-w-sm text-sm text-foreground-muted">
             {t("org.dashboard.noneBody")}
           </p>
           <Link
             href="/events/new"
-            className="mt-5 inline-flex items-center justify-center rounded-lg bg-brand px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-strong"
+            className="mt-5 inline-flex items-center justify-center rounded-md bg-brand px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-strong"
           >
             {t("org.dashboard.createFirst")}
           </Link>

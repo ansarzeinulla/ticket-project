@@ -19,7 +19,7 @@ import { useI18n } from "@/lib/i18n/context";
  * radio group is more accessible than a menu, and each label is in its own
  * language so a visitor recognises theirs without reading the others.
  */
-export function LanguageSwitcher() {
+export function LanguageSwitcher({ dark = false }: { dark?: boolean }) {
   const { locale } = useI18n();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -38,7 +38,7 @@ export function LanguageSwitcher() {
 
   return (
     <div
-      className="inline-flex items-center rounded-lg border border-border-subtle bg-surface p-0.5"
+      className={`inline-flex items-center divide-x text-xs ${dark ? "divide-white/20" : "divide-border-subtle"}`}
       role="radiogroup"
       aria-label={localeNames[locale]}
       data-testid="language-switcher"
@@ -53,16 +53,16 @@ export function LanguageSwitcher() {
             aria-checked={active}
             disabled={pending}
             onClick={() => choose(option)}
-            className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+            aria-label={localeNames[option]}
+            title={localeNames[option]}
+            className={`px-2 py-1 font-semibold tracking-wide transition-colors ${
               active
-                ? "bg-brand-soft text-brand-strong"
-                : "text-foreground-muted hover:text-foreground"
+                ? dark ? "text-white" : "text-brand"
+                : dark ? "text-top-muted hover:text-white" : "text-foreground-muted hover:text-foreground"
             } disabled:opacity-60`}
             data-testid={`locale-${option}`}
           >
-            {/* The short tag on small screens, the endonym once there is room. */}
-            <span className="sm:hidden">{option.toUpperCase()}</span>
-            <span className="hidden sm:inline">{localeNames[option]}</span>
+            {option.toUpperCase()}
           </button>
         );
       })}

@@ -211,7 +211,8 @@ func (s *Server) handleConfirmHold(w http.ResponseWriter, r *http.Request) {
 	// SRS 4.10: purchase confirmation and ticket delivery, after the response.
 	event, eventErr := s.events.GetByID(r.Context(), held.EventID)
 	if eventErr == nil {
-		s.sendOrderConfirmation(result, event)
+		s.rememberOrderLocale(r.Context(), result.Order.ID, requestLocale(r))
+		s.sendOrderConfirmation(result, event, requestLocale(r))
 	}
 }
 

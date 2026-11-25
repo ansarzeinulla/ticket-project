@@ -1,4 +1,4 @@
-import { PASSWORD, api, expect, signIn, test, uniqueEmail } from "./fixtures";
+import { API_BASE_URL, PASSWORD, api, expect, latestEmailedCode, signIn, test, uniqueEmail } from "./fixtures";
 
 /**
  * SRS 4.1: registration, sign-in, sign-out, password reset and change.
@@ -9,7 +9,7 @@ import { PASSWORD, api, expect, signIn, test, uniqueEmail } from "./fixtures";
  * says what is meant and does not break when that marker changes.
  */
 
-test("a visitor registers, lands on the dashboard, and signs out", async ({ page }) => {
+test("a visitor registers, lands back on the storefront, and signs out", async ({ page }) => {
   const email = uniqueEmail("register");
 
   await page.goto("/register");
@@ -19,11 +19,14 @@ test("a visitor registers, lands on the dashboard, and signs out", async ({ page
   await page.locator('input[name="confirm_password"]').fill(PASSWORD);
   await page.getByRole("button", { name: /create account/i }).click();
 
-  await expect(page).toHaveURL(/\/dashboard/);
-  await expect(page.getByRole("heading", { name: "Your events" })).toBeVisible();
+  // BF-100: nobody is pushed into the organizer dashboard; the storefront is home.
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByTestId("profile-link")).toHaveText("Dana Amirova");
 
-  await page.getByRole("button", { name: "Sign out" }).click();
-  await expect(page).toHaveURL(/\/login/);
+  // Sign-out lives in the account menu (BF-100).
+  await page.getByTestId("account-menu").click();
+  await page.getByRole("menuitem", { name: "Sign out" }).click();
+  await expect(page.getByTestId("header-sign-in")).toBeVisible();
 });
 
 test("signing in with the wrong password says so without revealing anything", async ({
@@ -81,7 +84,7 @@ test("an organizer changes their own password and the old one stops working", as
 
   // Proven by using it, not by trusting the banner: SRS 4.1 is about the
   // credential actually changing, not about a message saying it did.
-  const refused = await fetch("http://localhost:8080/api/v1/auth/login", {
+  const refused = await fetch(`${API_BASE_URL}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email: account.email, password: PASSWORD }),
@@ -122,4 +125,67 @@ test("the profile refuses an address that is not one, on the field itself", asyn
   const field = page.locator('input[name="contact_email"]');
   await expect(field).toHaveAttribute("aria-invalid", "true");
   await expect(page.getByText(/valid email address/i)).toBeVisible();
+});
+
+test("a forgotten password is reset with the emailed code without leaving the page", async ({ page }) => {
+  const account = await api.register("codereset");
+
+  await page.goto("/forgot-password");
+  await page.locator('input[name="email"]').fill(account.email);
+  await page.getByRole("button", { name: /send|reset/i }).click();
+  await expect(page.getByRole("heading", { name: /check your inbox/i })).toBeVisible();
+
+  // The code and the new password go in right here.
+  const code = await latestEmailedCode(account.email, "account.password_reset");
+  // Six boxes; typing the whole code into the first one spreads it across.
+  await page.getByTestId("reset-code-0").fill(code);
+  await page.locator('input[name="password"]').fill("a fresh passphrase 2026");
+  await page.locator('input[name="confirmation"]').fill("a fresh passphrase 2026");
+  await page.getByRole("button", { name: /change password/i }).click();
+  await expect(page.getByRole("heading", { name: /password changed/i })).toBeVisible();
+
+  // The new password signs in.
+  await page.goto("/login");
+  await page.locator('input[name="email"]').fill(account.email);
+  await page.locator('input[name="password"]').fill("a fresh passphrase 2026");
+  await page.locator("form").getByRole("button", { name: /sign in/i }).click();
+  await expect(page).toHaveURL(/\/$/);
+});
+
+test("a new account confirms its email with the 6-digit code on the profile page", async ({ page }) => {
+  const account = await api.register("codeverify", "E2E Tester", { verified: false });
+  await signIn(page, account.token);
+  await page.goto("/");
+
+  // The banner is only a one-line pointer to the profile page.
+  await expect(page.getByTestId("verify-email-banner")).toBeVisible();
+  await page.getByTestId("verify-email-go").click();
+  await expect(page).toHaveURL(/\/dashboard\/profile/);
+  await expect(page.getByTestId("confirm-email-card")).toBeVisible();
+
+  // A wrong code is refused with a message, and the boxes clear.
+  const code = await latestEmailedCode(account.email, "account.email_verification");
+  const wrong = code === "000000" ? "111111" : "000000";
+  await page.getByTestId("verify-email-code-0").fill(wrong);
+  await expect(page.getByTestId("verify-email-error")).toBeVisible();
+
+  // A full code confirms by itself, without pressing anything.
+  await page.getByTestId("verify-email-code-0").fill(code);
+  await expect(page.getByTestId("confirm-email-done")).toBeVisible();
+  await page.goto("/");
+  await expect(page.getByTestId("verify-email-banner")).toHaveCount(0);
+});
+
+test("publishing waits for a confirmed email and says where to confirm it", async ({ page }) => {
+  // SRS UC1: "Organizer has a verified account."
+  const organizer = await api.register("unconfirmedpublisher", "E2E Tester", { verified: false });
+  await api.createEvent(organizer.token, "Unconfirmed Showcase");
+  await signIn(page, organizer.token);
+  await page.goto("/dashboard");
+
+  await page.getByRole("button", { name: /^publish$/i }).first().click();
+  const notice = page.getByTestId("publish-needs-email");
+  await expect(notice).toBeVisible();
+  await notice.getByRole("link").click();
+  await expect(page.getByTestId("confirm-email-card")).toBeVisible();
 });

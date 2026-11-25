@@ -15,6 +15,8 @@ import {
 import { ScanResultOverlay, type ScanOutcome } from "../../components/ScanResultOverlay";
 import { ApiError, api } from "../../lib/api";
 import { useAuth } from "../../lib/auth-context";
+import { useT } from "../../lib/i18n/context";
+import type { Translator } from "../../lib/i18n/translate";
 import { radius, theme } from "../../lib/theme";
 import type { CheckInStats } from "../../lib/types";
 
@@ -37,17 +39,17 @@ const VALID_RESULT_DISPLAY_MS = 2600;
 const SAME_CODE_COOLDOWN_MS = 3000;
 
 /** Turns an API failure into the words on the red screen. */
-function outcomeFromError(error: unknown): ScanOutcome {
+function outcomeFromError(t: Translator, error: unknown): ScanOutcome {
   if (!(error instanceof ApiError)) {
-    return { kind: "denied", title: "Error", message: "Something went wrong. Try again." };
+    return { kind: "denied", title: t("app.scanner.errorTitle"), message: t("app.scanner.errorBody") };
   }
 
   switch (error.code) {
     case "already_checked_in":
       return {
         kind: "denied",
-        title: "Already used",
-        message: "This ticket has already been scanned at the entrance.",
+        title: t("app.scanner.alreadyUsed"),
+        message: t("app.scanner.alreadyUsedBody"),
         attendeeName: error.attendeeName,
         checkedInAt: error.checkedInAt,
         stats: error.stats,
@@ -58,37 +60,36 @@ function outcomeFromError(error: unknown): ScanOutcome {
       // rather than their ticket, instead of turning away a valid holder.
       return {
         kind: "denied",
-        title: "Promo code, not a ticket",
-        message:
-          "This is a promotional discount code from an advert or poster. " +
-          "Ask the attendee for the QR code on their ticket or PDF.",
+        title: t("app.scanner.promoTitle"),
+        message: t("app.scanner.promoBody"),
       };
     case "wrong_event":
-      return { kind: "denied", title: "Wrong event", message: error.message };
+      return { kind: "denied", title: t("app.scanner.wrongEvent"), message: error.message };
     case "ticket_not_valid":
       return {
         kind: "denied",
-        title: "Invalid ticket",
+        title: t("app.scanner.invalidTicket"),
         message: error.message,
         attendeeName: error.attendeeName,
       };
     case "unknown_ticket":
       return {
         kind: "denied",
-        title: "Invalid",
-        message: "This code does not match any ticket for this event.",
+        title: t("app.scanner.invalid"),
+        message: t("app.scanner.unknownBody"),
       };
     case "forbidden":
-      return { kind: "denied", title: "Not authorised", message: error.message };
+      return { kind: "denied", title: t("app.scanner.notAuthorised"), message: error.message };
     case "network_error":
-      return { kind: "denied", title: "Offline", message: error.message };
+      return { kind: "denied", title: t("app.scanner.offline"), message: t("app.scanner.unreachable") };
     default:
-      return { kind: "denied", title: "Denied", message: error.message };
+      return { kind: "denied", title: t("app.scanner.denied"), message: error.message };
   }
 }
 
 export default function ScannerScreen() {
   const { eventId } = useLocalSearchParams<{ eventId: string }>();
+  const t = useT();
   const { user, signOut } = useAuth();
 
   const [permission, requestPermission] = useCameraPermissions();
@@ -164,17 +165,14 @@ export default function ScannerScreen() {
         }
         showOutcome({
           kind: "denied",
-          title: "Undo failed",
-          message:
-            error instanceof ApiError
-              ? error.message
-              : "The check-in could not be reversed. Try again.",
+          title: t("app.scanner.undoFailed"),
+          message: error instanceof ApiError ? error.message : t("app.scanner.undoFailedBody"),
         });
       } finally {
         setUndoing(false);
       }
     },
-    [showOutcome, signOut],
+    [showOutcome, signOut, t],
   );
 
   const submit = useCallback(
@@ -201,13 +199,13 @@ export default function ScannerScreen() {
           return;
         }
         if (error instanceof ApiError && error.stats) setStats(error.stats);
-        showOutcome(outcomeFromError(error));
+        showOutcome(outcomeFromError(t, error));
       } finally {
         inFlight.current = false;
         setBusy(false);
       }
     },
-    [eventId, deviceLabel, showOutcome, signOut],
+    [eventId, deviceLabel, showOutcome, signOut, t],
   );
 
   const handleBarcode = useCallback(
@@ -247,15 +245,13 @@ export default function ScannerScreen() {
   if (!permission.granted) {
     return (
       <View style={styles.centered}>
-        <Text style={styles.permissionTitle}>Camera access needed</Text>
-        <Text style={styles.muted}>
-          BiletFlow uses the camera to read ticket QR codes at the entrance.
-        </Text>
+        <Text style={styles.permissionTitle}>{t("app.scanner.cameraTitle")}</Text>
+        <Text style={styles.muted}>{t("app.scanner.cameraBody")}</Text>
         <Pressable style={styles.primaryButton} onPress={requestPermission}>
-          <Text style={styles.primaryButtonText}>Allow camera</Text>
+          <Text style={styles.primaryButtonText}>{t("app.scanner.allowCamera")}</Text>
         </Pressable>
         <Pressable onPress={() => setManualOpen(true)}>
-          <Text style={styles.link}>Enter a code by hand instead</Text>
+          <Text style={styles.link}>{t("app.scanner.typeInstead")}</Text>
         </Pressable>
         {manualOpen && (
           <ManualEntry
@@ -280,7 +276,7 @@ export default function ScannerScreen() {
 
   return (
     <View style={styles.flex}>
-      <Stack.Screen options={{ title: "Scan tickets" }} />
+      <Stack.Screen options={{ title: t("app.scanner.title") }} />
 
       <CameraView
         style={StyleSheet.absoluteFill}
@@ -294,13 +290,13 @@ export default function ScannerScreen() {
 
       <View style={styles.overlay} pointerEvents="box-none">
         <View style={styles.reticle} />
-        <Text style={styles.hint}>Point the camera at the ticket QR code</Text>
+        <Text style={styles.hint}>{t("app.scanner.aim")}</Text>
       </View>
 
       <View style={styles.bottomBar} pointerEvents="box-none">
         {stats && (
           <Text style={styles.counter} testID="scan-counter">
-            {stats.checked_in} of {stats.issued} checked in
+            {t("app.scanner.counter", { checked: stats.checked_in, issued: stats.issued })}
           </Text>
         )}
         <Pressable
@@ -308,7 +304,7 @@ export default function ScannerScreen() {
           onPress={() => setManualOpen(true)}
           testID="open-manual-entry"
         >
-          <Text style={styles.manualButtonText}>Enter code by hand</Text>
+          <Text style={styles.manualButtonText}>{t("app.scanner.enterCode")}</Text>
         </Pressable>
         {/*
           The last resort when there is no code to enter at all: a dead phone,
@@ -319,7 +315,7 @@ export default function ScannerScreen() {
           onPress={() => router.push(`/attendees/${eventId}`)}
           testID="open-attendee-search"
         >
-          <Text style={styles.manualButtonText}>Find attendee by name</Text>
+          <Text style={styles.manualButtonText}>{t("app.scanner.findAttendee")}</Text>
         </Pressable>
         <Text style={styles.who}>{user?.email}</Text>
       </View>
@@ -373,12 +369,11 @@ function ManualEntry({
   onCancel: () => void;
   busy: boolean;
 }) {
+  const t = useT();
   return (
     <View style={styles.sheet}>
-      <Text style={styles.sheetTitle}>Enter the ticket code</Text>
-      <Text style={styles.muted}>
-        The code printed under the QR on the ticket, starting with TKT_.
-      </Text>
+      <Text style={styles.sheetTitle}>{t("app.scanner.manualTitle")}</Text>
+      <Text style={styles.muted}>{t("app.scanner.manualBody")}</Text>
 
       <TextInput
         style={styles.sheetInput}
@@ -402,10 +397,10 @@ function ManualEntry({
           disabled={busy}
           testID="manual-submit"
         >
-          <Text style={styles.primaryButtonText}>Check in</Text>
+          <Text style={styles.primaryButtonText}>{t("app.scanner.checkIn")}</Text>
         </Pressable>
         <Pressable style={styles.secondaryButton} onPress={onCancel} disabled={busy}>
-          <Text style={styles.secondaryButtonText}>Cancel</Text>
+          <Text style={styles.secondaryButtonText}>{t("app.scanner.cancel")}</Text>
         </Pressable>
       </View>
     </View>

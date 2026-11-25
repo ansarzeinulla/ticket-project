@@ -1,5 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
+import { useT } from "../lib/i18n/context";
 import { radius, theme } from "../lib/theme";
 import type { CheckInStats } from "../lib/types";
 
@@ -50,6 +51,7 @@ export function ScanResultOverlay({
   onUndo?: (ticketID: string) => void;
   undoing?: boolean;
 }) {
+  const t = useT();
   const valid = outcome.kind === "valid";
   const stats = outcome.stats;
   const canUndo = valid && onUndo !== undefined;
@@ -59,7 +61,7 @@ export function ScanResultOverlay({
       style={[styles.fill, { backgroundColor: valid ? theme.successBright : theme.dangerBright }]}
       onPress={onDismiss}
       accessibilityRole="button"
-      accessibilityLabel={valid ? "Valid admission" : "Admission denied"}
+      accessibilityLabel={valid ? t("app.scanner.validLabel") : t("app.scanner.deniedLabel")}
       accessibilityLiveRegion="assertive"
       testID={valid ? "result-valid" : "result-denied"}
     >
@@ -67,7 +69,7 @@ export function ScanResultOverlay({
         <Text style={styles.symbol}>{valid ? "✓" : "✕"}</Text>
 
         <Text style={styles.heading} testID="result-heading">
-          {valid ? "CHECKED IN" : outcome.title.toUpperCase()}
+          {(valid ? t("app.scanner.checkedInHeading") : outcome.title).toUpperCase()}
         </Text>
 
         {valid ? (
@@ -88,10 +90,8 @@ export function ScanResultOverlay({
             <Text style={styles.message}>{outcome.message}</Text>
             {outcome.checkedInAt ? (
               <Text style={styles.detail}>
-                First used at{" "}
-                {new Date(outcome.checkedInAt).toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
+                {t("app.scanner.firstUsed", {
+                  time: new Date(outcome.checkedInAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
                 })}
               </Text>
             ) : null}
@@ -101,7 +101,7 @@ export function ScanResultOverlay({
         {stats ? (
           <View style={styles.statsRow}>
             <Text style={styles.stats}>
-              {stats.checked_in} of {stats.issued} checked in
+              {t("app.scanner.counter", { checked: stats.checked_in, issued: stats.issued })}
             </Text>
           </View>
         ) : null}
@@ -118,17 +118,17 @@ export function ScanResultOverlay({
           disabled={undoing}
           style={styles.undo}
           accessibilityRole="button"
-          accessibilityLabel="Undo this check-in"
+          accessibilityLabel={t("app.scanner.undoLabel")}
           testID="undo-check-in"
         >
           <Text style={styles.undoText}>
-            {undoing ? "Undoing…" : "Wrong person? Undo"}
+            {undoing ? t("app.scanner.undoing") : t("app.scanner.undo")}
           </Text>
         </Pressable>
       ) : null}
 
       <Text style={styles.dismiss}>
-        {valid ? "Tap anywhere to scan the next ticket" : "Tap when you have dealt with this"}
+        {valid ? t("app.scanner.nextValid") : t("app.scanner.nextDenied")}
       </Text>
     </Pressable>
   );
@@ -151,7 +151,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
     borderWidth: 2,
     borderColor: "rgba(255,255,255,0.85)",
-    borderRadius: 999,
+    borderRadius: 6,
     paddingHorizontal: 22,
     paddingVertical: 11,
   },
