@@ -112,6 +112,10 @@ export function EditEventForm({ eventID }: { eventID: string }) {
       patch.slug = slugify(values.slug);
     }
 
+    if (values.city !== original.city) {
+      patch.city = values.city;
+    }
+
     if (values.capacity.trim() !== original.capacity) {
       patch.capacity = values.capacity.trim() === "" ? null : Number(values.capacity);
     }
@@ -243,6 +247,7 @@ function toFormValues(event: BiletEvent): EventFormValues {
     category: event.category ?? "",
     venueName: event.venue_name ?? "",
     venueAddress: event.venue_address ?? "",
+    city: event.city ?? "",
     visibility: event.visibility,
     registrationOpensAt: event.registration_opens_at
       ? isoToLocalInput(event.registration_opens_at, event.timezone)

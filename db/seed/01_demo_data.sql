@@ -153,7 +153,7 @@ $seed_seats$;
 -- -----------------------------------------------------------------------------
 INSERT INTO events (
     id, organizer_id, venue_id, title, slug, description, category, cover_image_url,
-    venue_name, venue_address, starts_at, ends_at, timezone, status, visibility,
+    venue_name, venue_address, city, starts_at, ends_at, timezone, status, visibility,
     seating_mode, capacity, registration_opens_at, registration_closes_at,
     paid_sales_enabled, refund_policy, published_at
 ) VALUES
@@ -162,7 +162,7 @@ INSERT INTO events (
  'd0000000-0000-4000-8000-000000000201',
  'AITU Open Lecture: Building for Kazakhstan', 'aitu-open-lecture',
  'A free public lecture for students and the wider tech community.', 'workshops', NULL,
- 'Almaty Demo Hall', 'Abay Avenue 44, Almaty',
+ 'Almaty Demo Hall', 'Abay Avenue 44, Almaty', 'almaty',
  now() + interval '14 days', now() + interval '14 days 2 hours', 'Asia/Almaty',
  'published', 'public', 'general_admission', 150,
  now() - interval '10 days', now() + interval '13 days',
@@ -173,7 +173,7 @@ INSERT INTO events (
  'd0000000-0000-4000-8000-000000000201',
  'Almaty Winter Jazz Night', 'almaty-winter-jazz-night',
  'An evening of live jazz with assigned seating.', 'concerts', NULL,
- 'Almaty Demo Hall', 'Abay Avenue 44, Almaty',
+ 'Almaty Demo Hall', 'Abay Avenue 44, Almaty', 'almaty',
  now() + interval '45 days', now() + interval '45 days 3 hours', 'Asia/Almaty',
  'published', 'public', 'assigned_seating', 126,
  now() - interval '5 days', now() + interval '44 days',
@@ -184,7 +184,7 @@ INSERT INTO events (
  'd0000000-0000-4000-8000-000000000201',
  'Autumn Poetry Evening', 'autumn-poetry-evening',
  'Past event retained for the organizer history view.', 'theatre', NULL,
- 'Almaty Demo Hall', 'Abay Avenue 44, Almaty',
+ 'Almaty Demo Hall', 'Abay Avenue 44, Almaty', 'almaty',
  now() - interval '40 days', now() - interval '40 days' + interval '2 hours', 'Asia/Almaty',
  'completed', 'public', 'general_admission', 80,
  now() - interval '70 days', now() - interval '41 days',

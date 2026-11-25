@@ -262,6 +262,11 @@ var validVisibilities = map[string]bool{"public": true, "unlisted": true, "priva
 // validSeatingModes matches the seating_mode enum.
 var validSeatingModes = map[string]bool{"general_admission": true, "assigned_seating": true}
 
+// validEventCities matches the events_city_check constraint (BF-100).
+var validEventCities = map[string]bool{"almaty": true, "astana": true, "shymkent": true, "other": true}
+
+const eventCityMessage = "City must be one of almaty, astana, shymkent or other."
+
 // validateTimezone checks the value is a loadable IANA zone, which SRS 4.11
 // requires so calendar exports keep the configured zone.
 func validateTimezone(tz string) string {

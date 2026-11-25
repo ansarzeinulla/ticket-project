@@ -13,6 +13,7 @@ test("an organizer creates, publishes and unpublishes a free event", async ({ pa
 
   await page.goto("/events/new");
   await page.locator('input[name="title"]').fill(title);
+  await page.getByTestId("event-city").selectOption("almaty");
   await page.getByRole("button", { name: "Create event" }).click();
 
   await expect(page).toHaveURL(/\/dashboard/);

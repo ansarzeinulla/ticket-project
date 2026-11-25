@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { Alert } from "@/components/ui/alert";
 import { Spinner } from "@/components/ui/button";
 import { ApiError, api } from "@/lib/api";
+import { cityLabel } from "@/lib/catalogue";
 import { formatInTimezone } from "@/lib/datetime";
 import { useI18n } from "@/lib/i18n/context";
 import { formatKZT } from "@/lib/money";
@@ -93,11 +94,11 @@ export function EventPreview({ eventID }: { eventID: string }) {
               </span>
             </dd>
           </div>
-          {(event.venue_name || event.venue_address) && (
+          {(event.venue_name || event.venue_address || event.city) && (
             <div>
               <dt className="text-xs text-foreground-muted">{t("eventPage.where")}</dt>
               <dd className="mt-0.5">
-                {event.venue_name}
+                {[event.venue_name, cityLabel(t, event.city)].filter(Boolean).join(" · ")}
                 {event.venue_address && (
                   <span className="block text-xs text-foreground-muted">{event.venue_address}</span>
                 )}

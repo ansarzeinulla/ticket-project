@@ -973,3 +973,31 @@ $$;
 -- the person instead of a link. A code is guessable, so each one counts its
 -- wrong tries and dies after five.
 ALTER TABLE user_tokens ADD COLUMN IF NOT EXISTS attempts integer NOT NULL DEFAULT 0;
+
+-- BF-100: the city an event is in. The catalogue's city picker used to guess
+-- it from the venue address, which missed addresses typed without the city;
+-- the organizer now picks it in the event form.
+ALTER TABLE events ADD COLUMN IF NOT EXISTS city text;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'events_city_check') THEN
+        ALTER TABLE events ADD CONSTRAINT events_city_check
+            CHECK (city IS NULL OR city IN ('almaty', 'astana', 'shymkent', 'other'));
+    END IF;
+END
+$$;
+
+CREATE INDEX IF NOT EXISTS events_city_idx ON events (city);
+
+-- Events created before the column existed get their city from the address,
+-- so re-applying the schema fills an existing database.
+UPDATE events
+   SET city = CASE
+           WHEN venue_address ILIKE ANY (ARRAY['%Алматы%', '%Almaty%']) THEN 'almaty'
+           WHEN venue_address ILIKE ANY (ARRAY['%Астана%', '%Astana%']) THEN 'astana'
+           WHEN venue_address ILIKE ANY (ARRAY['%Шымкент%', '%Shymkent%']) THEN 'shymkent'
+       END
+ WHERE city IS NULL
+   AND venue_address ILIKE ANY (ARRAY['%Алматы%', '%Almaty%', '%Астана%', '%Astana%',
+                                      '%Шымкент%', '%Shymkent%']);
