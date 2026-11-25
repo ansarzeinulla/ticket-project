@@ -182,7 +182,7 @@ export function EditEventForm({ eventID }: { eventID: string }) {
         >
           {t("org.form.backTo", { title: event.title })}
         </Link>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight">{t("org.form.editHeading")}</h1>
+        <h1 className="mt-2 text-3xl font-bold">{t("org.form.editHeading")}</h1>
         <p className="mt-1 text-sm text-foreground-muted">
           {isPublished(event)
             ? t("org.form.liveNote")

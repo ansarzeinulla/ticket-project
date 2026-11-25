@@ -61,7 +61,7 @@ export function PlatformInbox() {
           <Link href="/admin" className="text-sm text-foreground-muted hover:underline">
             {t("platformInbox.back")}
           </Link>
-          <h1 className="mt-2 text-2xl font-semibold tracking-tight">{t("platformInbox.title")}</h1>
+          <h1 className="mt-2 text-3xl font-bold">{t("platformInbox.title")}</h1>
           <p className="mt-1 text-sm text-foreground-muted">{t("platformInbox.subtitle")}</p>
         </div>
         <Button variant="secondary" size="sm" onClick={() => void load()}>

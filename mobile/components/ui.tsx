@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -26,16 +26,27 @@ export function Screen({
   children,
   refreshing = false,
   onRefresh,
+  onEndReached,
 }: {
   children: ReactNode;
   refreshing?: boolean;
   onRefresh?: () => void;
+  /** Called when the visitor scrolls near the bottom, to load the next page. */
+  onEndReached?: () => void;
 }) {
   return (
     <ScrollView
       style={styles.screen}
       contentContainerStyle={styles.screenContent}
       keyboardShouldPersistTaps="handled"
+      scrollEventThrottle={200}
+      onScroll={
+        onEndReached
+          ? ({ nativeEvent: { layoutMeasurement, contentOffset, contentSize } }) => {
+              if (layoutMeasurement.height + contentOffset.y >= contentSize.height - 600) onEndReached();
+            }
+          : undefined
+      }
       refreshControl={
         onRefresh ? (
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.brand} />
@@ -105,7 +116,7 @@ export function Row({ children, style }: { children: ReactNode; style?: StylePro
   return <View style={[styles.row, style]}>{children}</View>;
 }
 
-type Variant = "primary" | "secondary" | "danger" | "ghost";
+type Variant = "primary" | "secondary" | "outline" | "danger" | "ghost";
 
 export function Button({
   title,
@@ -144,7 +155,14 @@ export function Button({
       {loading ? (
         <ActivityIndicator color={variant === "primary" ? theme.bg : theme.text} />
       ) : (
-        <Text style={[styles.buttonText, small && styles.buttonTextSmall, variant === "primary" && styles.buttonTextPrimary]}>
+        <Text
+          style={[
+            styles.buttonText,
+            small && styles.buttonTextSmall,
+            (variant === "primary" || variant === "danger") && styles.buttonTextPrimary,
+            (variant === "outline" || variant === "ghost") && styles.buttonTextBrand,
+          ]}
+        >
           {title}
         </Text>
       )}
@@ -179,10 +197,13 @@ export function Field({
   editable?: boolean;
   testID?: string;
 }) {
+  const [focused, setFocused] = useState(false);
   return (
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
       <TextInput
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
         accessibilityLabel={label}
         value={value}
         onChangeText={onChangeText}
@@ -195,7 +216,13 @@ export function Field({
         autoCorrect={false}
         editable={editable}
         testID={testID}
-        style={[styles.input, multiline && styles.inputMultiline, error ? styles.inputError : null]}
+        style={[
+          styles.input,
+          multiline && styles.inputMultiline,
+          !editable && styles.inputLocked,
+          focused && styles.inputFocused,
+          error ? styles.inputError : null,
+        ]}
       />
       {error ? <Text style={styles.error}>{error}</Text> : hint ? <Text style={styles.hint}>{hint}</Text> : null}
     </View>
@@ -338,18 +365,158 @@ export function Empty({ children }: { children: ReactNode }) {
   );
 }
 
+/**
+ * A white card of tappable rows, like a phone's settings screen (BF-100): a
+ * title above, rows split by hairlines, a chevron on the right.
+ */
+export function ListGroup({ title, children }: { title?: string; children: ReactNode }) {
+  return (
+    <View style={listStyles.group}>
+      {title ? <Text style={listStyles.groupTitle}>{title}</Text> : null}
+      <View style={listStyles.card}>{children}</View>
+    </View>
+  );
+}
+
+export function ListRow({
+  label,
+  icon,
+  detail,
+  onPress,
+  danger = false,
+  last = false,
+  testID,
+}: {
+  label: string;
+  icon?: string;
+  detail?: string;
+  onPress: () => void;
+  danger?: boolean;
+  last?: boolean;
+  testID?: string;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      testID={testID}
+      style={({ pressed }) => [listStyles.row, !last && listStyles.rowDivider, pressed && listStyles.rowPressed]}
+    >
+      {icon ? <Text style={[listStyles.icon, danger && listStyles.danger]}>{icon}</Text> : null}
+      <View style={listStyles.rowText}>
+        <Text style={[listStyles.label, danger && listStyles.danger]}>{label}</Text>
+        {detail ? <Text style={listStyles.detail}>{detail}</Text> : null}
+      </View>
+      {danger ? null : <Text style={listStyles.chevron}>›</Text>}
+    </Pressable>
+  );
+}
+
+/**
+ * Six boxes for a 6-digit code (BF-100). One hidden input holds the digits, so
+ * the keyboard, paste and the phone's one-time-code autofill all just work;
+ * the boxes only show them.
+ */
+export function CodeInput({
+  value,
+  onChange,
+  label,
+  invalid = false,
+  disabled = false,
+  testID = "code-input",
+}: {
+  value: string;
+  onChange: (code: string) => void;
+  label: string;
+  invalid?: boolean;
+  disabled?: boolean;
+  testID?: string;
+}) {
+  const [focused, setFocused] = useState(false);
+  const digits = Array.from({ length: 6 }, (_, i) => value[i] ?? "");
+  return (
+    <View style={codeStyles.wrap}>
+      <View style={codeStyles.boxes} pointerEvents="none">
+        {digits.map((digit, i) => (
+          <View
+            key={i}
+            style={[
+              codeStyles.box,
+              focused && i === Math.min(value.length, 5) && codeStyles.boxActive,
+              invalid && codeStyles.boxInvalid,
+            ]}
+          >
+            <Text style={codeStyles.digit}>{digit}</Text>
+          </View>
+        ))}
+      </View>
+      <TextInput
+        value={value}
+        onChangeText={(text) => onChange(text.replace(/\D/g, "").slice(0, 6))}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        keyboardType="number-pad"
+        textContentType="oneTimeCode"
+        autoComplete="sms-otp"
+        maxLength={6}
+        editable={!disabled}
+        caretHidden
+        accessibilityLabel={label}
+        testID={testID}
+        style={codeStyles.hidden}
+      />
+    </View>
+  );
+}
+
+const listStyles = StyleSheet.create({
+  group: { gap: 8 },
+  groupTitle: { color: theme.textMuted, fontSize: 13, fontWeight: "600", paddingHorizontal: 4 },
+  card: { backgroundColor: theme.surface, borderColor: theme.border, borderWidth: 1, borderRadius: radius.lg, overflow: "hidden" },
+  row: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 14, minHeight: 52 },
+  rowDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border },
+  rowPressed: { backgroundColor: theme.surfaceAlt },
+  icon: { width: 22, textAlign: "center", fontSize: 16, color: theme.textMuted },
+  rowText: { flex: 1, gap: 2 },
+  label: { color: theme.text, fontSize: 15, fontWeight: "500" },
+  detail: { color: theme.textMuted, fontSize: 12 },
+  chevron: { color: theme.textMuted, fontSize: 22, lineHeight: 22 },
+  danger: { color: theme.danger },
+});
+
+const codeStyles = StyleSheet.create({
+  wrap: { position: "relative", alignSelf: "flex-start" },
+  boxes: { flexDirection: "row", gap: 8 },
+  box: {
+    width: 46,
+    height: 56,
+    borderWidth: 1,
+    borderColor: theme.border,
+    borderRadius: radius.md,
+    backgroundColor: theme.surface,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  boxActive: { borderColor: theme.brand, borderWidth: 2 },
+  boxInvalid: { borderColor: theme.danger },
+  digit: { color: theme.text, fontSize: 24, fontWeight: "700" },
+  hidden: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, opacity: 0.01, color: "transparent" },
+});
+
 const variantStyles = StyleSheet.create({
   primary: { backgroundColor: theme.brand, borderColor: theme.brand },
-  secondary: { backgroundColor: theme.surfaceAlt, borderColor: theme.border },
+  secondary: { backgroundColor: theme.surface, borderColor: theme.border },
+  outline: { backgroundColor: theme.surface, borderColor: theme.brand },
   danger: { backgroundColor: theme.danger, borderColor: theme.danger },
   ghost: { backgroundColor: "transparent", borderColor: "transparent" },
 });
 
 const bannerStyles = StyleSheet.create({
-  info: { backgroundColor: "#12324a", borderColor: "#1e4f73" },
-  error: { backgroundColor: "#3b1416", borderColor: theme.danger },
-  success: { backgroundColor: "#11331f", borderColor: theme.success },
-  warning: { backgroundColor: "#3a2a10", borderColor: theme.warning },
+  info: { backgroundColor: theme.surfaceAlt, borderColor: theme.border },
+  error: { backgroundColor: "#fee2e2", borderColor: "#fca5a5" },
+  success: { backgroundColor: "#dcfce7", borderColor: "#86efac" },
+  warning: { backgroundColor: "#fef3c7", borderColor: "#fcd34d" },
 });
 
 const styles = StyleSheet.create({
@@ -363,7 +530,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.surface,
     borderColor: theme.border,
     borderWidth: 1,
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
     padding: 14,
     gap: 8,
   },
@@ -371,8 +538,8 @@ const styles = StyleSheet.create({
   row: { flexDirection: "row", flexWrap: "wrap", gap: 8, alignItems: "center" },
   button: {
     minHeight: 46,
-    paddingHorizontal: 16,
-    borderRadius: radius.sm,
+    paddingHorizontal: 18,
+    borderRadius: radius.md,
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
@@ -380,20 +547,23 @@ const styles = StyleSheet.create({
   buttonSmall: { minHeight: 36, paddingHorizontal: 12 },
   buttonText: { color: theme.text, fontSize: 15, fontWeight: "600", textAlign: "center" },
   buttonTextSmall: { fontSize: 13 },
-  buttonTextPrimary: { color: theme.bg },
+  buttonTextPrimary: { color: "#ffffff" },
+  buttonTextBrand: { color: theme.brand },
   disabled: { opacity: 0.5 },
   field: { gap: 6 },
   label: { color: theme.text, fontSize: 14, fontWeight: "500" },
   input: {
-    backgroundColor: theme.surfaceAlt,
+    backgroundColor: theme.surface,
     borderColor: theme.border,
     borderWidth: 1,
-    borderRadius: radius.sm,
+    borderRadius: radius.md,
     color: theme.text,
     fontSize: 15,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
   },
+  inputFocused: { borderColor: theme.brand },
+  inputLocked: { backgroundColor: theme.surfaceAlt, color: theme.textMuted },
   inputMultiline: { minHeight: 90, textAlignVertical: "top" },
   inputError: { borderColor: theme.dangerBright },
   error: { color: theme.dangerBright, fontSize: 12 },
@@ -402,14 +572,14 @@ const styles = StyleSheet.create({
   chip: {
     borderColor: theme.border,
     borderWidth: 1,
-    borderRadius: 999,
+    borderRadius: radius.md,
     paddingHorizontal: 12,
     paddingVertical: 7,
-    backgroundColor: theme.surfaceAlt,
+    backgroundColor: theme.surface,
   },
-  chipActive: { backgroundColor: theme.brandDark, borderColor: theme.brand },
+  chipActive: { backgroundColor: theme.brand, borderColor: theme.brand },
   chipText: { color: theme.textMuted, fontSize: 13 },
-  chipTextActive: { color: theme.text, fontWeight: "600" },
+  chipTextActive: { color: "#ffffff", fontWeight: "600" },
   check: { flexDirection: "row", alignItems: "center", gap: 10 },
   checkText: { flexShrink: 1, gap: 2 },
   checkLabel: { color: theme.text, fontSize: 14 },
@@ -417,7 +587,7 @@ const styles = StyleSheet.create({
   banner: { borderWidth: 1, borderRadius: radius.sm, padding: 12, gap: 4 },
   bannerTitle: { color: theme.text, fontWeight: "700", fontSize: 14 },
   bannerText: { color: theme.text, fontSize: 13, lineHeight: 18 },
-  badge: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2, alignSelf: "flex-start" },
+  badge: { borderWidth: 1, borderRadius: radius.sm, paddingHorizontal: 8, paddingVertical: 2, alignSelf: "flex-start" },
   badgeMuted: { backgroundColor: theme.surfaceAlt, borderColor: theme.border },
   badgeText: { color: theme.text, fontSize: 12 },
   stat: {

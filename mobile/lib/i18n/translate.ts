@@ -24,9 +24,24 @@ export function translate(
   if (typeof raw !== "string") return key;
   if (!params) return raw;
 
-  return raw.replace(/\{(\w+)\}/g, (match, name: string) =>
-    name in params ? String(params[name]) : match,
-  );
+  return raw
+    .replace(/\{(\w+)\|([^|}]*)\|([^|}]*)\|([^|}]*)\}/g, (match, name: string, one: string, few: string, many: string) =>
+      name in params ? russianPlural(Number(params[name]), one, few, many) : match,
+    )
+    .replace(/\{(\w+)\}/g, (match, name: string) => (name in params ? String(params[name]) : match));
+}
+
+/**
+ * Russian nouns take three forms after a number: 1 билет, 2 билета, 5 билетов
+ * (21 билет, 22 билета, 11 билетов). A message writes them as
+ * "{count|билет|билета|билетов}".
+ */
+export function russianPlural(n: number, one: string, few: string, many: string): string {
+  const mod10 = Math.abs(n) % 10;
+  const mod100 = Math.abs(n) % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+  return many;
 }
 
 /** A bound translator: `t("checkout.title")`. */

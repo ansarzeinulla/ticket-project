@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { LIFECYCLE_LABELS, StatusBadge } from "@/components/ui/status-badge";
 import { ApiError, api } from "@/lib/api";
 import { formatInTimezone } from "@/lib/datetime";
-import { useT } from "@/lib/i18n/context";
+import { mediaURL } from "@/lib/media";
+import { useI18n } from "@/lib/i18n/context";
 import type { BiletEvent } from "@/lib/types";
 
 export function EventCard({
@@ -17,14 +18,16 @@ export function EventCard({
   event: BiletEvent;
   onChanged: (updated: BiletEvent) => void;
 }) {
-  const t = useT();
+  const { t, locale } = useI18n();
   const [busy, setBusy] = useState<null | "publish" | "unpublish" | "cancel">(null);
   const [error, setError] = useState<string | null>(null);
+  const [needsEmail, setNeedsEmail] = useState(false);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
 
   async function run(action: "publish" | "unpublish" | "cancel") {
     setBusy(action);
     setError(null);
+    setNeedsEmail(false);
     try {
       const updated =
         action === "publish"
@@ -35,7 +38,9 @@ export function EventCard({
       onChanged(updated);
       setConfirmingCancel(false);
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : t("org.eventCard.actionFailed"));
+      // SRS UC1: an unconfirmed address cannot publish; the code is on the profile page.
+      if (cause instanceof ApiError && cause.code === "email_unverified") setNeedsEmail(true);
+      else setError(cause instanceof ApiError ? cause.message : t("org.eventCard.actionFailed"));
     } finally {
       setBusy(null);
     }
@@ -49,75 +54,89 @@ export function EventCard({
   const canCancel = event.status !== "cancelled" && event.status !== "completed";
 
   return (
-    <li className="rounded-xl border border-border-subtle bg-surface p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="truncate text-base font-semibold">{event.title}</h3>
-            <StatusBadge status={event.status} />
-            <span className="rounded-full bg-surface-muted px-2 py-0.5 text-xs capitalize text-foreground-muted">
-              {t(LIFECYCLE_LABELS[event.lifecycle])}
-            </span>
-          </div>
-          <p className="mt-1 font-mono text-xs text-foreground-muted">/{event.slug}</p>
-        </div>
+    <li className="rounded-lg border border-border-subtle bg-surface p-4">
+      <div className="flex gap-4">
+        <Link
+          href={`/dashboard/events/${event.id}`}
+          className="aspect-[2/3] w-16 shrink-0 overflow-hidden rounded-md bg-surface-muted sm:w-20"
+          tabIndex={-1}
+          aria-hidden
+        >
+          {event.cover_image_url && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={mediaURL(event.cover_image_url)} alt="" className="h-full w-full object-cover" />
+          )}
+        </Link>
 
-        {/* No shrink-0: on a phone the buttons wrap under the title instead of
-            pushing the card 145 px past the screen edge. */}
-        <div className="flex flex-wrap gap-2">
-          <Link
-            href={`/dashboard/events/${event.id}`}
-            className="inline-flex items-center rounded-lg border border-border-subtle px-3 py-1.5 text-xs font-medium hover:bg-surface-muted"
-          >
-            {t("org.eventCard.manage")}
-          </Link>
-          {event.status === "published" && (
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="min-w-0 truncate text-base font-semibold">
+              <Link href={`/dashboard/events/${event.id}`} className="hover:text-brand">
+                {event.title}
+              </Link>
+            </h3>
+            <StatusBadge status={event.status} />
+            {/* The lifecycle only when it adds something: "Completed Completed" says nothing twice. */}
+            {event.lifecycle !== event.status && (
+              <span className="rounded bg-surface-muted px-2 py-0.5 text-xs capitalize text-foreground-muted">
+                {t(LIFECYCLE_LABELS[event.lifecycle])}
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-sm text-foreground-muted">
+            {formatInTimezone(event.starts_at, event.timezone, locale)}
+            {event.venue_name ? `, ${event.venue_name}` : ""}
+            {", "}
+            {t("org.eventCard.capacity").toLowerCase()} {event.capacity ?? t("org.eventCard.unlimited")}
+          </p>
+
+          {/* No shrink-0: on a phone the buttons wrap under the title instead of
+              pushing the card past the screen edge. */}
+          <div className="mt-3 flex flex-wrap items-center gap-2">
             <Link
-              href={`/events/${event.slug}`}
-              className="inline-flex items-center rounded-lg border border-border-subtle px-3 py-1.5 text-xs font-medium hover:bg-surface-muted"
+              href={`/dashboard/events/${event.id}`}
+              className="inline-flex items-center rounded-md bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-strong"
             >
-              {t("org.eventCard.publicPage")}
+              {t("org.eventCard.manage")}
             </Link>
-          )}
-          <Link
-            href={`/dashboard/events/${event.id}/edit`}
-            className="inline-flex items-center rounded-lg border border-border-subtle px-3 py-1.5 text-xs font-medium hover:bg-surface-muted"
-            data-testid="edit-event"
-          >
-            {t("org.eventCard.edit")}
-          </Link>
-          {canPublish && (
-            <Button
-              size="sm"
-              loading={busy === "publish"}
-              disabled={busy !== null}
-              onClick={() => run("publish")}
+            <Link
+              href={`/dashboard/events/${event.id}/edit`}
+              className="inline-flex items-center rounded-md border border-border-subtle px-3 py-1.5 text-xs font-medium hover:border-foreground-muted"
+              data-testid="edit-event"
             >
-              {t("org.eventCard.publish")}
-            </Button>
-          )}
-          {canUnpublish && (
-            <Button
-              size="sm"
-              variant="secondary"
-              loading={busy === "unpublish"}
-              disabled={busy !== null}
-              onClick={() => run("unpublish")}
-              data-testid="unpublish-event"
-            >
-              {t("org.eventCard.unpublish")}
-            </Button>
-          )}
-          {canCancel && !confirmingCancel && (
-            <Button
-              size="sm"
-              variant="danger"
-              disabled={busy !== null}
-              onClick={() => setConfirmingCancel(true)}
-            >
-              {t("org.eventCard.cancel")}
-            </Button>
-          )}
+              {t("org.eventCard.edit")}
+            </Link>
+            {event.status === "published" && (
+              <Link
+                href={`/events/${event.slug}`}
+                className="inline-flex items-center rounded-md border border-border-subtle px-3 py-1.5 text-xs font-medium hover:border-foreground-muted"
+              >
+                {t("org.eventCard.publicPage")}
+              </Link>
+            )}
+            {canPublish && (
+              <Button size="sm" variant="secondary" loading={busy === "publish"} disabled={busy !== null} onClick={() => run("publish")}>
+                {t("org.eventCard.publish")}
+              </Button>
+            )}
+            {canUnpublish && (
+              <Button
+                size="sm"
+                variant="secondary"
+                loading={busy === "unpublish"}
+                disabled={busy !== null}
+                onClick={() => run("unpublish")}
+                data-testid="unpublish-event"
+              >
+                {t("org.eventCard.unpublish")}
+              </Button>
+            )}
+            {canCancel && !confirmingCancel && (
+              <Button size="sm" variant="ghost" className="text-danger" disabled={busy !== null} onClick={() => setConfirmingCancel(true)}>
+                {t("org.eventCard.cancel")}
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -150,28 +169,18 @@ export function EventCard({
         </div>
       )}
 
-      <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm sm:grid-cols-4">
-        <div>
-          <dt className="text-xs text-foreground-muted">{t("org.eventCard.starts")}</dt>
-          <dd className="mt-0.5">{formatInTimezone(event.starts_at, event.timezone)}</dd>
-        </div>
-        <div>
-          <dt className="text-xs text-foreground-muted">{t("org.eventCard.ends")}</dt>
-          <dd className="mt-0.5">{formatInTimezone(event.ends_at, event.timezone)}</dd>
-        </div>
-        <div>
-          <dt className="text-xs text-foreground-muted">{t("org.eventCard.timezone")}</dt>
-          <dd className="mt-0.5">{event.timezone}</dd>
-        </div>
-        <div>
-          <dt className="text-xs text-foreground-muted">{t("org.eventCard.capacity")}</dt>
-          <dd className="mt-0.5">{event.capacity ?? t("org.eventCard.unlimited")}</dd>
-        </div>
-      </dl>
 
       {error && (
         <p className="mt-3 text-xs text-danger" role="alert">
           {error}
+        </p>
+      )}
+      {needsEmail && (
+        <p className="mt-3 text-sm text-danger" role="alert" data-testid="publish-needs-email">
+          {t("home.publishNeedsEmail")}{" "}
+          <Link href="/dashboard/profile#confirm-email" className="font-semibold text-brand-strong underline">
+            {t("home.verifyGo")}
+          </Link>
         </p>
       )}
     </li>

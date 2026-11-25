@@ -187,12 +187,12 @@ export function TicketTypeManager({
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-medium">{type.name}</span>
                   {type.is_free && (
-                    <span className="rounded-full bg-brand-soft px-2 py-0.5 text-xs font-medium text-brand-strong">
+                    <span className="rounded bg-brand-soft px-2 py-0.5 text-xs font-medium text-brand-strong">
                       {t("tickets.free")}
                     </span>
                   )}
                   {type.is_hidden && (
-                    <span className="rounded-full bg-surface-muted px-2 py-0.5 text-xs font-medium text-foreground-muted">
+                    <span className="rounded bg-surface-muted px-2 py-0.5 text-xs font-medium text-foreground-muted">
                       {t("org.types.hidden")}
                     </span>
                   )}

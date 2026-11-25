@@ -438,7 +438,7 @@ const styles = StyleSheet.create({
     padding: 14,
     paddingTop: 54,
   },
-  pill: { borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 },
+  pill: { borderRadius: 4, paddingHorizontal: 12, paddingVertical: 6 },
   pillOnline: { backgroundColor: "rgba(21,128,61,0.9)" },
   pillOffline: { backgroundColor: "rgba(180,83,9,0.95)" },
   pillPending: { backgroundColor: "rgba(15,23,42,0.85)", borderColor: theme.brand, borderWidth: 1 },

@@ -137,10 +137,10 @@ Create Event saves `{{eventId}}`.
 | `POST` | `/api/v1/events/{id}/activation` | Bearer | Complete checklist steps |
 | `POST` | `/api/v1/admin/events/{id}/paid-sales/suspend` | **Admin** | Stop paid sales only |
 | `POST` | `/api/v1/admin/events/{id}/paid-sales/unsuspend` | **Admin** | Restore paid sales |
-| `POST` | `/api/v1/auth/password-reset/request` | – | Email a reset token |
+| `POST` | `/api/v1/auth/password-reset/request` | – | Email a 6-digit reset code (valid 1 hour, 5 tries) |
 | `POST` | `/api/v1/auth/password-reset` | – | Consume it and set a password |
 | `POST` | `/api/v1/auth/verify-email/request` | Bearer | Re-send the confirmation |
-| `POST` | `/api/v1/auth/verify-email` | – | Confirm an address |
+| `POST` | `/api/v1/auth/verify-email` | – | Confirm an address with `{email, code}` |
 | `GET` | `/api/v1/events/{id}/attendees` | Bearer | Manual attendee search |
 | `POST` | `/api/v1/events/{id}/check-in/manual` | Bearer | Admit without a QR |
 | `POST` | `/api/v1/uploads/images` | Bearer | Upload an event banner |
@@ -877,27 +877,31 @@ path is no use in an inbox.
 
 ## Account recovery, the portal and uploads (Phase 12)
 
-### Tokens are stored as hashes, never as themselves
+### Codes, not links, and only their hashes are stored (BF-100)
 
-`user_tokens` holds a SHA-256 of what was emailed, not the token. A leaked
-database backup therefore contains no working password-reset links - only the
-inbox does. Verification and reset share one table because they share every
-property that matters: single use, expiring, delivered out of band. Only the
-purpose and the lifetime differ.
+Email verification and password reset send a **6-digit code** that the person
+types where they already are - the banner on the website, the Account tab in
+the app, or the forgot-password page. A link would point at whatever
+`WEB_BASE_URL` is, and on a development machine that is a localhost address
+that opens nothing on the phone the email is read on.
 
-| | Lifetime | Why |
+`user_tokens` holds a SHA-256 of the code salted with its row id, never the
+code. Six digits are guessable, so each code also counts its wrong tries and
+dies after five (`attempts`); a wrong try below that is committed, not rolled
+back, or an attacker would get unlimited guesses.
+
+| | Lifetime | Tries |
 | --- | --- | --- |
-| `password_reset` | 1 hour | It is a password in disguise: whoever holds it can take the account. |
-| `email_verification` | 72 hours | It only claims an address, so it can survive a weekend in an inbox. |
+| `password_reset` | 1 hour | 5 |
+| `email_verification` | 1 hour | 5 |
 
 Issuing supersedes: clicking "forgot password" three times leaves one working
-key in the inbox, not three. Consuming a reset also invalidates every other
-outstanding token for that account - somebody recovering an account they lost
-control of should not leave the attacker holding a live verification link.
+code, not three. Consuming a reset also invalidates every other outstanding
+code for that account - somebody recovering an account they lost control of
+should not leave the attacker holding a live verification code.
 
-The whole check happens in one `UPDATE ... WHERE consumed_at IS NULL AND
-expires_at > now() RETURNING user_id`, so two concurrent requests cannot both
-redeem the same token.
+The check locks the newest live code for the address (`FOR UPDATE`), so two
+concurrent requests cannot both redeem it.
 
 ### Why "no account with that email" is never said
 
@@ -907,12 +911,12 @@ way of testing which addresses are registered - a privacy leak dressed as
 helpfulness. The store still reports `ErrNotFound` honestly; the handler is
 what declines to pass it on.
 
-Unknown, expired and already-used tokens share one error code for the same
-reason: distinguishing them would confirm that a guessed token was once real.
+Wrong, expired, used and exhausted codes share one error code for the same
+reason: distinguishing them would confirm that a guess was close.
 
 Resetting returns **no session**. Proving control of an inbox is not the same
 as intending to sign in on this device, and issuing a token here would let a
-stolen reset link skip the login screen entirely.
+stolen reset code skip the login screen entirely.
 
 ### Uploads trust the bytes, not the client
 

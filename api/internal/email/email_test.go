@@ -20,10 +20,8 @@ func sampleOrder() OrderDetails {
 		TotalKZT:    "10000.00",
 		OrderURL:    "http://localhost:3000/orders/11111111-1111-1111-1111-111111111111",
 		Tickets: []TicketLine{
-			{TicketCode: "BF-TKT-AAAA", TypeName: "General Admission",
-				PDFURL: "http://localhost:8080/api/v1/tickets/aaaa/pdf"},
-			{TicketCode: "BF-TKT-BBBB", TypeName: "General Admission",
-				PDFURL: "http://localhost:8080/api/v1/tickets/bbbb/pdf"},
+			{TicketCode: "BF-TKT-AAAA", TypeName: "General Admission"},
+			{TicketCode: "BF-TKT-BBBB", TypeName: "General Admission"},
 		},
 	}
 }
@@ -48,8 +46,8 @@ func TestOrderConfirmationCarriesWhatTheAttendeeNeeds(t *testing.T) {
 		"Gorky Park Stage, Almaty",
 		"Sat 17 Oct 2026, 19:00 (+06)",
 		"10000.00 KZT (simulated payment)",
-		"http://localhost:8080/api/v1/tickets/aaaa/pdf",
-		"http://localhost:8080/api/v1/tickets/bbbb/pdf",
+		"BF-TKT-AAAA",
+		"BF-TKT-BBBB",
 		"http://localhost:3000/orders/11111111-1111-1111-1111-111111111111",
 	} {
 		if !strings.Contains(msg.Body, want) {
@@ -74,7 +72,7 @@ func TestOrderConfirmationDegradesGracefully(t *testing.T) {
 	if !strings.Contains(body, "Hi there,") {
 		t.Errorf("a missing name should greet the reader anyway; got:\n%s", body)
 	}
-	for _, unwanted := range []string{"When:", "Where:", "Download your tickets"} {
+	for _, unwanted := range []string{"When:", "Where:", "Tickets:"} {
 		if strings.Contains(body, unwanted) {
 			t.Errorf("body still has an empty %q section:\n%s", unwanted, body)
 		}

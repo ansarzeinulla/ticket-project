@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { getLocale } from "@/lib/i18n/server";
 import { apiBaseURL, clearToken, readToken } from "@/lib/server-session";
 
 /**
@@ -52,6 +53,8 @@ async function forward(
     if (value) headers.set(name, value);
   }
   if (token) headers.set("Authorization", `Bearer ${token}`);
+  // The page language, so emails this request triggers speak it (BF-100).
+  headers.set("X-BiletFlow-Locale", await getLocale());
 
   // The body is read whole rather than streamed. Uploads are capped at 5 MB by
   // the API, so buffering costs little, and streaming a request body needs

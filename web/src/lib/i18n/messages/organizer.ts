@@ -85,6 +85,7 @@ export const enOrganizer = {
       unlimited: "Unlimited",
     },
     detail: {
+      sections: "Event sections",
       loadFailed: "Could not load this event.",
       duplicateFailed: "The event could not be duplicated.",
       loading: "Loading event…",
@@ -676,6 +677,7 @@ export const ruOrganizer: OrganizerMessages = {
       unlimited: "Без ограничений",
     },
     detail: {
+      sections: "Разделы события",
       loadFailed: "Не удалось загрузить событие.",
       duplicateFailed: "Не удалось скопировать событие.",
       loading: "Загружаем событие…",
@@ -1265,6 +1267,7 @@ export const kkOrganizer: OrganizerMessages = {
       unlimited: "Шектеусіз",
     },
     detail: {
+      sections: "Іс-шара бөлімдері",
       loadFailed: "Іс-шараны жүктеу мүмкін болмады.",
       duplicateFailed: "Іс-шараны көшіру мүмкін болмады.",
       loading: "Іс-шара жүктелуде…",

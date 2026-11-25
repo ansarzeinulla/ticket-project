@@ -10,11 +10,10 @@ import { apiBaseURL, clearToken, readToken } from "@/lib/server-session";
  */
 export async function GET() {
   const token = await readToken();
+  // A visitor with no session is not an error, just nobody: answering 200
+  // keeps every guest page free of a red 401 in the browser console (BF-100).
   if (!token) {
-    return NextResponse.json(
-      { error: { code: "unauthorized", message: "Not signed in." } },
-      { status: 401 },
-    );
+    return NextResponse.json({ user: null });
   }
 
   const upstream = await fetch(`${apiBaseURL()}/auth/me`, {

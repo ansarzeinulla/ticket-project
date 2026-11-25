@@ -65,8 +65,9 @@ restore: ## Restore a dump: make restore FILE=backups/<file>.sql
 	$(PSQL) -q < $(FILE)
 	@echo "restored $(FILE)"
 
-seed: ## Load the demo dataset (safe to run repeatedly)
+seed: ## Load the demo dataset and the event catalogue (safe to run repeatedly)
 	$(PSQL) -q -f /opt/biletflow/seed/01_demo_data.sql
+	$(PSQL) -q -f /opt/biletflow/seed/02_catalogue.sql
 
 test: ## Run the database test suite
 	@./db/tests/run_tests.sh

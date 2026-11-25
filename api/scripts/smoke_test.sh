@@ -204,6 +204,24 @@ expect_status 401 "04  POST /events without a token is rejected"
 request GET /api/v1/events/"$EVENT_ID" - -
 expect_status 404 "05  an unpublished draft is not publicly readable"
 
+# SRS UC1: publishing needs a confirmed address (BF-100). The 6-digit code is
+# read out of the notification outbox, the way a person reads their email.
+request POST /api/v1/events/"$EVENT_ID"/publish "$TOKEN" -
+expect_status 403 "05a publishing is refused until the email is confirmed"
+if [ "$(json_get "$HTTP_BODY" error.code)" = "email_unverified" ]; then
+    pass "05b the refusal says why: email_unverified"
+else
+    fail "05b refusal code is $(json_get "$HTTP_BODY" error.code), want email_unverified"
+fi
+
+VERIFY_TOKEN="$(docker compose exec -T db psql -U "$DB_USER" -d "$DB_NAME" -tAX -c \
+    "SELECT substring(body from ' {2}([0-9]{6})')
+       FROM notifications
+      WHERE type = 'account.email_verification' AND recipient_email = '${EMAIL}'
+      ORDER BY created_at DESC LIMIT 1;" 2>&1 | tr -d '\r\n ')"
+request POST /api/v1/auth/verify-email - "{\"email\":\"${EMAIL}\",\"code\":\"${VERIFY_TOKEN}\"}"
+expect_status 200 "05c the code emailed at registration confirms the address"
+
 request POST /api/v1/events/"$EVENT_ID"/publish "$TOKEN" -
 expect_status 200 "06  the organizer can publish the event"
 
@@ -1050,18 +1068,18 @@ else
     fail "50c the two responses differ, which leaks who has an account"
 fi
 
-# The token never leaves the database in plaintext, so the test reads it the
-# way a person reads the console: out of the notification body.
+# The 6-digit code never leaves the database in plaintext, so the test reads
+# it the way a person reads the email: out of the notification body.
 RESET_TOKEN="$(docker compose exec -T db psql -U "$DB_USER" -d "$DB_NAME" -tAX -c \
-    "SELECT substring(body from 'reset-password\?token=([A-Za-z0-9_-]+)')
+    "SELECT substring(body from ' {2}([0-9]{6})')
        FROM notifications
       WHERE type = 'account.password_reset' AND recipient_email = '${EMAIL}'
       ORDER BY created_at DESC LIMIT 1;" 2>&1 | tr -d '\r\n ')"
 
 if [ -n "$RESET_TOKEN" ]; then
-    pass "51  the reset email carries a token"
+    pass "51  the reset email carries a 6-digit code"
 else
-    fail "51  no reset token was emailed"
+    fail "51  no reset code was emailed"
 fi
 
 STORED_PLAINTEXT="$(docker compose exec -T db psql -U "$DB_USER" -d "$DB_NAME" -tAX -c \
@@ -1076,8 +1094,8 @@ if [ -n "$RESET_TOKEN" ]; then
     NEW_PASSWORD="a completely new passphrase"
 
     request POST /api/v1/auth/password-reset - \
-        "{\"token\":\"${RESET_TOKEN}\",\"password\":\"${NEW_PASSWORD}\"}"
-    expect_status 200 "52  the token sets a new password"
+        "{\"email\":\"${EMAIL}\",\"code\":\"${RESET_TOKEN}\",\"password\":\"${NEW_PASSWORD}\"}"
+    expect_status 200 "52  the code sets a new password"
 
     request POST /api/v1/auth/login - "{\"email\":\"${EMAIL}\",\"password\":\"${PASSWORD}\"}"
     expect_status 401 "52b the old password no longer works"
@@ -1088,7 +1106,7 @@ if [ -n "$RESET_TOKEN" ]; then
     TOKEN="$(json_get "$HTTP_BODY" access_token)"
 
     request POST /api/v1/auth/password-reset - \
-        "{\"token\":\"${RESET_TOKEN}\",\"password\":\"trying the same code twice\"}"
+        "{\"email\":\"${EMAIL}\",\"code\":\"${RESET_TOKEN}\",\"password\":\"trying the same code twice\"}"
     expect_status 400 "53  a reset code is good exactly once"
     if [ "$(json_get "$HTTP_BODY" error.code)" = "token_invalid" ]; then
         pass "53b the refusal is an explicit token_invalid"
@@ -1098,30 +1116,18 @@ if [ -n "$RESET_TOKEN" ]; then
 fi
 
 # --- email verification (SRS 4.1) --------------------------------------------
+# The address was confirmed with its code before the first publish (05c).
 
 request POST /api/v1/auth/verify-email/request "$TOKEN" -
-expect_status 202 "54  the account asks for a confirmation email"
+expect_status 200 "54  asking again on a confirmed account says there is nothing to do"
 
-VERIFY_TOKEN="$(docker compose exec -T db psql -U "$DB_USER" -d "$DB_NAME" -tAX -c \
-    "SELECT substring(body from 'verify-email\?token=([A-Za-z0-9_-]+)')
-       FROM notifications
-      WHERE type = 'account.email_verification' AND recipient_email = '${EMAIL}'
-      ORDER BY created_at DESC LIMIT 1;" 2>&1 | tr -d '\r\n ')"
-
-if [ -n "$VERIFY_TOKEN" ]; then
-    request POST /api/v1/auth/verify-email - "{\"token\":\"${VERIFY_TOKEN}\"}"
-    expect_status 200 "54b the emailed code confirms the address"
-
-    ACCOUNT_STATE="$(docker compose exec -T db psql -U "$DB_USER" -d "$DB_NAME" -tAX -c \
-        "SELECT status || '/' || (email_verified_at IS NOT NULL)
-           FROM users WHERE email = '${EMAIL}';" 2>&1 | tr -d '\r\n ')"
-    if [ "$ACCOUNT_STATE" = "active/true" ]; then
-        pass "54c PostgreSQL records the account as active and verified"
-    else
-        fail "54c the account reads ${ACCOUNT_STATE:-nothing}, want active/true"
-    fi
+ACCOUNT_STATE="$(docker compose exec -T db psql -U "$DB_USER" -d "$DB_NAME" -tAX -c \
+    "SELECT status || '/' || (email_verified_at IS NOT NULL)
+       FROM users WHERE email = '${EMAIL}';" 2>&1 | tr -d '\r\n ')"
+if [ "$ACCOUNT_STATE" = "active/true" ]; then
+    pass "54c PostgreSQL records the account as active and verified"
 else
-    fail "54b no verification token was emailed"
+    fail "54c the account reads ${ACCOUNT_STATE:-nothing}, want active/true"
 fi
 
 # --- image upload (SRS 4.2) --------------------------------------------------

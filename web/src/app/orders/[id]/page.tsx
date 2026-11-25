@@ -9,6 +9,8 @@ import { getTranslations } from "@/lib/i18n/server";
 import { orderStatusLabel } from "@/lib/order-status";
 import { AddToCalendar } from "@/components/add-to-calendar";
 import { formatKZT } from "@/lib/money";
+import { formatInTimezone } from "@/lib/datetime";
+import { mediaURL } from "@/lib/media";
 
 export async function generateMetadata(): Promise<Metadata> {
   const { t } = await getTranslations();
@@ -27,7 +29,7 @@ export default async function OrderConfirmationPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const { t } = await getTranslations();
+  const { t, locale } = await getTranslations();
 
   let data;
   try {
@@ -43,100 +45,105 @@ export default async function OrderConfirmationPage({
   // not readable any more, the confirmation simply goes without them.
   const event = await api.getEvent(order.event_id).catch(() => null);
 
+  const image = mediaURL(event?.cover_image_url);
+
   return (
-    <main className="mx-auto w-full max-w-2xl px-4 py-10 sm:px-6">
-      <div className="rounded-2xl border border-border-subtle bg-surface p-6 sm:p-8">
-        <div className="flex items-start gap-4">
-          <span
-            aria-hidden="true"
-            className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-success-soft text-success"
-          >
-            ✓
-          </span>
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight">{t("order.confirmed")}</h1>
-            <p className="mt-1 text-sm text-foreground-muted">
+    <main>
+      {/* The event banner, like the event page's, with the confirmation on it. */}
+      <section className="relative overflow-hidden bg-top text-white">
+        {image && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={image} alt="" aria-hidden className="absolute inset-0 h-full w-full scale-110 object-cover blur-2xl" />
+        )}
+        <div className="absolute inset-0 bg-black/65" />
+        <div className="relative mx-auto flex max-w-5xl items-center gap-6 px-4 py-8 sm:px-6 sm:py-10">
+          {image && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={image} alt="" className="hidden aspect-[2/3] w-28 shrink-0 rounded-md object-cover shadow-xl sm:block" />
+          )}
+          <div className="min-w-0 space-y-2">
+            <p className="flex items-center gap-2 text-sm font-semibold text-white">
+              <span aria-hidden className="grid h-6 w-6 place-items-center rounded bg-success text-xs">
+                ✓
+              </span>
+              {t("order.confirmed")}
+            </p>
+            {event ? (
+              <Link href={`/events/${event.slug}`} className="block text-2xl font-bold leading-tight hover:underline sm:text-4xl">
+                {event.title}
+              </Link>
+            ) : null}
+            {event && (
+              <p className="text-sm text-white/80">
+                {formatInTimezone(event.starts_at, event.timezone, locale)}
+                {event.venue_name ? `, ${event.venue_name}` : ""}
+              </p>
+            )}
+            <p className="text-sm text-white/70">
               {tickets.length === 1
                 ? t("order.issuedOne", { count: tickets.length, email: order.buyer_email })
                 : t("order.issuedMany", { count: tickets.length, email: order.buyer_email })}
             </p>
           </div>
         </div>
+      </section>
 
-        {event && (
-          <div className="mt-5">
-            <AddToCalendar event={event} t={t} />
-          </div>
-        )}
-
-        <dl className="mt-6 grid gap-4 sm:grid-cols-2">
+      <div className="mx-auto grid max-w-5xl gap-8 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <section className="min-w-0 space-y-4">
           <div>
-            <dt className="text-xs text-foreground-muted">{t("order.orderNumber")}</dt>
-            <dd className="mt-0.5 font-mono text-sm font-medium">{order.order_number}</dd>
+            <h2 className="text-xl font-bold">{t("order.yourTickets")}</h2>
+            <p className="mt-1 text-sm text-foreground-muted">{t("order.ticketsHint")}</p>
           </div>
-          <div>
-            <dt className="text-xs text-foreground-muted">{t("order.orderId")}</dt>
-            <dd className="mt-0.5 break-all font-mono text-xs">{order.id}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-foreground-muted">{t("order.status")}</dt>
-            <dd className="mt-0.5">
-              <span className="inline-flex rounded-full bg-success-soft px-2.5 py-0.5 text-xs font-medium capitalize text-success">
-                {orderStatusLabel(t, order.status)}
-              </span>
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs text-foreground-muted">{t("order.totalPaid")}</dt>
-            <dd className="mt-0.5 text-sm font-semibold tabular-nums">
-              {formatKZT(order.total_kzt)}
-            </dd>
-          </div>
-        </dl>
-
-        <section className="mt-8">
-          <h2 className="text-sm font-semibold">{t("order.summary")}</h2>
-          <ul className="mt-2 divide-y divide-border-subtle rounded-lg border border-border-subtle">
-            {items.map((item) => (
-              <li key={item.id} className="flex items-center justify-between gap-4 px-4 py-3">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{item.ticket_type_name}</p>
-                  <p className="text-xs text-foreground-muted">
-                    {item.quantity} × {formatKZT(item.unit_price_kzt)}
-                  </p>
-                </div>
-                <p className="shrink-0 text-sm tabular-nums">
-                  {formatKZT(item.line_total_kzt)}
-                </p>
-              </li>
-            ))}
-          </ul>
-        </section>
-
-        <section className="mt-8">
-          <h2 className="text-sm font-semibold">{t("order.yourTickets")}</h2>
-          <p className="mt-1 text-xs text-foreground-muted">
-            {t("order.ticketsHint")}
-          </p>
-          <ul className="mt-3 space-y-3">
+          <ul className="space-y-3">
             {tickets.map((ticket) => (
               <TicketCard key={ticket.id} ticket={ticket} />
             ))}
           </ul>
+          <OrderSupport orderID={order.id} buyerEmail={order.buyer_email} />
         </section>
 
-        <OrderSupport orderID={order.id} buyerEmail={order.buyer_email} />
+        <aside className="space-y-4 lg:sticky lg:top-32 lg:self-start">
+          <section className="rounded-lg bg-surface p-5 ring-1 ring-border-subtle">
+            <h2 className="font-bold">{t("home.orderDetails")}</h2>
+            <dl className="mt-4 space-y-3 text-sm">
+              <div className="flex justify-between gap-4">
+                <dt className="text-foreground-muted">{t("order.orderNumber")}</dt>
+                <dd className="font-semibold">{order.order_number}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-foreground-muted">{t("order.status")}</dt>
+                <dd className="font-semibold text-success">{orderStatusLabel(t, order.status)}</dd>
+              </div>
+            </dl>
+            <ul className="mt-4 space-y-2 border-t border-border-subtle pt-4 text-sm">
+              {items.map((item) => (
+                <li key={item.id} className="flex justify-between gap-4">
+                  <span className="min-w-0">
+                    {item.ticket_type_name}
+                    <span className="block text-xs text-foreground-muted">
+                      {item.quantity} × {formatKZT(item.unit_price_kzt)}
+                    </span>
+                  </span>
+                  <span className="shrink-0 tabular-nums">{formatKZT(item.line_total_kzt)}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-4 flex justify-between gap-4 border-t border-border-subtle pt-4 font-bold">
+              <span>{t("order.totalPaid")}</span>
+              <span className="tabular-nums">{formatKZT(order.total_kzt)}</span>
+            </p>
+          </section>
 
-        <p className="mt-8 rounded-lg border border-warning/30 bg-warning-soft px-3 py-2 text-xs text-warning">
-          {t("order.simulatedNote")}
-        </p>
+          {event && (
+            <section className="rounded-lg bg-surface p-5 ring-1 ring-border-subtle">
+              <AddToCalendar event={event} t={t} />
+            </section>
+          )}
 
-        <Link
-          href="/"
-          className="mt-6 inline-flex rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium hover:bg-surface-muted"
-        >
-          {t("order.back")}
-        </Link>
+          <Link href="/" className="block text-sm font-semibold text-brand hover:underline">
+            {t("order.back")}
+          </Link>
+        </aside>
       </div>
     </main>
   );

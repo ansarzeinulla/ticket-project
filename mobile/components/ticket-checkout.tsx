@@ -8,7 +8,7 @@ import { useT } from "../lib/i18n/context";
 import type { PromoPreview, TicketType } from "../lib/models";
 import { formatKZT, formatTiyn, toTiyn } from "../lib/money";
 import { theme } from "../lib/theme";
-import { Banner, Button, Card, Field, Heading, Muted, Row } from "./ui";
+import { Banner, Button, Card, Check, Field, Heading, Muted, Row } from "./ui";
 
 /**
  * General-admission tickets: pick quantities, optionally apply a promo code
@@ -45,6 +45,21 @@ export function TicketCheckout({
   const [checkingOut, setCheckingOut] = useState(false);
   const [name, setName] = useState(user?.full_name ?? "");
   const [email, setEmail] = useState(user?.email ?? "");
+  // A signed-in buyer's own details, locked unless they buy for somebody else (BF-100).
+  const [useAccount, setUseAccount] = useState(true);
+  const locked = Boolean(user && useAccount);
+  // The account can arrive after the first render; fill in once it does.
+  useEffect(() => {
+    if (user && useAccount) {
+      setName(user.full_name);
+      setEmail(user.email);
+    }
+  }, [user, useAccount]);
+  const chooseAccount = (on: boolean) => {
+    setUseAccount(on);
+    setName(on && user ? user.full_name : "");
+    setEmail(on && user ? user.email : "");
+  };
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -238,7 +253,8 @@ export function TicketCheckout({
       ) : (
         <Card>
           <Heading>{t("checkout.title")}</Heading>
-          <Field label={t("checkout.nameLabel")} value={name} onChangeText={setName} placeholder={t("checkout.namePlaceholder")} error={fieldErrors.buyer_name} autoCapitalize="words" testID="buyer-name" />
+          {user ? <Check label={t("home.useAccount")} value={useAccount} onChange={chooseAccount} /> : null}
+          <Field label={t("checkout.nameLabel")} value={name} onChangeText={setName} placeholder={t("checkout.namePlaceholder")} error={fieldErrors.buyer_name} autoCapitalize="words" editable={!locked} testID="buyer-name" />
           <Field
             label={t("checkout.emailLabel")}
             value={email}
@@ -248,9 +264,9 @@ export function TicketCheckout({
             error={fieldErrors.buyer_email}
             keyboardType="email-address"
             autoCapitalize="none"
+            editable={!locked}
             testID="buyer-email"
           />
-          <Muted>{t("checkout.simulatedNote")}</Muted>
           {formError ? <Banner tone="error">{formError}</Banner> : null}
           <Button
             title={submitting ? t("checkout.processing") : t("checkout.pay", { amount: formatTiyn(payableTiyn) })}

@@ -212,6 +212,8 @@ export interface BuyerOrder {
   event_slug: string;
   event_starts_at: string;
   timezone: string;
+  cover_image_url?: string;
+  venue_name?: string;
   ticket_count: number;
   live_tickets: number;
 }

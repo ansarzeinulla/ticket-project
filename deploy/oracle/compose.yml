@@ -1,0 +1,53 @@
+# BiletFlow on one server (BF-100): the whole platform behind Caddy, which
+# gets a free HTTPS certificate for $DOMAIN by itself. Used on top of the main
+# file, from the repository root:
+#
+#   docker compose -f docker-compose.yml -f deploy/oracle/compose.yml --profile app up -d --build
+#
+# deploy/oracle/setup.sh runs exactly that; deploy/oracle/README.md explains it.
+#
+# Only Caddy is reachable from outside (ports 80 and 443). The database, the
+# API and the website talk to each other on the internal network, so their
+# development port mappings are removed here.
+
+services:
+  db:
+    ports: !reset []
+
+  api:
+    environment:
+      BILETFLOW_ENV: production
+      # The site and the API share one address; Caddy sends /api/v1, /media,
+      # /uploads and /health to the API and everything else to the website.
+      WEB_BASE_URL: https://${DOMAIN:?set DOMAIN in .env}
+      API_BASE_URL: https://${DOMAIN:?set DOMAIN in .env}
+    ports: !reset []
+
+  web:
+    build:
+      args:
+        NEXT_PUBLIC_API_BASE_URL: https://${DOMAIN:?set DOMAIN in .env}/api/v1
+    ports: !reset []
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: biletflow-caddy
+    profiles: ["app"]
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/oracle/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+
+volumes:
+  caddy_data:
+  caddy_config:

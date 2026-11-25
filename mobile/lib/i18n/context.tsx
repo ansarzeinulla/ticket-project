@@ -4,6 +4,7 @@ import { getPref, setPref } from "../prefs";
 import { asLocale, defaultLocale, type Locale } from "./config";
 import { getDictionaryFor } from "./dictionaries";
 import { translatorFor, type Translator } from "./translate";
+import { setRequestLocale } from "../client";
 
 const LOCALE_KEY = "biletflow.locale";
 
@@ -43,6 +44,9 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     setLocaleState(next);
     void setPref(LOCALE_KEY, next);
   }, []);
+
+  // Requests carry the language too, for the emails they trigger.
+  useEffect(() => setRequestLocale(locale), [locale]);
 
   const value = useMemo<I18nValue>(
     () => ({ locale, t: translatorFor(getDictionaryFor(locale)), setLocale }),

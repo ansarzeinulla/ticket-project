@@ -171,7 +171,7 @@ export function AttendeeList({ eventID }: { eventID: string }) {
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-medium">{attendee.attendee_name}</span>
                     <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_TONES[attendee.status]}`}
+                      className={`rounded px-2 py-0.5 text-xs font-medium ${STATUS_TONES[attendee.status]}`}
                     >
                       {t(STATUS_LABELS[attendee.status])}
                     </span>

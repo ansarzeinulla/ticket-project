@@ -401,11 +401,12 @@ here would throw away the type safety it provides everywhere else.
 
 ### Forgot password, reset password, confirm email
 
-Three pages under `(auth)`. `/reset-password` reads `?token=` from the link but
-leaves the field editable and visible, because in this MVP the code is printed
-to the API console and somebody will be pasting it by hand. `/verify-email`
-redeems a token on arrival when the link carries one, which is what clicking it
-is meant to do.
+Three pages under `(auth)`, all built on the 6-digit code the API emails
+(BF-100). "Forgot password" shows the code and new-password fields right under
+its confirmation, so nobody leaves the page; `/reset-password` is the same form
+on its own, with an email field. A signed-in account confirms its address from
+the banner under the header; `/verify-email` does the same for somebody signed
+out, so it asks for the address too.
 
 The confirmation after "forgot password" never says whether the address had an
 account - the API is careful about that, and a page that helpfully said "no

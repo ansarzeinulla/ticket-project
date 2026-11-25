@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 
 import { getTranslations } from "@/lib/i18n/server";
 
@@ -10,5 +11,10 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default function ForgotPasswordPage() {
-  return <ForgotPasswordForm />;
+  return (
+    // The reset form shown after sending reads ?email=, which needs a boundary.
+    <Suspense fallback={<p className="text-sm text-foreground-muted">…</p>}>
+      <ForgotPasswordForm />
+    </Suspense>
+  );
 }

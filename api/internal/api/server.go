@@ -13,6 +13,7 @@ import (
 	"github.com/biletflow/api/internal/config"
 	"github.com/biletflow/api/internal/email"
 	"github.com/biletflow/api/internal/httpx"
+	"github.com/biletflow/api/internal/media"
 	"github.com/biletflow/api/internal/store"
 )
 
@@ -56,9 +57,23 @@ type Server struct {
 }
 
 // New builds a Server from a live connection pool. Notifications go to the
-// console; NewWithSender swaps that for a test double.
+// configured SMTP server, or to the console when none is set; NewWithSender
+// swaps that for a test double.
 func New(cfg config.Config, pool *pgxpool.Pool) *Server {
-	return NewWithSender(cfg, pool, email.NewConsoleSender(nil))
+	var sender email.Sender = email.NewConsoleSender(nil)
+	if cfg.SMTPHost != "" {
+		smtpSender, err := email.NewSMTPSender(email.SMTPConfig{
+			Host: cfg.SMTPHost, Port: cfg.SMTPPort,
+			Username: cfg.SMTPUsername, Password: cfg.SMTPPassword, From: cfg.MailFrom,
+		})
+		if err != nil {
+			slog.Error("email: SMTP settings rejected, printing emails to the console instead", "error", err)
+		} else {
+			slog.Info("email: delivering through SMTP", "host", cfg.SMTPHost, "from", cfg.MailFrom)
+			sender = smtpSender
+		}
+	}
+	return NewWithSender(cfg, pool, sender)
 }
 
 // NewWithSender builds a Server with an explicit notification transport.
@@ -317,6 +332,7 @@ func (s *Server) Handler() http.Handler {
 	// on a public event page to people who are not signed in.
 	mux.HandleFunc("POST /api/v1/uploads/images", s.requireAuth(s.handleUploadImage))
 	mux.Handle("GET "+uploadURLPrefix+"{file}", s.uploadsHandler())
+	mux.Handle("GET "+media.URLPrefix+"{file}", s.mediaHandler())
 
 	// --- event staff --------------------------------------------------------
 	mux.HandleFunc("GET /api/v1/events/{id}/staff", s.requireAuth(s.handleListStaff))

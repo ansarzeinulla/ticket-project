@@ -52,7 +52,7 @@ export function RegisterForm() {
         // The API derives a name from the email when this is omitted.
         full_name: fullName.trim() || undefined,
       });
-      router.replace("/dashboard");
+      router.replace("/");
       router.refresh();
     } catch (error) {
       if (error instanceof ApiError) {
@@ -74,7 +74,7 @@ export function RegisterForm() {
   return (
     <>
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">{t("auth.register.heading")}</h1>
+        <h1 className="text-3xl font-bold">{t("auth.register.heading")}</h1>
         <p className="mt-1 text-sm text-foreground-muted">
           {t("auth.register.subtitle")}
         </p>

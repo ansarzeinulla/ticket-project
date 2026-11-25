@@ -103,6 +103,9 @@ export const enMobile = {
       syncing: "Syncing…",
       syncNow: "Sync now",
       offlineManualBody: "The QR token on the ticket, starting with TKT_. It is checked against the roster on this device.",
+      scan: "Scan tickets",
+      search: "Search events",
+      noEvent: "No event matches that title.",
     },
   },
 };
@@ -210,6 +213,9 @@ export const ruMobile: MobileMessages = {
       syncing: "Синхронизация…",
       syncNow: "Синхронизировать",
       offlineManualBody: "QR-токен с билета, начинается с TKT_. Он сверяется со списком на этом устройстве.",
+      scan: "Сканировать билеты",
+      search: "Поиск событий",
+      noEvent: "Нет события с таким названием.",
     },
   },
 };
@@ -315,6 +321,9 @@ export const kkMobile: MobileMessages = {
       syncing: "Синхрондалуда…",
       syncNow: "Қазір синхрондау",
       offlineManualBody: "Билеттегі TKT_ деп басталатын QR токені. Ол осы құрылғыдағы тізіммен салыстырылады.",
+      scan: "Билеттерді сканерлеу",
+      search: "Іс-шараларды іздеу",
+      noEvent: "Мұндай атаулы іс-шара жоқ.",
     },
   },
 };

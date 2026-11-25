@@ -103,3 +103,9 @@ describe("slugify", () => {
     expect(slugify("  Jazz -- Night!!  ")).toBe("jazz-night");
   });
 });
+
+describe("formatInTimezone in Kazakh", () => {
+  it("spells the month out without relying on the engine's locale data", () => {
+    expect(formatInTimezone("2026-11-28T04:00:00Z", "Asia/Almaty", "kk")).toBe("2026 ж. 28 қар., 09:00");
+  });
+});
