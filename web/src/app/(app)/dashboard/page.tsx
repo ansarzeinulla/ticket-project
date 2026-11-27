@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { EventCard } from "@/components/event-card";
 import { Alert } from "@/components/ui/alert";
@@ -21,6 +21,13 @@ const LIFECYCLE_TABS: { label: MessageKey; empty: MessageKey; value: Lifecycle |
   { label: "org.dashboard.tabs.drafts", empty: "org.dashboard.empty.drafts", value: "draft" },
 ];
 
+/**
+ * One page of the organizer's own events. The list is newest first and the
+ * tab filter runs in the API, so a new draft shows even for an organizer with
+ * hundreds of events; the rest load as the organizer scrolls (BF-100).
+ */
+const PAGE_SIZE = 24;
+
 export default function DashboardPage() {
   const t = useT();
   const [events, setEvents] = useState<BiletEvent[]>([]);
@@ -28,25 +35,38 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lifecycle, setLifecycle] = useState<Lifecycle | "">("");
+  // Drafts and published across the whole filter, not just the loaded pages.
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [moreFailed, setMoreFailed] = useState(false);
+  const sentinel = useRef<HTMLDivElement>(null);
+  // Bumped on every reload, so a page that arrives after a tab switch is dropped.
+  const generation = useRef(0);
 
   /**
    * Fetches the organizer's own events. Every state update happens after the
    * await, so calling this from an effect cannot cascade renders.
    */
   const load = useCallback(async (signal?: AbortSignal) => {
+    const run = ++generation.current;
+    const filter = lifecycle ? { lifecycle } : {};
     try {
-      const data = await api.listMyEvents(
-        { limit: 100, ...(lifecycle ? { lifecycle } : {}) },
-        signal,
-      );
+      const [data, drafts, published] = await Promise.all([
+        api.listMyEvents({ limit: PAGE_SIZE, ...filter }, signal),
+        api.listMyEvents({ limit: 1, status: "draft", ...filter }, signal),
+        api.listMyEvents({ limit: 1, status: "published", ...filter }, signal),
+      ]);
+      if (run !== generation.current) return;
       setEvents(data.events);
       setTotal(data.total);
+      setCounts({ draft: drafts.total, published: published.total });
+      setMoreFailed(false);
       setError(null);
     } catch (cause) {
-      if (cause instanceof DOMException && cause.name === "AbortError") return;
+      if (run !== generation.current || (cause instanceof DOMException && cause.name === "AbortError")) return;
       setError(cause instanceof ApiError ? cause.message : t("org.dashboard.loadFailed"));
     } finally {
-      setLoading(false);
+      if (run === generation.current) setLoading(false);
     }
   }, [lifecycle, t]);
 
@@ -66,17 +86,49 @@ export default function DashboardPage() {
     void load();
   }, [load]);
 
-  /** Swap one event in place after a publish or cancel. */
+  const more = events.length < total;
+
+  /** The next page loads when the end of the list scrolls near (BF-100). */
+  useEffect(() => {
+    const node = sentinel.current;
+    if (!node || loading || !more || moreFailed) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries[0].isIntersecting || loadingMore) return;
+        const run = generation.current;
+        setLoadingMore(true);
+        api
+          .listMyEvents({ limit: PAGE_SIZE, offset: events.length, ...(lifecycle ? { lifecycle } : {}) })
+          .then((data) => {
+            if (run !== generation.current) return;
+            setEvents((current) => [...current, ...data.events.filter((e) => !current.some((c) => c.id === e.id))]);
+            setTotal(data.total);
+          })
+          .catch(() => {
+            if (run === generation.current) setMoreFailed(true);
+          })
+          .finally(() => setLoadingMore(false));
+      },
+      { rootMargin: "600px 0px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [events.length, more, loading, loadingMore, moreFailed, lifecycle]);
+
+  /** Swap one event in place after a publish or cancel, and move it between the counts. */
   const handleChanged = useCallback((updated: BiletEvent) => {
+    const before = events.find((event) => event.id === updated.id);
+    if (before && before.status !== updated.status) {
+      setCounts((current) => ({
+        ...current,
+        [before.status]: Math.max(0, (current[before.status] ?? 0) - 1),
+        [updated.status]: (current[updated.status] ?? 0) + 1,
+      }));
+    }
     setEvents((current) =>
       current.map((event) => (event.id === updated.id ? updated : event)),
     );
-  }, []);
-
-  const counts = events.reduce<Record<string, number>>((acc, event) => {
-    acc[event.status] = (acc[event.status] ?? 0) + 1;
-    return acc;
-  }, {});
+  }, [events]);
 
   return (
     <div className="space-y-6">
@@ -159,11 +211,23 @@ export default function DashboardPage() {
           </Link>
         </div>
       ) : (
-        <ul className="space-y-3">
-          {events.map((event) => (
-            <EventCard key={event.id} event={event} onChanged={handleChanged} />
-          ))}
-        </ul>
+        <>
+          <ul className="space-y-3">
+            {events.map((event) => (
+              <EventCard key={event.id} event={event} onChanged={handleChanged} />
+            ))}
+          </ul>
+          <div ref={sentinel} className="flex justify-center py-6 text-sm text-foreground-muted" aria-live="polite">
+            {more && !moreFailed ? (
+              <span className="flex items-center gap-3">
+                <Spinner className="text-brand" />
+                {t("home.loadingMore")}
+              </span>
+            ) : events.length > PAGE_SIZE ? (
+              t("home.allLoaded")
+            ) : null}
+          </div>
+        </>
       )}
     </div>
   );

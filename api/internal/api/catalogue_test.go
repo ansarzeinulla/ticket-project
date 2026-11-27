@@ -3,6 +3,7 @@ package api
 import (
 	"io/fs"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -117,5 +118,47 @@ func TestCORSAllowsTheLanguageHeader(t *testing.T) {
 	allowed := res.Header.Get("Access-Control-Allow-Headers")
 	if !strings.Contains(strings.ToLower(allowed), "x-biletflow-locale") {
 		t.Errorf("Access-Control-Allow-Headers = %q", allowed)
+	}
+}
+
+// The database runs under --locale=C, where ILIKE only folds ASCII. Search
+// must still ignore the case of Cyrillic and Kazakh letters (BF-100).
+func TestSearchIgnoresCyrillicCase(t *testing.T) {
+	c := newClient(t)
+	owner := c.register("cyrillic")
+	admin := c.adminAccount("cyrillicadmin")
+
+	for _, title := range []string{"Национальный центральный музей", "қазақ әндері кеші", "Jazz Night"} {
+		id, _ := c.createEvent(owner.Token, title)
+		requireStatus(t, c.post("/api/v1/events/"+id.String()+"/publish", owner.Token, nil), http.StatusOK)
+	}
+
+	titles := func(res response, key string) []string {
+		requireStatus(t, res, http.StatusOK)
+		var out []string
+		list := res.Body["events"]
+		if key != "" {
+			list = res.Body["results"].(map[string]any)[key]
+		}
+		for _, raw := range list.([]any) {
+			out = append(out, raw.(map[string]any)["title"].(string))
+		}
+		return out
+	}
+
+	for query, want := range map[string]string{
+		"национальный": "Национальный центральный музей",
+		"МУЗЕЙ":        "Национальный центральный музей",
+		"ҚАЗАҚ ӘНДЕРІ": "қазақ әндері кеші",
+		"jazz":         "Jazz Night",
+	} {
+		got := titles(c.get("/api/v1/events?q="+url.QueryEscape(query), ""), "")
+		if len(got) != 1 || got[0] != want {
+			t.Errorf("catalogue %q: got %v, want [%s]", query, got, want)
+		}
+		got = titles(c.get("/api/v1/admin/search?q="+url.QueryEscape(query), admin.Token), "events")
+		if len(got) != 1 || got[0] != want {
+			t.Errorf("admin search %q: got %v, want [%s]", query, got, want)
+		}
 	}
 }

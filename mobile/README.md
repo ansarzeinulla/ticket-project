@@ -4,7 +4,7 @@ React Native / Expo app with everything the website does — for attendees,
 organizers and platform admins — plus the gate scanner for Event Admins.
 Kazakh, Russian and English, like the website.
 
-Expo SDK 57, React Native 0.86, expo-router, expo-camera, expo-image-picker.
+Expo SDK 58, React Native 0.88, expo-router, expo-camera, expo-image-picker.
 
 ---
 

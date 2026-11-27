@@ -38,7 +38,7 @@ const STATUS_LABELS: Record<ReportStatus, MessageKey> = {
 
 const STATUS_TONES: Record<ReportStatus, string> = {
   open: "bg-warning-soft text-warning",
-  reviewing: "bg-brand/10 text-brand",
+  reviewing: "bg-brand/10 text-brand-strong",
   upheld: "bg-danger-soft text-danger",
   dismissed: "bg-surface-muted text-foreground-muted",
 };

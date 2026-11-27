@@ -4,6 +4,7 @@ import { cache } from "react";
 
 import { AddToCalendar } from "@/components/add-to-calendar";
 import { EventAnalyticsTracker } from "@/components/event-analytics-tracker";
+import { ReportEvent } from "@/components/report-event";
 import { SeatedPurchase } from "@/components/seated-purchase";
 import { ApiError, api } from "@/lib/api";
 import { formatInTimezone } from "@/lib/datetime";
@@ -207,6 +208,8 @@ export default async function PublicEventPage({
               </p>
             </section>
           )}
+
+          <ReportEvent eventID={event.id} eventSlug={event.slug} organizerID={event.organizer_id} />
         </div>
 
         {/*

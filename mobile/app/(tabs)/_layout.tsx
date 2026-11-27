@@ -47,7 +47,8 @@ export default function TabsLayout() {
         name="scanner"
         options={{
           title: t("app.tabs.scanner"),
-          href: signedIn ? undefined : null,
+          // Hidden, not unreachable: since SDK 58 `href: null` also blocks the route.
+          tabBarItemStyle: signedIn ? undefined : { display: "none" },
           tabBarIcon: ({ color }) => <Icon glyph="⌗" color={color} />,
         }}
       />
@@ -55,7 +56,7 @@ export default function TabsLayout() {
         name="admin"
         options={{
           title: t("nav.administration"),
-          href: isAdmin ? undefined : null,
+          tabBarItemStyle: isAdmin ? undefined : { display: "none" },
           tabBarIcon: ({ color }) => <Icon glyph="⚑" color={color} />,
         }}
       />

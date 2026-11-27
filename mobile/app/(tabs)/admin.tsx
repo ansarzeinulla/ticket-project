@@ -169,7 +169,11 @@ export default function AdminScreen() {
                 <KV label={t("org.analytics.colSold")} value={String(row.tickets_sold)} />
                 <KV label={t("org.analytics.revenue")} value={formatKZT(row.revenue_kzt)} />
               </Row>
-              <Button small variant="ghost" title={t("org.eventCard.publicPage")} onPress={() => router.push(`/event/${row.slug}`)} />
+              {/* Every event, drafts included, opens in the organizer preview (BF-100). */}
+              <Button small variant="ghost" title={t("org.admin.view")} onPress={() => router.push(`/manage/${row.id}/preview`)} testID={`admin-view-${row.slug}`} />
+              {row.status === "published" ? (
+                <Button small variant="ghost" title={t("org.eventCard.publicPage")} onPress={() => router.push(`/event/${row.slug}`)} />
+              ) : null}
               {row.lifecycle === "suspended" || row.status === "suspended" ? (
                 <ModerationAction label={t("org.admin.lift")} confirmLabel={t("org.admin.liftConfirm")} consequence={t("org.admin.liftConsequence")} tone="secondary" withReason={false} onConfirm={() => api.unsuspendEvent(row.id)} onDone={rerun} />
               ) : (

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -35,6 +35,8 @@ export function TicketSelector({
   const t = useT();
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [checkoutOpen, setCheckoutOpen] = useState(false);
+  // Focus goes back to "Get tickets" when the dialog closes, not to the top of the page (WCAG 2.4.3).
+  const getTicketsButton = useRef<HTMLButtonElement>(null);
   const [promo, setPromo] = useState<PromoPreview | null>(null);
 
   const selected = useMemo(
@@ -181,6 +183,7 @@ export function TicketSelector({
         </div>
 
         <Button
+          ref={getTicketsButton}
           disabled={!onSale || totalTickets === 0}
           onClick={() => {
             // The top of the funnel (bonus). A price and a count - no buyer.
@@ -214,7 +217,10 @@ export function TicketSelector({
           totalTiyn={totalTiyn}
           promo={promo}
           campaignToken={campaignToken}
-          onClose={() => setCheckoutOpen(false)}
+          onClose={() => {
+            setCheckoutOpen(false);
+            requestAnimationFrame(() => getTicketsButton.current?.focus());
+          }}
           onSoldOut={() => {
             // Stock moved under us: pull fresh counts from the server.
             setQuantities({});

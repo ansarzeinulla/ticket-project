@@ -14,14 +14,15 @@
   --foreground: #14161b;
   --foreground-muted: #5f6168;
   --border: #e4e4e8;
-  --brand: #e8174f;
+  /* #d4134a, not #e8174f: crimson text needs 4.5:1 on the light page (WCAG AA). */
+  --brand: #d4134a;
   --brand-strong: #c3103f;
   --brand-soft: #ffe0e8;
   --accent: #e8174f;
   --accent-soft: #ffe0e8;
   --danger: #c62828;
   --danger-soft: #fdecec;
-  --success: #1b7f3b;
+  --success: #18733a;
   --success-soft: #e6f4ea;
   --warning: #a15c00;
   --warning-soft: #fff4e0;

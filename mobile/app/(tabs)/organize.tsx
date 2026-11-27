@@ -1,5 +1,5 @@
 import { router, useFocusEffect } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import { SignInPrompt } from "../../components/sign-in-prompt";
 import { Badge, Banner, Body, Button, Card, Choice, Empty, Loading, Muted, Row, Screen, Title } from "../../components/ui";
@@ -21,6 +21,9 @@ const TABS: { value: Tab; label: MessageKey }[] = [
   { value: "draft", label: "org.dashboard.tabs.drafts" },
 ];
 
+/** One page of the organizer's events; the rest load on scroll (BF-100). */
+const PAGE = 24;
+
 /** The organizer dashboard: the organizer's events, grouped by lifecycle (SRS 4.16). */
 export default function OrganizeScreen() {
   const t = useT();
@@ -29,11 +32,20 @@ export default function OrganizeScreen() {
   const [lifecycle, setLifecycle] = useState<Tab>("");
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [total, setTotal] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  // Bumped on every reload, so a page that arrives after a tab switch is dropped.
+  const generation = useRef(0);
 
+  // Newest first and filtered by the API, so a new draft shows even for an
+  // organizer with hundreds of events (BF-100).
   const load = useCallback(async () => {
+    const run = ++generation.current;
     try {
-      const data = await api.listMyEvents({ limit: 100, ...(lifecycle ? { lifecycle } : {}) });
+      const data = await api.listMyEvents({ limit: PAGE, ...(lifecycle ? { lifecycle } : {}) });
+      if (run !== generation.current) return;
       setEvents(data.events);
+      setTotal(data.total);
       setError(null);
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : t("org.dashboard.loadFailed"));
@@ -41,6 +53,22 @@ export default function OrganizeScreen() {
       setRefreshing(false);
     }
   }, [lifecycle, t]);
+
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !events || events.length >= total) return;
+    const run = generation.current;
+    setLoadingMore(true);
+    try {
+      const data = await api.listMyEvents({ limit: PAGE, offset: events.length, ...(lifecycle ? { lifecycle } : {}) });
+      if (run !== generation.current) return;
+      setEvents((current) => [...(current ?? []), ...data.events.filter((e) => !(current ?? []).some((c) => c.id === e.id))]);
+      setTotal(data.total);
+    } catch {
+      // The next scroll tries again.
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [loadingMore, events, total, lifecycle]);
 
   useFocusEffect(
     useCallback(() => {
@@ -58,7 +86,7 @@ export default function OrganizeScreen() {
   }
 
   return (
-    <Screen refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(); }}>
+    <Screen refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(); }} onEndReached={() => void loadMore()}>
       <Title>{t("org.dashboard.heading")}</Title>
       <Row>
         <Button title={t("org.dashboard.newEvent")} onPress={() => router.push("/event-form")} testID="new-event" />
@@ -90,6 +118,7 @@ export default function OrganizeScreen() {
           </Card>
         ))
       )}
+      {events && events.length < total ? <Loading label={t("home.loadingMore")} /> : null}
     </Screen>
   );
 }
