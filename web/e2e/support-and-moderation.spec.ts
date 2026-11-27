@@ -196,19 +196,23 @@ test("an attendee reports an event and it reaches the moderation queue", async (
   const reporter = await api.register("reporter");
 
   // SRS 4.12: "Review reported events" needs something to review. Filed
-  // through the API, since the report control lives on the public page.
-  const response = await fetch(
-    `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080/api/v1"}/events/${event.id}/report`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${reporter.token}`,
-      },
-      body: JSON.stringify({ reason: "misleading", details: "The venue does not exist." }),
-    },
-  );
-  expect(response.status).toBe(201);
+  // through the report control at the foot of the public page (BF-100).
+  const reporterContext = await browser.newContext();
+  const reporterPage = await reporterContext.newPage();
+  await signIn(reporterPage, reporter.token);
+  await reporterPage.goto(`/events/${event.slug}`);
+  await reporterPage.getByTestId("report-event").click();
+  await reporterPage.getByTestId("report-reason").selectOption("misleading");
+  await reporterPage.locator('textarea[name="details"]').fill("The venue does not exist.");
+  await reporterPage.getByTestId("report-submit").click();
+  await expect(reporterPage.getByTestId("report-result")).toHaveText("Thanks, the report was sent");
+
+  // A second report from the same account is one complaint, not two.
+  await reporterPage.reload();
+  await reporterPage.getByTestId("report-event").click();
+  await reporterPage.getByTestId("report-submit").click();
+  await expect(reporterPage.getByTestId("report-result")).toHaveText("You already reported this event");
+  await reporterContext.close();
 
   const adminContext = await browser.newContext();
   const adminPage = await adminContext.newPage();

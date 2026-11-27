@@ -1,6 +1,6 @@
 import { router } from "expo-router";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Image, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { Image, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions, type ScrollViewInstance } from "react-native";
 
 import { CATEGORIES, isCategory, type Category } from "../lib/catalogue";
 import { formatInTimezone } from "../lib/datetime";
@@ -100,7 +100,7 @@ export function HeroCarousel({ events, cta }: { events: BiletEvent[]; cta: strin
   const label = useCategoryLabel();
   const { width: screen } = useWindowDimensions();
   const width = screen - 32;
-  const scroller = useRef<ScrollView>(null);
+  const scroller = useRef<ScrollViewInstance>(null);
   const [index, setIndex] = useState(0);
 
   useEffect(() => {

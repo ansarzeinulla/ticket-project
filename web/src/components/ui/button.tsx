@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes } from "react";
+import type { ButtonHTMLAttributes, Ref } from "react";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
 type Size = "sm" | "md";
@@ -20,6 +20,8 @@ const sizes: Record<Size, string> = {
 };
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  /** React 19 passes ref as a plain prop; it lands on the <button> through ...props. */
+  ref?: Ref<HTMLButtonElement>;
   variant?: Variant;
   size?: Size;
   loading?: boolean;

@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"slices"
 	"strconv"
 	"time"
 
@@ -290,7 +291,9 @@ func (s *Server) handleListMyEvents(w http.ResponseWriter, r *http.Request) {
 	limit, offset, errs := pagination(r)
 
 	userID := mustUserID(r.Context())
-	filter := store.ListEventsFilter{OrganizerID: &userID, Limit: limit, Offset: offset}
+	// Newest first, so a just-created draft is at the top rather than buried
+	// under hundreds of dated events (BF-100).
+	filter := store.ListEventsFilter{OrganizerID: &userID, NewestFirst: true, Limit: limit, Offset: offset}
 
 	if v := r.URL.Query().Get("status"); v != "" {
 		switch v {
@@ -303,41 +306,24 @@ func (s *Server) handleListMyEvents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// SRS 4.16 groups an organizer's history as Upcoming, Active, Completed and
-	// Cancelled. Those are derived from the event's dates rather than stored, so
-	// the filter is applied to the rows that come back rather than in SQL.
+	// Cancelled. Those are derived from the event's dates rather than stored;
+	// the store filters them in SQL so paging and the total stay right for an
+	// organizer with more events than one page (BF-100).
 	lifecycle := r.URL.Query().Get("lifecycle")
 	if lifecycle != "" && !validLifecycles[lifecycle] {
 		errs.add("lifecycle", "Must be upcoming, active, completed, cancelled, draft or suspended.")
 	}
+	filter.Lifecycle = lifecycle
 
 	if errs.any() {
 		httpx.WriteValidationError(w, errs)
 		return
 	}
 
-	if lifecycle != "" {
-		// The narrowing happens after the query, so the page has to be fetched
-		// whole first. An organizer's own event list is small enough that this
-		// is honest rather than clever.
-		filter.Limit = maxPageSize
-		filter.Offset = 0
-	}
-
 	events, total, err := s.events.List(r.Context(), filter)
 	if err != nil {
 		httpx.WriteInternalError(w, r, err)
 		return
-	}
-
-	if lifecycle != "" {
-		matching := make([]store.Event, 0, len(events))
-		for _, event := range events {
-			if event.LifecycleStage == lifecycle {
-				matching = append(matching, event)
-			}
-		}
-		events = matching
-		total = len(events)
 	}
 
 	httpx.WriteJSON(w, http.StatusOK, eventListResponse{
@@ -797,11 +783,22 @@ func (s *Server) canView(r *http.Request, event store.Event) bool {
 	if !ok {
 		return false
 	}
-	if claims.HasRole(store.RolePlatformAdmin) {
+	userID, err := claims.UserID()
+	if err != nil {
+		return false
+	}
+	if userID == event.OrganizerID {
 		return true
 	}
-	userID, err := claims.UserID()
-	return err == nil && userID == event.OrganizerID
+
+	// A platform admin may read any event, e.g. a draft opened from the admin
+	// search (BF-100). optionalAuth trusts the token's roles, so re-read the
+	// account like requireAuth does: a revoked or suspended admin is refused.
+	user, err := s.users.GetByID(r.Context(), userID)
+	if err != nil || user.Status == store.StatusSuspended || user.Status == store.StatusDeactivated {
+		return false
+	}
+	return slices.Contains(user.Roles, store.RolePlatformAdmin)
 }
 
 // pagination reads limit and offset from the query string.

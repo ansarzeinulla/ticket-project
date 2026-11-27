@@ -122,7 +122,8 @@ func (s *AdminStore) Search(ctx context.Context, query string) (AdminSearchResul
 // The searches below all follow the same shape: an empty query matches
 // everything, and a non-empty one is matched case-insensitively against the
 // handful of fields an admin would actually type. `$1 = ''` short-circuits the
-// ILIKE so the empty case does not scan with a '%%' pattern.
+// match so the empty case does not scan with a '%%' pattern. containsFold
+// rather than ILIKE, so Cyrillic and Kazakh names match in any case (BF-100).
 
 func (s *AdminStore) searchUsers(ctx context.Context, q string) ([]AdminUserRow, error) {
 	rows, err := s.pool.Query(ctx, `
@@ -134,8 +135,8 @@ func (s *AdminStore) searchUsers(ctx context.Context, q string) ([]AdminUserRow,
 		       u.last_login_at, u.created_at
 		  FROM users u
 		  LEFT JOIN user_roles r ON r.user_id = u.id
-		 WHERE $1 = '' OR u.email::text ILIKE '%' || $1 || '%'
-		                OR u.full_name ILIKE '%' || $1 || '%'
+		 WHERE $1 = '' OR `+containsFold("u.email::text", 1)+`
+		                OR `+containsFold("u.full_name", 1)+`
 		 GROUP BY u.id
 		 ORDER BY u.created_at DESC
 		 LIMIT $2`, q, adminSearchLimit)
@@ -169,9 +170,9 @@ func (s *AdminStore) searchEvents(ctx context.Context, q string) ([]AdminEventRo
 		                  WHERE a.event_id = e.id), 'not_started')
 		  FROM events e
 		  JOIN users u ON u.id = e.organizer_id
-		 WHERE $1 = '' OR e.title ILIKE '%' || $1 || '%'
-		                OR e.slug::text ILIKE '%' || $1 || '%'
-		                OR u.email::text ILIKE '%' || $1 || '%'
+		 WHERE $1 = '' OR `+containsFold("e.title", 1)+`
+		                OR `+containsFold("e.slug::text", 1)+`
+		                OR `+containsFold("u.email::text", 1)+`
 		 ORDER BY e.created_at DESC
 		 LIMIT $2`, q, adminSearchLimit)
 	if err != nil {
@@ -209,9 +210,9 @@ func (s *AdminStore) searchOrders(ctx context.Context, q string) ([]AdminOrderRo
 		       o.created_at
 		  FROM orders o
 		  JOIN events e ON e.id = o.event_id
-		 WHERE $1 = '' OR o.order_number ILIKE '%' || $1 || '%'
-		                OR o.buyer_email::text ILIKE '%' || $1 || '%'
-		                OR o.buyer_name ILIKE '%' || $1 || '%'
+		 WHERE $1 = '' OR `+containsFold("o.order_number", 1)+`
+		                OR `+containsFold("o.buyer_email::text", 1)+`
+		                OR `+containsFold("o.buyer_name", 1)+`
 		 ORDER BY o.created_at DESC
 		 LIMIT $2`, q, adminSearchLimit)
 	if err != nil {
@@ -239,9 +240,9 @@ func (s *AdminStore) searchPayments(ctx context.Context, q string) ([]AdminPayme
 		  FROM payments p
 		  LEFT JOIN orders o ON o.id = p.order_id
 		  LEFT JOIN events e ON e.id = COALESCE(p.event_id, o.event_id)
-		 WHERE $1 = '' OR o.order_number ILIKE '%' || $1 || '%'
-		                OR e.title ILIKE '%' || $1 || '%'
-		                OR p.status::text ILIKE '%' || $1 || '%'
+		 WHERE $1 = '' OR `+containsFold("o.order_number", 1)+`
+		                OR `+containsFold("e.title", 1)+`
+		                OR `+containsFold("p.status::text", 1)+`
 		 ORDER BY p.created_at DESC
 		 LIMIT $2`, q, adminSearchLimit)
 	if err != nil {

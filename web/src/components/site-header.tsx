@@ -221,6 +221,13 @@ export function SiteHeader() {
 
   return (
     <header className="sticky top-0 z-40">
+      {/* Keyboard users skip the header's 16 stops straight to the page (WCAG 2.4.1). */}
+      <a
+        href="#content"
+        className="sr-only rounded-md bg-surface px-4 py-2 text-sm font-semibold text-foreground ring-2 ring-brand focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50"
+      >
+        {t("home.skipToContent")}
+      </a>
       <div className="bg-top text-white">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-5 gap-y-3 px-4 py-3 sm:px-6">
           <Link href="/" aria-label="BiletFlow" data-testid="home-link">

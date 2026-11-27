@@ -1,5 +1,113 @@
 # BiletFlow
 
+**Live website: <https://biletflow.factumonline.com>**
+
+## Latest changes (after the presentation)
+
+With your permission, we made small changes to the project.
+
+**First fix: the app now uses Expo SDK 58.** For our testing we used Expo SDK 57,
+and everything worked perfectly on both iOS and Android. However, a new version
+of Expo Go was released: iOS does not allow installing the SDK 57 Expo Go from
+the website, and the App Store only offers SDK 58 (Expo is not backwards
+compatible). During the presentation we mentioned that the iOS build does not
+work with the latest version 58, but we decided to upgrade to 58 in case you
+have an iPhone. Please consider it: everything worked before as well, and as you
+saw during the presentation, our iPhones simply had the SDK 57 Expo Go installed
+since August.
+
+**Second fix: the Report button is back.** During the website redesign we forgot
+to return the "Report event" button, so we returned it (website and app).
+
+That's all, those are the whole fixes. Everything else is the same.
+
+## Try the phone app
+
+You need **Node.js 22.13 or newer** and **git** on the computer, and **Expo Go**
+from the App Store or Play Store on the phone (it is SDK 58 now). The commands
+are the same on WSL, Linux and macOS. The app talks to the live website, so
+nothing else has to run on your computer.
+
+```bash
+git clone https://github.com/ansarzeinulla/ticket-project.git
+cd ticket-project/mobile
+npm install
+```
+
+**Without a tunnel** (phone and computer on the same Wi-Fi; macOS or Linux):
+
+```bash
+EXPO_PUBLIC_API_BASE_URL=https://biletflow.factumonline.com/api/v1 npx expo start
+```
+
+**With a tunnel** (different networks, a university Wi-Fi that blocks devices
+from seeing each other, or **WSL**, which the phone cannot reach directly):
+
+```bash
+EXPO_PUBLIC_API_BASE_URL=https://biletflow.factumonline.com/api/v1 npx expo start --tunnel ngrok
+```
+
+If it asks to install `@expo/ngrok`, answer **Y**. (Plain `--tunnel` also works,
+but in SDK 58 it first needs `npx expo login`.)
+
+Then scan the QR code in the terminal: on **iPhone** with the Camera app, on
+**Android** with "Scan QR code" in Expo Go. The first load takes about a minute.
+
+## Accounts
+
+Every demo account uses the password **`biletflow-demo`**, on the website and in
+the app.
+
+| Email | Use it for |
+| --- | --- |
+| `aigerim@example.kz` | Buyer: tickets, orders, support, reporting an event |
+| `timur@biletflow.kz` | Organizer with a few events (easy to find your own drafts) |
+| `dana@biletflow.kz` | Organizer with many events, analytics and attendees |
+| `scanner@biletflow.kz` | Gate staff: the Scanner tab in the app |
+| `support@biletflow.kz` | Platform admin: `/admin` on the website, Administration in the app |
+
+You can also create your own account. The 6-digit confirmation code is sent by
+email and **may land in the Spam folder**, so please check there too.
+
+## Checklist
+
+**The phone app has every function of the website** (buyer, organizer and admin)
+**plus the gate scanner**, in Kazakh, Russian and English. Every item below works
+on both the website and the app. Payments are simulated; no money moves.
+
+**Buyer** (`aigerim@example.kz`, or without signing in)
+- [ ] Browse the catalogue, search, filter by city, category and date
+- [ ] Open an event, add it to a calendar
+- [ ] Buy general-admission tickets; the promo campaign link `/events/almaty-winter-jazz-night?c=CMP_STUDENT15ALMATYJAZZ` applies 15% off
+- [ ] Seated event: pick seats, they are held for 15 minutes
+- [ ] Failed payment: check out with an email ending in `@decline.simulator.biletflow.kz`
+- [ ] My tickets: QR codes, PDF tickets, confirmation email with the PDF attached
+- [ ] Support chat on an order
+- [ ] Report an event (bottom of the event page)
+- [ ] Register, confirm the email with the 6-digit code, reset the password
+
+**Organizer** (`timur@biletflow.kz` or `dana@biletflow.kz`; any user becomes an organizer by creating an event)
+- [ ] Create an event with city, venue and banner; add ticket types; preview
+- [ ] Publish (needs a confirmed email), unpublish, cancel, duplicate
+- [ ] Paid-sales activation with the simulated ID check
+- [ ] Promo campaigns with a QR code
+- [ ] Orders and attendees: refund an order, manual check-in
+- [ ] Assign gate staff, analytics, event history, support inbox
+- [ ] Requests to BiletFlow support
+
+**Gate staff** (`scanner@biletflow.kz`, app only)
+- [ ] Scanner tab: assigned events, scan a ticket QR with the camera
+- [ ] Enter a code by hand, find an attendee by name
+- [ ] Offline mode: download the list, scan without internet, sync later
+- [ ] Test codes: `TKT_DEMOSEAT00000000A1` (valid, green), `TKT_DEMOFREE0000000001` (already checked in, red), `TKT_DEMOSEAT00000000F1` (refunded, red), `CMP_STUDENT15ALMATYJAZZ` (a promo code, not a ticket)
+
+**Platform admin** (`support@biletflow.kz`)
+- [ ] Search users, events, orders and payments; open any event, drafts included
+- [ ] Suspend an event and lift the suspension
+- [ ] Reports queue, platform support inbox, statistics, CSV report, settings
+
+---
+
 Self-service event ticketing platform for Kazakhstan, built to the specification
 in [bilet.md](bilet.md).
 

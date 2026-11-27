@@ -105,7 +105,7 @@ export EXPO_PUBLIC_API_BASE_URL=https://141-147-1-2.sslip.io/api/v1
 npx expo start --tunnel
 ```
 
-Scan the QR code with Expo Go (SDK 57).
+Scan the QR code with Expo Go (SDK 58).
 
 ## Updating
 

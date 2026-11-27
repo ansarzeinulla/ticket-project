@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Image, StyleSheet, Text, View } from "react-native";
 
 import { CalendarLinks } from "../../components/calendar-links";
+import { ReportEvent } from "../../components/report-event";
 import { useCategoryLabel } from "../../components/posters";
 import { SeatedCheckout } from "../../components/seated-checkout";
 import { TicketCheckout } from "../../components/ticket-checkout";
@@ -119,6 +120,8 @@ export default function EventScreen() {
           <Muted>{event.refund_policy}</Muted>
         </>
       ) : null}
+
+      <ReportEvent eventID={event.id} organizerID={event.organizer_id} />
     </Screen>
   );
 }

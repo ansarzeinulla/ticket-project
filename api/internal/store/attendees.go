@@ -58,10 +58,10 @@ func (s *AttendeeStore) Search(
 		  JOIN ticket_types tt ON tt.id = t.ticket_type_id
 		  JOIN orders o       ON o.id = t.order_id
 		 WHERE t.event_id = $1
-		   AND ($2 = '' OR a.full_name ILIKE '%' || $2 || '%'
-		                OR a.email::text ILIKE '%' || $2 || '%'
-		                OR t.ticket_code ILIKE '%' || $2 || '%'
-		                OR o.order_number ILIKE '%' || $2 || '%')
+		   AND ($2 = '' OR `+containsFold("a.full_name", 2)+`
+		                OR `+containsFold("a.email::text", 2)+`
+		                OR `+containsFold("t.ticket_code", 2)+`
+		                OR `+containsFold("o.order_number", 2)+`)
 		 ORDER BY a.full_name, t.ticket_code
 		 LIMIT $3`, eventID, query, attendeeSearchLimit)
 	if err != nil {

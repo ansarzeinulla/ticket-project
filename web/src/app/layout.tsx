@@ -47,7 +47,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
             {/* One header and footer for every page (BF-100). */}
             <SiteHeader />
             <VerifyEmailBanner />
-            <div className="flex-1">{children}</div>
+            <div id="content" tabIndex={-1} className="flex-1 outline-none">{children}</div>
             <SiteFooter />
           </AuthProvider>
         </I18nProvider>

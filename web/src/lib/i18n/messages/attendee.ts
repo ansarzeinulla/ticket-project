@@ -217,6 +217,20 @@ export const enAttendee = {
     send: "Send",
     internalToggle: "Internal note (the attendee will not see this)",
   },
+  // The report control on the public event page (BF-100).
+  reportEvent: {
+    button: "Report event",
+    heading: "Report this event",
+    intro: "BiletFlow moderators review every report.",
+    reason: "Reason",
+    details: "Details (optional)",
+    detailsPlaceholder: "What is wrong with this event?",
+    submit: "Send report",
+    cancel: "Cancel",
+    sent: "Thanks, the report was sent",
+    already: "You already reported this event",
+    failed: "The report could not be sent.",
+  },
 };
 
 export type AttendeeMessages = typeof enAttendee;
@@ -433,6 +447,19 @@ export const ruAttendee: AttendeeMessages = {
     send: "Отправить",
     internalToggle: "Внутренняя заметка (посетитель её не увидит)",
   },
+  reportEvent: {
+    button: "Пожаловаться на событие",
+    heading: "Жалоба на событие",
+    intro: "Модераторы BiletFlow рассматривают каждую жалобу.",
+    reason: "Причина",
+    details: "Подробности (необязательно)",
+    detailsPlaceholder: "Что не так с этим событием?",
+    submit: "Отправить жалобу",
+    cancel: "Отмена",
+    sent: "Спасибо, жалоба отправлена",
+    already: "Вы уже пожаловались на это событие",
+    failed: "Не удалось отправить жалобу.",
+  },
 };
 
 export const kkAttendee: AttendeeMessages = {
@@ -646,5 +673,18 @@ export const kkAttendee: AttendeeMessages = {
     addPlaceholder: "Мәселені сипаттаңыз…",
     send: "Жіберу",
     internalToggle: "Ішкі жазба (қатысушы оны көрмейді)",
+  },
+  reportEvent: {
+    button: "Іс-шара туралы шағымдану",
+    heading: "Іс-шараға шағым",
+    intro: "BiletFlow модераторлары әр шағымды қарайды.",
+    reason: "Себебі",
+    details: "Толығырақ (міндетті емес)",
+    detailsPlaceholder: "Бұл іс-шарада не дұрыс емес?",
+    submit: "Шағым жіберу",
+    cancel: "Бас тарту",
+    sent: "Рақмет, шағым жіберілді",
+    already: "Сіз бұл іс-шара туралы шағымданып қойдыңыз",
+    failed: "Шағымды жіберу мүмкін болмады.",
   },
 };

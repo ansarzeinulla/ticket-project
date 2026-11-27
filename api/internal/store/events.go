@@ -215,8 +215,46 @@ type ListEventsFilter struct {
 	City         *string
 	StartsAfter  *time.Time
 	StartsBefore *time.Time
-	Limit        int
-	Offset       int
+	// Lifecycle is one of the stages Lifecycle() derives. It is filtered in
+	// SQL so the page and the total are right for an organizer with hundreds
+	// of events (BF-100).
+	Lifecycle string
+	// NewestFirst orders by creation instead of by date, so an organizer's
+	// just-created draft is at the top of their own list (BF-100).
+	NewestFirst bool
+	Limit       int
+	Offset      int
+}
+
+// containsFold is a case-insensitive "column contains $n" test. The database
+// runs under --locale=C, where ILIKE only folds ASCII, so "национальный" would
+// miss "Национальный". Lowering both sides under the ICU collation folds
+// Cyrillic and Kazakh letters too (BF-100).
+func containsFold(column string, param int) string {
+	return fmt.Sprintf(`lower(%s COLLATE "und-x-icu") LIKE '%%' || lower($%d::text COLLATE "und-x-icu") || '%%'`,
+		column, param)
+}
+
+// lifecycleClause mirrors Lifecycle() in SQL: cancelled, suspended and draft
+// come from the status; the rest from the dates, compared against $now.
+// usesNow says whether the caller must bind that parameter.
+func lifecycleClause(stage string, now int) (clause string, usesNow, ok bool) {
+	const dated = "status NOT IN ('cancelled','suspended','draft','unpublished')"
+	switch stage {
+	case "cancelled":
+		return "status = 'cancelled'", false, true
+	case "suspended":
+		return "status = 'suspended'", false, true
+	case "draft":
+		return "status IN ('draft','unpublished')", false, true
+	case "completed":
+		return fmt.Sprintf("(%s AND (status = 'completed' OR ends_at <= $%d))", dated, now), true, true
+	case "active":
+		return fmt.Sprintf("(%s AND status <> 'completed' AND ends_at > $%d AND starts_at <= $%[2]d)", dated, now), true, true
+	case "upcoming":
+		return fmt.Sprintf("(%s AND status <> 'completed' AND ends_at > $%d AND starts_at > $%[2]d)", dated, now), true, true
+	}
+	return "", false, false
 }
 
 // List returns a page of events plus the total number of matches.
@@ -244,9 +282,7 @@ func (s *EventStore) List(ctx context.Context, f ListEventsFilter) ([]Event, int
 	}
 	if f.Search != nil {
 		args = append(args, *f.Search)
-		where = append(where, fmt.Sprintf(
-			"(title ILIKE '%%' || $%d || '%%' OR description ILIKE '%%' || $%[1]d || '%%')",
-			len(args)))
+		where = append(where, "("+containsFold("title", len(args))+" OR "+containsFold("description", len(args))+")")
 	}
 	if f.City != nil {
 		add("city = $%d", *f.City)
@@ -256,6 +292,16 @@ func (s *EventStore) List(ctx context.Context, f ListEventsFilter) ([]Event, int
 	}
 	if f.StartsBefore != nil {
 		add("starts_at <= $%d", *f.StartsBefore)
+	}
+	if f.Lifecycle != "" {
+		stage, usesNow, ok := lifecycleClause(f.Lifecycle, len(args)+1)
+		if !ok {
+			return nil, 0, fmt.Errorf("unknown lifecycle %q", f.Lifecycle)
+		}
+		if usesNow {
+			args = append(args, time.Now())
+		}
+		where = append(where, stage)
 	}
 
 	clause := ""
@@ -272,9 +318,13 @@ func (s *EventStore) List(ctx context.Context, f ListEventsFilter) ([]Event, int
 	if limit <= 0 {
 		limit = 20
 	}
+	order := " ORDER BY starts_at ASC, created_at ASC"
+	if f.NewestFirst {
+		order = " ORDER BY created_at DESC, id DESC"
+	}
 	args = append(args, limit, f.Offset)
-	query := `SELECT ` + eventColumns + ` FROM events` + clause +
-		fmt.Sprintf(" ORDER BY starts_at ASC, created_at ASC LIMIT $%d OFFSET $%d", len(args)-1, len(args))
+	query := `SELECT ` + eventColumns + ` FROM events` + clause + order +
+		fmt.Sprintf(" LIMIT $%d OFFSET $%d", len(args)-1, len(args))
 
 	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {

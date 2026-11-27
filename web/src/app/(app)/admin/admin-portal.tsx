@@ -348,6 +348,14 @@ export function AdminPortal() {
                       <span className="font-medium">{row.title}</span>
                     )}
                     <div className="text-xs text-foreground-muted">{formatDay(row.starts_at, locale)}</div>
+                    {/* Every event, drafts included, opens in the organizer preview (BF-100). */}
+                    <Link
+                      href={`/dashboard/events/${row.id}/preview`}
+                      className="text-xs font-medium text-brand hover:underline"
+                      data-testid={`admin-view-${row.slug}`}
+                    >
+                      {t("org.admin.view")}
+                    </Link>
                   </td>
                   <td className="px-4 py-2 text-xs">{row.organizer_email}</td>
                   <td className="px-4 py-2">
@@ -483,8 +491,8 @@ const PILL_TONES: Record<string, string> = {
   paid: "bg-success-soft text-success",
   completed: "bg-success-soft text-success",
   succeeded: "bg-success-soft text-success",
-  upcoming: "bg-brand/10 text-brand",
-  in_progress: "bg-brand/10 text-brand",
+  upcoming: "bg-brand/10 text-brand-strong",
+  in_progress: "bg-brand/10 text-brand-strong",
   pending_verification: "bg-warning-soft text-warning",
   pending: "bg-warning-soft text-warning",
   partially_refunded: "bg-warning-soft text-warning",

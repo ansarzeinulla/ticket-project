@@ -773,3 +773,82 @@ func TestDeleteEventAuthorization(t *testing.T) {
 		t.Error("an unauthorised caller deleted the event")
 	}
 }
+
+// An organizer with more events than one page must still find a new draft:
+// the lifecycle filter runs in SQL and the list is newest first (BF-100).
+func TestListMyEventsFindsDraftAmongMany(t *testing.T) {
+	c := newClient(t)
+	owner := c.register("busy")
+
+	// 120 older published events, inserted directly so the test stays fast.
+	if _, err := c.pool.Exec(t.Context(), `
+		INSERT INTO events (organizer_id, title, slug, starts_at, ends_at, status, published_at, created_at)
+		SELECT $1, 'Old event ' || n, 'busy-old-' || n,
+		       now() + n * interval '1 day', now() + n * interval '1 day' + interval '2 hours',
+		       'published', now(), now() - interval '30 days' + n * interval '1 minute'
+		  FROM generate_series(1, 120) AS n`, owner.ID); err != nil {
+		t.Fatalf("seed events: %v", err)
+	}
+
+	draftID, _ := c.createEvent(owner.Token, "Brand New Draft")
+
+	res := c.get("/api/v1/events/mine?lifecycle=draft&limit=24", owner.Token)
+	requireStatus(t, res, http.StatusOK)
+	events := res.Body["events"].([]any)
+	if len(events) != 1 || events[0].(map[string]any)["id"] != draftID.String() {
+		t.Fatalf("drafts = %s, want only the new draft", res.Raw)
+	}
+	if total, _ := res.Body["total"].(float64); total != 1 {
+		t.Errorf("draft total = %v, want 1", res.Body["total"])
+	}
+
+	res = c.get("/api/v1/events/mine?limit=24", owner.Token)
+	requireStatus(t, res, http.StatusOK)
+	if first := res.Body["events"].([]any)[0].(map[string]any)["id"]; first != draftID.String() {
+		t.Errorf("first event = %v, want the new draft at the top", first)
+	}
+	if total, _ := res.Body["total"].(float64); total != 121 {
+		t.Errorf("total = %v, want 121", res.Body["total"])
+	}
+
+	// Paging and the total are right for a date-derived stage too.
+	res = c.get("/api/v1/events/mine?lifecycle=upcoming&limit=24&offset=100", owner.Token)
+	requireStatus(t, res, http.StatusOK)
+	if got := len(res.Body["events"].([]any)); got != 20 {
+		t.Errorf("upcoming page from offset 100 has %d events, want 20", got)
+	}
+	if total, _ := res.Body["total"].(float64); total != 120 {
+		t.Errorf("upcoming total = %v, want 120", res.Body["total"])
+	}
+}
+
+// A platform admin can open any organizer's draft, e.g. from the admin
+// search; anyone else is still refused (BF-100).
+func TestAdminCanReadAnotherOrganizersDraft(t *testing.T) {
+	c := newClient(t)
+	owner := c.register("draftowner")
+	stranger := c.register("draftstranger")
+	admin := c.adminAccount("draftadmin")
+
+	draftID, _ := c.createEvent(owner.Token, "Secret Draft")
+	path := "/api/v1/events/" + draftID.String()
+
+	requireStatus(t, c.get(path, owner.Token), http.StatusOK)
+	res := c.get(path, admin.Token)
+	requireStatus(t, res, http.StatusOK)
+	if res.eventString("title") != "Secret Draft" {
+		t.Errorf("admin read title %q", res.eventString("title"))
+	}
+	requireStatus(t, c.get(path+"/ticket-types", admin.Token), http.StatusOK)
+
+	requireErrorCode(t, c.get(path, stranger.Token), http.StatusNotFound, "not_found")
+	requireErrorCode(t, c.get(path, ""), http.StatusNotFound, "not_found")
+
+	// The role is read from the account, not the token: a revoked admin's
+	// old token no longer opens the draft.
+	if _, err := c.pool.Exec(t.Context(),
+		`DELETE FROM user_roles WHERE user_id = $1 AND role = 'platform_admin'`, admin.ID); err != nil {
+		t.Fatalf("revoke: %v", err)
+	}
+	requireErrorCode(t, c.get(path, admin.Token), http.StatusNotFound, "not_found")
+}
